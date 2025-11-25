@@ -1,0 +1,9 @@
+/vendor/
+/node_modules/
+.idea/
+.vscode/
+.env
+.env.local
+/storage/*.key
+/storage/*.log
+/bootstrap/cache/
