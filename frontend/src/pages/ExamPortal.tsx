@@ -32,24 +32,7 @@ const ExamPortal: React.FC = () => {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadExam();
-  }, [examId]);
-
-  useEffect(() => {
-    if (timeRemaining <= 0) {
-      handleSubmit();
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => prev - 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [timeRemaining]);
-
-  const loadExam = () => {
+  const loadExam = React.useCallback(() => {
     // Simulate loading exam
     setTimeout(() => {
       setExam({
@@ -91,7 +74,18 @@ const ExamPortal: React.FC = () => {
       });
       setLoading(false);
     }, 1000);
-  };
+  }, [examId]);
+
+  const handleSubmit = React.useCallback(() => {
+    // Submit exam
+    const score = exam?.questions.reduce((acc, question) => {
+      const selectedOption = question.options.find(opt => opt.id === answers[question.id]);
+      return selectedOption?.is_correct ? acc + 1 : acc;
+    }, 0) || 0;
+
+    alert(`Exam submitted! Your score: ${score}/${exam?.questions.length || 0}`);
+    navigate('/dashboard');
+  }, [exam, answers, navigate]);
 
   const handleSelectAnswer = (questionId: number, optionId: number) => {
     setAnswers(prev => ({
@@ -112,16 +106,22 @@ const ExamPortal: React.FC = () => {
     }
   };
 
-  const handleSubmit = () => {
-    // Submit exam
-    const score = exam?.questions.reduce((acc, question) => {
-      const selectedOption = question.options.find(opt => opt.id === answers[question.id]);
-      return selectedOption?.is_correct ? acc + 1 : acc;
-    }, 0) || 0;
+  useEffect(() => {
+    loadExam();
+  }, [loadExam]);
 
-    alert(`Exam submitted! Your score: ${score}/${exam?.questions.length || 0}`);
-    navigate('/dashboard');
-  };
+  useEffect(() => {
+    if (timeRemaining <= 0) {
+      handleSubmit();
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timeRemaining, handleSubmit]);
 
   if (loading || !exam) {
     return (
