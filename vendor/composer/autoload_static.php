@@ -144,6 +144,8 @@ class ComposerStaticInit077ef16f64846b34dd1f47267b098391
             'Doctrine\\Inflector\\' => 19,
             'Doctrine\\Common\\Lexer\\' => 22,
             'Dflydev\\DotAccessData\\' => 22,
+            'Database\\Seeders\\' => 17,
+            'Database\\Factories\\' => 19,
         ),
         'C' => 
         array (
@@ -180,7 +182,7 @@ class ComposerStaticInit077ef16f64846b34dd1f47267b098391
         ),
         'Tests\\' => 
         array (
-            0 => __DIR__ . '/../..' . '/tests',
+            0 => __DIR__ . '/../..' . '/backend/tests',
         ),
         'Termwind\\' => 
         array (
@@ -450,6 +452,14 @@ class ComposerStaticInit077ef16f64846b34dd1f47267b098391
         array (
             0 => __DIR__ . '/..' . '/dflydev/dot-access-data/src',
         ),
+        'Database\\Seeders\\' => 
+        array (
+            0 => __DIR__ . '/../..' . '/backend/database/seeders',
+        ),
+        'Database\\Factories\\' => 
+        array (
+            0 => __DIR__ . '/../..' . '/backend/database/factories',
+        ),
         'Cron\\' => 
         array (
             0 => __DIR__ . '/..' . '/dragonmantank/cron-expression/src/Cron',
@@ -484,7 +494,7 @@ class ComposerStaticInit077ef16f64846b34dd1f47267b098391
         ),
         'App\\' => 
         array (
-            0 => __DIR__ . '/../..' . '/app',
+            0 => __DIR__ . '/../..' . '/backend/app',
         ),
     );
 

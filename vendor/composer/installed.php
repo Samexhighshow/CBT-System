@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'school/cbt-system',
-        'pretty_version' => '1.0.0+no-version-set',
-        'version' => '1.0.0.0',
-        'reference' => null,
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => 'aa108e37646182953bd2cb8c72645a060a95911a',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -693,9 +693,9 @@
             'dev_requirement' => false,
         ),
         'school/cbt-system' => array(
-            'pretty_version' => '1.0.0+no-version-set',
-            'version' => '1.0.0.0',
-            'reference' => null,
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => 'aa108e37646182953bd2cb8c72645a060a95911a',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
