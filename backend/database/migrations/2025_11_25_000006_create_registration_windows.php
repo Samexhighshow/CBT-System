@@ -10,8 +10,8 @@ return new class extends Migration {
         Schema::create('registration_windows', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->timestamp('start_at');
-            $table->timestamp('end_at');
+            $table->timestamp('start_at')->nullable();
+            $table->timestamp('end_at')->nullable();
             $table->string('status')->default('pending');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
