@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 
 // Pages
+import LandingPage from './pages/LandingPage';
 import StudentRegistration from './pages/StudentRegistration';
 import StudentLogin from './pages/StudentLogin';
 import StudentDashboard from './pages/StudentDashboard';
@@ -15,7 +16,9 @@ function App() {
     <Router>
       <Routes>
         {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/register" element={<StudentRegistration />} />
+        <Route path="/login" element={<StudentLogin />} />
         <Route path="/student-login" element={<StudentLogin />} />
         <Route path="/admin-login" element={<AdminLogin />} />
 
@@ -27,7 +30,7 @@ function App() {
         <Route path="/admin" element={<AdminDashboard />} />
 
         {/* Default Route */}
-        <Route path="/" element={<StudentRegistration />} />
+        <Route path="*" element={<LandingPage />} />
       </Routes>
     </Router>
   );
