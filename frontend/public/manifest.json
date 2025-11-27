@@ -1,7 +1,7 @@
 {
   "name": "CBT System",
   "short_name": "CBT",
-  "description": "School Computer-Based Test Platform with Offline Support",
+  "description": "School Computer-Based Test Platform",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -12,76 +12,6 @@
       "src": "/favicon.ico",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
-    },
-    {
-      "src": "/icon-192x192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-192x192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icon-512x512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-512x512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/screenshot-1.png",
-      "sizes": "540x720",
-      "type": "image/png"
-    }
-  ],
-  "categories": ["education", "productivity"],
-  "shortcuts": [
-    {
-      "name": "Register",
-      "short_name": "Register",
-      "description": "Student Registration",
-      "url": "/register",
-      "icons": [
-        {
-          "src": "/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Login",
-      "short_name": "Login",
-      "description": "Student Login",
-      "url": "/student-login",
-      "icons": [
-        {
-          "src": "/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Admin",
-      "short_name": "Admin",
-      "description": "Admin Dashboard",
-      "url": "/admin-login",
-      "icons": [
-        {
-          "src": "/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
     }
   ]
 }

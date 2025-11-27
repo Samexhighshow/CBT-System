@@ -11,8 +11,8 @@
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json">
     
     <!-- iOS PWA -->
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/icon-192x192.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/favicon.ico">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="CBT System">
     
@@ -73,17 +73,5 @@
     </div>
     
     <!-- React will render here -->
-    <script>
-        // Register service worker for offline support
-        if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
-            navigator.serviceWorker.register('%PUBLIC_URL%/service-worker.js')
-                .then(registration => {
-                    console.log('Service Worker registered:', registration);
-                })
-                .catch(error => {
-                    console.log('Service Worker registration failed:', error);
-                });
-        }
-    </script>
 </body>
 </html>
