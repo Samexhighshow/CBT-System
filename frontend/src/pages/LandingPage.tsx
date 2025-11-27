@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 
 const LandingPage: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className="flex flex-col min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Navigation */}
-      <nav className="bg-white shadow-sm border-b border-gray-200">
+      <nav className="bg-white shadow-sm border-b border-gray-200 w-full">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
@@ -193,9 +193,9 @@ const LandingPage: React.FC = () => {
             <div>
               <h4 className="text-white text-lg font-semibold mb-4">Support</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white">Help Center</a></li>
-                <li><a href="#" className="hover:text-white">Documentation</a></li>
-                <li><a href="#" className="hover:text-white">Contact Us</a></li>
+                <li><button className="hover:text-white text-left">Help Center</button></li>
+                <li><button className="hover:text-white text-left">Documentation</button></li>
+                <li><button className="hover:text-white text-left">Contact Us</button></li>
               </ul>
             </div>
             <div>
