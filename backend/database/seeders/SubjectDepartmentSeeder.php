@@ -22,7 +22,10 @@ class SubjectDepartmentSeeder extends Seeder
         ];
 
         foreach ($jssSubjects as $subject) {
-            Subject::firstOrCreate($subject);
+            Subject::firstOrCreate(
+                ['name' => $subject['name'], 'class_level' => $subject['class_level']],
+                ['is_compulsory' => $subject['is_compulsory']]
+            );
         }
 
         // SSS Departments
