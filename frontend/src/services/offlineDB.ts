@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Exam, Question, Answer, Student, User } from '../types';
+import { Exam, Question, ExamAnswer, Student, User } from '../types';
 
 // Define the database schema
 export interface OfflineExam extends Exam {
@@ -7,7 +7,7 @@ export interface OfflineExam extends Exam {
   lastModified?: Date;
 }
 
-export interface OfflineAnswer extends Answer {
+export interface OfflineAnswer extends ExamAnswer {
   syncStatus?: 'synced' | 'pending' | 'error';
   lastModified?: Date;
   examId: number;

@@ -1,5 +1,5 @@
 import { api } from './api';
-import { User, Student, Exam, Question, Answer, Subject, Department } from '../types';
+import { User, Student, Exam, Question, ExamAnswer, Subject, Department } from '../types';
 
 // Auth API
 export const authApi = {

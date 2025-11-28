@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Exam, Question, Answer } from '../types';
+import { Exam, Question, ExamAnswer } from '../types';
 
 interface ExamState {
   // Current exam
