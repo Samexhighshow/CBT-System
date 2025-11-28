@@ -209,6 +209,10 @@ const LandingPage: React.FC = () => {
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm">
             <p>&copy; 2025 CBT System. All rights reserved.</p>
+            <div className="mt-4 space-y-1">
+              <p className="text-gray-400">Idead and Lead by <span className="text-white font-semibold">Maximus</span></p>
+              <p className="text-gray-400">Contributor: <span className="bg-gradient-to-r from-yellow-400 to-blue-500 bg-clip-text text-transparent font-semibold">MAVIS</span></p>
+            </div>
           </div>
         </div>
       </footer>

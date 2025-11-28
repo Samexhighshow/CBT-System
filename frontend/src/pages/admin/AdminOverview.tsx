@@ -1,14 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components';
-import { 
-  BookOpenIcon, 
-  UserGroupIcon, 
-  AcademicCapIcon, 
-  ChartBarIcon,
-  DocumentTextIcon,
-  FolderIcon
-} from '@heroicons/react/24/outline';
 
 interface DashboardStats {
   totalStudents: number;
@@ -22,7 +14,7 @@ interface DashboardStats {
 interface ModuleCard {
   title: string;
   description: string;
-  icon: React.ReactNode;
+  icon: string;
   path: string;
   color: string;
 }
@@ -58,42 +50,42 @@ const AdminOverview: React.FC = () => {
     {
       title: 'Question Bank',
       description: 'Create, manage and organize exam questions',
-      icon: <DocumentTextIcon className="w-8 h-8" />,
+      icon: '📝',
       path: '/admin/questions',
       color: 'bg-blue-500',
     },
     {
       title: 'Exam Management',
       description: 'Create and manage exams, set schedules',
-      icon: <BookOpenIcon className="w-8 h-8" />,
+      icon: '📚',
       path: '/admin/exams',
       color: 'bg-green-500',
     },
     {
       title: 'Student Management',
       description: 'View and manage student records',
-      icon: <UserGroupIcon className="w-8 h-8" />,
+      icon: '👥',
       path: '/admin/students',
       color: 'bg-purple-500',
     },
     {
       title: 'Subjects & Departments',
       description: 'Manage subjects and department structure',
-      icon: <FolderIcon className="w-8 h-8" />,
+      icon: '📂',
       path: '/admin/subjects',
       color: 'bg-orange-500',
     },
     {
       title: 'Results & Analytics',
       description: 'View exam results and performance analytics',
-      icon: <ChartBarIcon className="w-8 h-8" />,
+      icon: '📊',
       path: '/admin/results',
       color: 'bg-indigo-500',
     },
     {
       title: 'Class Management',
       description: 'Manage class levels and academic sessions',
-      icon: <AcademicCapIcon className="w-8 h-8" />,
+      icon: '🎓',
       path: '/admin/classes',
       color: 'bg-pink-500',
     },
@@ -115,7 +107,7 @@ const AdminOverview: React.FC = () => {
               <p className="text-blue-100 text-sm">Total Students</p>
               <h3 className="text-3xl font-bold mt-2">{stats.totalStudents}</h3>
             </div>
-            <UserGroupIcon className="w-12 h-12 text-blue-200" />
+            <span className="text-5xl">👥</span>
           </div>
         </Card>
 
@@ -126,7 +118,7 @@ const AdminOverview: React.FC = () => {
               <h3 className="text-3xl font-bold mt-2">{stats.totalExams}</h3>
               <p className="text-green-100 text-xs mt-1">{stats.activeExams} active</p>
             </div>
-            <BookOpenIcon className="w-12 h-12 text-green-200" />
+            <span className="text-5xl">📚</span>
           </div>
         </Card>
 
@@ -136,7 +128,7 @@ const AdminOverview: React.FC = () => {
               <p className="text-purple-100 text-sm">Question Bank</p>
               <h3 className="text-3xl font-bold mt-2">{stats.totalQuestions}</h3>
             </div>
-            <DocumentTextIcon className="w-12 h-12 text-purple-200" />
+            <span className="text-5xl">📝</span>
           </div>
         </Card>
 
@@ -146,7 +138,7 @@ const AdminOverview: React.FC = () => {
               <p className="text-orange-100 text-sm">Subjects</p>
               <h3 className="text-3xl font-bold mt-2">{stats.totalSubjects}</h3>
             </div>
-            <FolderIcon className="w-12 h-12 text-orange-200" />
+            <span className="text-5xl">📂</span>
           </div>
         </Card>
 
@@ -156,7 +148,7 @@ const AdminOverview: React.FC = () => {
               <p className="text-indigo-100 text-sm">Completed Exams</p>
               <h3 className="text-3xl font-bold mt-2">{stats.completedExams}</h3>
             </div>
-            <ChartBarIcon className="w-12 h-12 text-indigo-200" />
+            <span className="text-5xl">📊</span>
           </div>
         </Card>
 
@@ -166,7 +158,7 @@ const AdminOverview: React.FC = () => {
               <p className="text-pink-100 text-sm">Active Exams</p>
               <h3 className="text-3xl font-bold mt-2">{stats.activeExams}</h3>
             </div>
-            <AcademicCapIcon className="w-12 h-12 text-pink-200" />
+            <span className="text-5xl">🎓</span>
           </div>
         </Card>
       </div>
@@ -182,8 +174,8 @@ const AdminOverview: React.FC = () => {
               onClick={() => navigate(module.path)}
             >
               <div className="flex items-start space-x-4">
-                <div className={`${module.color} text-white p-3 rounded-lg`}>
-                  {module.icon}
+                <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center`} style={{width: '64px', height: '64px'}}>
+                  <span className="text-3xl">{module.icon}</span>
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900">{module.title}</h3>

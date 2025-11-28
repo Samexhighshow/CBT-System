@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Input, Alert } from '../../components';
+import { Card, Button } from '../../components';
 
 interface Question {
   id: number;
@@ -13,8 +13,6 @@ interface Question {
 
 const QuestionBank: React.FC = () => {
   const navigate = useNavigate();
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [showUploadModal, setShowUploadModal] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -25,7 +23,7 @@ const QuestionBank: React.FC = () => {
           <p className="text-gray-600 mt-2">Manage your exam questions</p>
         </div>
         <div className="flex space-x-3">
-          <Button onClick={() => setShowUploadModal(true)} variant="secondary">
+          <Button onClick={() => navigate('/admin/questions/upload')} variant="secondary">
             📤 Upload Questions
           </Button>
           <Button onClick={() => navigate('/admin/questions/create')}>

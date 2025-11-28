@@ -23,11 +23,12 @@ const App: React.FC = () => {
         <Route path="/admin-login" element={<AdminLogin />} />
 
         {/* Student Routes */}
-        <Route path="/dashboard" element={<StudentDashboard />} />
+        <Route path="/dashboard/*" element={<StudentDashboard />} />
+        <Route path="/student/*" element={<StudentDashboard />} />
         <Route path="/exam/:examId" element={<ExamPortal />} />
 
         {/* Admin Routes */}
-        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/*" element={<AdminDashboard />} />
 
         {/* Default Route */}
         <Route path="*" element={<LandingPage />} />
