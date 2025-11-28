@@ -1,79 +1,96 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\ExamController;
-use App\Http\Controllers\ExamSyncController;
-use App\Http\Controllers\StudentController;
-use App\Http\Controllers\DepartmentController;
-use App\Http\Controllers\SubjectController;
-use App\Http\Controllers\RegistrationWindowController;
-use App\Http\Controllers\ExamManagementController;
-use App\Http\Controllers\ResultController;
-use App\Http\Controllers\ReportExportController;
+use App\Http\Controllers\Api\StudentController;
+use App\Http\Controllers\Api\ExamController;
+use App\Http\Controllers\Api\QuestionController;
+use App\Http\Controllers\Api\SubjectController;
+use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\ResultController;
+use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\ReportController;
 
-// Public auth routes
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/register', [StudentController::class, 'register']);
-Route::get('/registration/current-window', [RegistrationWindowController::class, 'current']);
+// Public routes
+Route::get('/health', fn() => response()->json(['status' => 'ok']));
 
-// Public exam routes (for offline mode)
-Route::get('/exams', [ExamController::class, 'index']);
-Route::get('/exams/{id}', [ExamController::class, 'show']);
+// Students
+Route::prefix('students')->group(function () {
+    Route::get('/', [StudentController::class, 'index']);
+    Route::get('/{id}', [StudentController::class, 'show']);
+    Route::post('/', [StudentController::class, 'store']);
+    Route::put('/{id}', [StudentController::class, 'update']);
+    Route::delete('/{id}', [StudentController::class, 'destroy']);
+    Route::get('/{id}/exams', [StudentController::class, 'getExams']);
+    Route::get('/{id}/results', [StudentController::class, 'getResults']);
+    Route::get('/{id}/statistics', [StudentController::class, 'getStatistics']);
+});
 
-// Protected routes
-Route::middleware('auth:sanctum')->group(function () {
-    // Exam routes
-    Route::post('/exams/{id}/start', [ExamController::class, 'start']);
-    Route::post('/exams/attempts/sync', [ExamSyncController::class, 'sync']);
+// Exams
+Route::prefix('exams')->group(function () {
+    Route::get('/', [ExamController::class, 'index']);
+    Route::get('/{id}', [ExamController::class, 'show']);
+    Route::post('/', [ExamController::class, 'store']);
+    Route::put('/{id}', [ExamController::class, 'update']);
+    Route::delete('/{id}', [ExamController::class, 'destroy']);
+    Route::post('/{id}/start', [ExamController::class, 'startExam']);
+    Route::post('/{id}/submit', [ExamController::class, 'submitExam']);
+    Route::get('/{id}/questions', [ExamController::class, 'getQuestions']);
+    Route::get('/{id}/statistics', [ExamController::class, 'getStatistics']);
+});
 
-    // Student routes
-    Route::get('/student/profile', [StudentController::class, 'getProfile']);
-    Route::put('/student/profile', [StudentController::class, 'updateProfile']);
+// Questions
+Route::prefix('questions')->group(function () {
+    Route::get('/', [QuestionController::class, 'index']);
+    Route::get('/{id}', [QuestionController::class, 'show']);
+    Route::post('/', [QuestionController::class, 'store']);
+    Route::put('/{id}', [QuestionController::class, 'update']);
+    Route::delete('/{id}', [QuestionController::class, 'destroy']);
+    Route::post('/bulk', [QuestionController::class, 'bulkCreate']);
+    Route::post('/import', [QuestionController::class, 'importQuestions']);
+    Route::get('/template/download', [QuestionController::class, 'downloadTemplate']);
+    Route::get('/export/csv', [QuestionController::class, 'exportQuestions']);
+});
 
-    // Admin routes
-    Route::middleware('role:Admin|Sub-Admin')->group(function () {
-        // Departments
-        Route::get('/departments', [DepartmentController::class, 'index']);
-        Route::get('/departments/{id}', [DepartmentController::class, 'show']);
-        Route::post('/departments', [DepartmentController::class, 'store']);
-        Route::put('/departments/{id}', [DepartmentController::class, 'update']);
-        Route::delete('/departments/{id}', [DepartmentController::class, 'destroy']);
+// Subjects
+Route::prefix('subjects')->group(function () {
+    Route::get('/', [SubjectController::class, 'index']);
+    Route::get('/{id}', [SubjectController::class, 'show']);
+    Route::post('/', [SubjectController::class, 'store']);
+    Route::put('/{id}', [SubjectController::class, 'update']);
+    Route::delete('/{id}', [SubjectController::class, 'destroy']);
+});
 
-        // Subjects
-        Route::get('/subjects', [SubjectController::class, 'index']);
-        Route::get('/subjects/{id}', [SubjectController::class, 'show']);
-        Route::post('/subjects', [SubjectController::class, 'store']);
-        Route::put('/subjects/{id}', [SubjectController::class, 'update']);
-        Route::delete('/subjects/{id}', [SubjectController::class, 'destroy']);
+// Departments
+Route::prefix('departments')->group(function () {
+    Route::get('/', [DepartmentController::class, 'index']);
+    Route::get('/{id}', [DepartmentController::class, 'show']);
+    Route::post('/', [DepartmentController::class, 'store']);
+    Route::put('/{id}', [DepartmentController::class, 'update']);
+    Route::delete('/{id}', [DepartmentController::class, 'destroy']);
+});
 
-        // Registration windows
-        Route::get('/registration-windows', [RegistrationWindowController::class, 'index']);
-        Route::post('/registration-windows', [RegistrationWindowController::class, 'store']);
-        Route::put('/registration-windows/{id}', [RegistrationWindowController::class, 'update']);
-        Route::delete('/registration-windows/{id}', [RegistrationWindowController::class, 'destroy']);
+// Results
+Route::prefix('results')->group(function () {
+    Route::get('/student/{studentId}', [ResultController::class, 'getStudentResults']);
+    Route::get('/exam/{examId}', [ResultController::class, 'getExamResults']);
+    Route::get('/analytics', [ResultController::class, 'getAnalytics']);
+    Route::get('/attempt/{attemptId}', [ResultController::class, 'getAttemptDetails']);
+});
 
-        // Exam management
-        Route::post('/exams', [ExamManagementController::class, 'store']);
-        Route::put('/exams/{id}', [ExamManagementController::class, 'update']);
-        Route::put('/exams/{id}/publish', [ExamManagementController::class, 'publish']);
-        Route::post('/exams/{id}/questions', [ExamManagementController::class, 'addQuestion']);
-        Route::delete('/exams/{id}', [ExamManagementController::class, 'destroy']);
+// Analytics
+Route::prefix('analytics')->group(function () {
+    Route::get('/admin/dashboard', [AnalyticsController::class, 'getAdminDashboardStats']);
+    Route::get('/student/{studentId}/dashboard', [AnalyticsController::class, 'getStudentDashboardStats']);
+    Route::get('/performance', [AnalyticsController::class, 'getPerformanceMetrics']);
+    Route::post('/exam/comparison', [AnalyticsController::class, 'getExamComparison']);
+    Route::get('/department/performance', [AnalyticsController::class, 'getDepartmentPerformance']);
+});
 
-        // Results management
-        Route::post('/exams/{id}/release-results', [ResultController::class, 'releaseResults']);
-        Route::get('/exams/{id}/results', [ResultController::class, 'getExamResults']);
-
-        // Report exports
-        Route::get('/export/students', [ReportExportController::class, 'exportStudentList']);
-        Route::get('/export/exams', [ReportExportController::class, 'exportExamList']);
-        Route::get('/export/results', [ReportExportController::class, 'exportResultsSummary']);
-        Route::get('/export/departments', [ReportExportController::class, 'exportDepartmentReport']);
-        Route::get('/export/analytics', [ReportExportController::class, 'exportPerformanceAnalytics']);
-    });
-
-    // Student results (accessible to all students)
-    Route::get('/student/results', [ResultController::class, 'getStudentResults']);
-    Route::get('/exams/{id}/results/csv', [ResultController::class, 'exportCSV']);
-
+// Reports
+Route::prefix('reports')->group(function () {
+    Route::get('/exam/{examId}/pdf', [ReportController::class, 'downloadExamReportPdf']);
+    Route::get('/exam/{examId}/excel', [ReportController::class, 'downloadExamReportExcel']);
+    Route::get('/student/{studentId}/pdf', [ReportController::class, 'downloadStudentResultsPdf']);
+    Route::get('/student/{studentId}/excel', [ReportController::class, 'downloadStudentResultsExcel']);
+    Route::get('/attempt/{attemptId}/pdf', [ReportController::class, 'downloadAttemptReportPdf']);
 });
