@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 namespace App\Models;
 
@@ -16,4 +16,3 @@ class Student extends Model
         'is_active' => 'boolean'
     ];
 }
-

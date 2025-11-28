@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 namespace App\Models;
 
@@ -23,4 +23,3 @@ class RegistrationWindow extends Model
         return $this->start_at <= $now && $now <= $this->end_at && $this->is_active;
     }
 }
-
