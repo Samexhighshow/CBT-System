@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Modal, Timer } from '../components';
+import { api } from '../services/api';
+import Dexie from 'dexie';
+import { showError, showSuccess } from '../utils/alerts';
 
 interface Question {
   id: number;
@@ -21,6 +24,16 @@ interface Exam {
   questions: Question[];
 }
 
+// IndexedDB setup for offline answer storage
+class ExamDB extends Dexie {
+  answers!: Dexie.Table<{ id?: number; examId: number; questionId: number; answerId: number; updatedAt: number }, number>;
+  constructor() {
+    super('ExamDB');
+    this.version(1).stores({ answers: '++id,examId,questionId,updatedAt' });
+  }
+}
+const examDB = new ExamDB();
+
 const ExamPortal: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
   const navigate = useNavigate();
@@ -28,63 +41,46 @@ const ExamPortal: React.FC = () => {
   const [exam, setExam] = useState<Exam | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [timeRemaining, setTimeRemaining] = useState(3600); // 60 minutes in seconds
+  const [timeRemaining, setTimeRemaining] = useState(3600); // default 60 minutes in seconds
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const syncLock = useRef(false);
 
-  const loadExam = React.useCallback(() => {
-    // Simulate loading exam
-    setTimeout(() => {
-      setExam({
-        id: parseInt(examId || '1'),
-        title: 'Mathematics Mid-Term Exam',
-        duration_minutes: 60,
-        questions: [
-          {
-            id: 1,
-            question_text: 'What is 15 + 27?',
-            options: [
-              { id: 1, option_text: '42', is_correct: true },
-              { id: 2, option_text: '41' },
-              { id: 3, option_text: '43' },
-              { id: 4, option_text: '44' }
-            ]
-          },
-          {
-            id: 2,
-            question_text: 'Solve: 8 × 7 = ?',
-            options: [
-              { id: 5, option_text: '54' },
-              { id: 6, option_text: '56', is_correct: true },
-              { id: 7, option_text: '58' },
-              { id: 8, option_text: '60' }
-            ]
-          },
-          {
-            id: 3,
-            question_text: 'What is the square root of 144?',
-            options: [
-              { id: 9, option_text: '11' },
-              { id: 10, option_text: '12', is_correct: true },
-              { id: 11, option_text: '13' },
-              { id: 12, option_text: '14' }
-            ]
-          }
-        ]
-      });
+  const loadExam = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const examRes = await api.get(`/exams/${examId}`);
+      const questionsRes = await api.get(`/exams/${examId}/questions`);
+      const examData: Exam = {
+        id: Number(examId),
+        title: examRes.data?.title,
+        duration_minutes: examRes.data?.duration || examRes.data?.duration_minutes || 60,
+        questions: (questionsRes.data || []).map((q: any) => ({
+          id: q.id,
+          question_text: q.question_text || q.text,
+          options: (q.options || []).map((o: any) => ({ id: o.id, option_text: o.option_text || o.text }))
+        }))
+      };
+      setExam(examData);
+      setTimeRemaining(examData.duration_minutes * 60);
       setLoading(false);
-    }, 1000);
+    } catch (e) {
+      console.error(e);
+      showError('Failed to load exam.');
+    }
   }, [examId]);
 
   const handleSubmit = React.useCallback(() => {
-    // Submit exam
-    const score = exam?.questions.reduce((acc, question) => {
-      const selectedOption = question.options.find(opt => opt.id === answers[question.id]);
-      return selectedOption?.is_correct ? acc + 1 : acc;
-    }, 0) || 0;
-
-    alert(`Exam submitted! Your score: ${score}/${exam?.questions.length || 0}`);
-    navigate('/dashboard');
+    // Sync local answers then submit
+    (async () => {
+      try {
+        await syncAnswers();
+        showSuccess('Exam submitted!');
+        navigate('/student');
+      } catch (e) {
+        showError('Submission failed. Answers remain saved locally and will sync.');
+      }
+    })();
   }, [exam, answers, navigate]);
 
   const handleSelectAnswer = (questionId: number, optionId: number) => {
@@ -92,6 +88,8 @@ const ExamPortal: React.FC = () => {
       ...prev,
       [questionId]: optionId
     }));
+    // Save locally for offline resilience
+    examDB.answers.put({ examId: Number(examId), questionId, answerId: optionId, updatedAt: Date.now() });
   };
 
   const handleNext = () => {
@@ -109,6 +107,30 @@ const ExamPortal: React.FC = () => {
   useEffect(() => {
     loadExam();
   }, [loadExam]);
+  // periodic sync to backend
+  useEffect(() => {
+    const iv = setInterval(() => {
+      syncAnswers();
+    }, 5000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const syncAnswers = async () => {
+    if (syncLock.current) return;
+    syncLock.current = true;
+    try {
+      const pending = await examDB.answers.where('examId').equals(Number(examId)).toArray();
+      if (pending.length === 0) return;
+      await api.post(`/exams/${examId}/submit`, {
+        answers: pending.map(p => ({ question_id: p.questionId, option_id: p.answerId }))
+      });
+      await examDB.answers.where('examId').equals(Number(examId)).delete();
+    } catch (e) {
+      // keep local; retry later
+    } finally {
+      syncLock.current = false;
+    }
+  };
 
   useEffect(() => {
     if (timeRemaining <= 0) {
@@ -158,10 +180,8 @@ const ExamPortal: React.FC = () => {
           {/* Progress Bar */}
           <div className="mt-4">
             <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              ></div>
+              <div className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                   style={{ width: `${progress}%` }}></div>
             </div>
           </div>
         </div>
