@@ -1,10 +1,5 @@
 import Swal from 'sweetalert2';
 
-/**
- * SweetAlert2 Utility Functions
- * Centralized alert handling for consistent UI/UX
- */
-
 // Success alert
 export const showSuccess = (message, title = 'Success!') => {
   return Swal.fire({
@@ -12,7 +7,7 @@ export const showSuccess = (message, title = 'Success!') => {
     title,
     text: message,
     confirmButtonColor: '#3085d6',
-    timer: 3000,
+    timer: 2500,
     timerProgressBar: true,
   });
 };
@@ -129,7 +124,7 @@ export const showInput = (title, inputType = 'text', inputLabel = '') => {
   });
 };
 
-export default {
+const alerts = {
   showSuccess,
   showError,
   showWarning,
@@ -141,3 +136,5 @@ export default {
   showToast,
   showInput,
 };
+
+export default alerts;

@@ -10,6 +10,8 @@ import StudentDashboard from './pages/StudentDashboard';
 import ExamPortal from './pages/ExamPortal';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
+import RequireAuth from './middleware/RequireAuth';
+import RequireRole from './middleware/RequireRole';
 
 const App: React.FC = () => {
   return (
@@ -23,12 +25,37 @@ const App: React.FC = () => {
         <Route path="/admin-login" element={<AdminLogin />} />
 
         {/* Student Routes */}
-        <Route path="/dashboard/*" element={<StudentDashboard />} />
         <Route path="/student/*" element={<StudentDashboard />} />
-        <Route path="/exam/:examId" element={<ExamPortal />} />
+        <Route
+          path="/student/*"
+          element={
+            <RequireAuth>
+              <RequireRole roles={["student"]}>
+                <StudentDashboard />
+              </RequireRole>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/exam/:id"
+          element={
+            <RequireAuth>
+              <ExamPortal />
+            </RequireAuth>
+          }
+        />
 
         {/* Admin Routes */}
-        <Route path="/admin/*" element={<AdminDashboard />} />
+        <Route
+          path="/admin/*"
+          element={
+            <RequireAuth>
+              <RequireRole roles={["admin","subadmin","teacher"]}>
+                <AdminDashboard />
+              </RequireRole>
+            </RequireAuth>
+          }
+        />
 
         {/* Default Route */}
         <Route path="*" element={<LandingPage />} />

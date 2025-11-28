@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components';
+import { api } from '../../services/api';
+import { showError } from '../../utils/alerts';
 
 interface DashboardStats {
-  totalStudents: number;
-  totalExams: number;
-  totalQuestions: number;
-  totalSubjects: number;
-  activeExams: number;
-  completedExams: number;
+  total_students: number;
+  active_students: number;
+  total_exams: number;
+  published_exams: number;
+  total_departments: number;
+  total_subjects: number;
+  total_attempts: number;
+  ongoing_exams: number;
 }
 
 interface ModuleCard {
@@ -21,29 +25,46 @@ interface ModuleCard {
 
 const AdminOverview: React.FC = () => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
-    totalStudents: 0,
-    totalExams: 0,
-    totalQuestions: 0,
-    totalSubjects: 0,
-    activeExams: 0,
-    completedExams: 0,
+    total_students: 0,
+    active_students: 0,
+    total_exams: 0,
+    published_exams: 0,
+    total_departments: 0,
+    total_subjects: 0,
+    total_attempts: 0,
+    ongoing_exams: 0,
   });
 
   useEffect(() => {
     loadStats();
   }, []);
 
-  const loadStats = () => {
-    // TODO: Fetch from API
-    setStats({
-      totalStudents: 245,
-      totalExams: 28,
-      totalQuestions: 520,
-      totalSubjects: 12,
-      activeExams: 5,
-      completedExams: 23,
-    });
+  const loadStats = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/analytics/admin/dashboard');
+      if (response.data) {
+        setStats(response.data);
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch admin stats:', error);
+      showError('Failed to load dashboard statistics. Using sample data.');
+      // Fallback to sample data
+      setStats({
+        total_students: 0,
+        active_students: 0,
+        total_exams: 0,
+        published_exams: 0,
+        total_departments: 0,
+        total_subjects: 0,
+        total_attempts: 0,
+        ongoing_exams: 0,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const modules: ModuleCard[] = [
@@ -105,7 +126,8 @@ const AdminOverview: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-sm">Total Students</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.totalStudents}</h3>
+              <h3 className="text-3xl font-bold mt-2">{stats.total_students}</h3>
+              <p className="text-blue-100 text-xs mt-1">{stats.active_students} active</p>
             </div>
             <span className="text-5xl">👥</span>
           </div>
@@ -115,8 +137,8 @@ const AdminOverview: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-green-100 text-sm">Total Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.totalExams}</h3>
-              <p className="text-green-100 text-xs mt-1">{stats.activeExams} active</p>
+              <h3 className="text-3xl font-bold mt-2">{stats.total_exams}</h3>
+              <p className="text-green-100 text-xs mt-1">{stats.published_exams} published</p>
             </div>
             <span className="text-5xl">📚</span>
           </div>
@@ -125,8 +147,8 @@ const AdminOverview: React.FC = () => {
         <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-purple-100 text-sm">Question Bank</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.totalQuestions}</h3>
+              <p className="text-purple-100 text-sm">Total Attempts</p>
+              <h3 className="text-3xl font-bold mt-2">{stats.total_attempts}</h3>
             </div>
             <span className="text-5xl">📝</span>
           </div>
@@ -136,7 +158,7 @@ const AdminOverview: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-orange-100 text-sm">Subjects</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.totalSubjects}</h3>
+              <h3 className="text-3xl font-bold mt-2">{stats.total_subjects}</h3>
             </div>
             <span className="text-5xl">📂</span>
           </div>
@@ -145,8 +167,8 @@ const AdminOverview: React.FC = () => {
         <Card className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-indigo-100 text-sm">Completed Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.completedExams}</h3>
+              <p className="text-indigo-100 text-sm">Departments</p>
+              <h3 className="text-3xl font-bold mt-2">{stats.total_departments}</h3>
             </div>
             <span className="text-5xl">📊</span>
           </div>
@@ -155,8 +177,8 @@ const AdminOverview: React.FC = () => {
         <Card className="bg-gradient-to-br from-pink-500 to-pink-600 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-pink-100 text-sm">Active Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.activeExams}</h3>
+              <p className="text-pink-100 text-sm">Ongoing Exams</p>
+              <h3 className="text-3xl font-bold mt-2">{stats.ongoing_exams}</h3>
             </div>
             <span className="text-5xl">🎓</span>
           </div>
@@ -174,8 +196,8 @@ const AdminOverview: React.FC = () => {
               onClick={() => navigate(module.path)}
             >
               <div className="flex items-start space-x-4">
-                <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center`} style={{width: '64px', height: '64px'}}>
-                  <span className="text-3xl">{module.icon}</span>
+                <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center w-16 h-16`}>
+                  <span className="text-2xl">{module.icon}</span>
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900">{module.title}</h3>

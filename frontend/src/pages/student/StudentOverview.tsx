@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components';
+import { api } from '../../services/api';
 
 interface DashboardStats {
   availableExams: number;
@@ -31,14 +32,32 @@ const StudentOverview: React.FC = () => {
     loadStats();
   }, []);
 
-  const loadStats = () => {
-    // TODO: Fetch from API
-    setStats({
-      availableExams: 5,
-      completedExams: 12,
-      averageScore: 78.5,
-      upcomingExams: 3,
-    });
+  const loadStats = async () => {
+    try {
+      const userData = localStorage.getItem('user');
+      if (!userData) return;
+      
+      const user = JSON.parse(userData);
+      const response = await api.get(`/analytics/student/${user.id}/dashboard`);
+      
+      if (response.data) {
+        setStats({
+          availableExams: response.data.available_exams || 0,
+          completedExams: response.data.total_exams_taken || 0,
+          averageScore: response.data.average_score || 0,
+          upcomingExams: response.data.available_exams || 0,
+        });
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch student stats:', error);
+      // Use default values on error
+      setStats({
+        availableExams: 0,
+        completedExams: 0,
+        averageScore: 0,
+        upcomingExams: 0,
+      });
+    }
   };
 
   const modules: ModuleCard[] = [
@@ -158,7 +177,7 @@ const StudentOverview: React.FC = () => {
                 </span>
               )}
               <div className="flex items-start space-x-4">
-                <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center`} style={{width: '64px', height: '64px'}}>
+                <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center w-16 h-16`}>
                   <span className="text-3xl">{module.icon}</span>
                 </div>
                 <div className="flex-1">

@@ -1,5 +1,5 @@
 import { api } from './api';
-import { User, Student, Exam, Question, ExamAnswer, Subject, Department } from '../types';
+import { User, Student, Exam, Question, Subject, Department } from '../types';
 
 // Auth API
 export const authApi = {
@@ -233,7 +233,7 @@ export const adminApi = {
   },
 };
 
-export default {
+const apiServices = {
   auth: authApi,
   students: studentApi,
   exams: examApi,
@@ -243,3 +243,5 @@ export default {
   results: resultsApi,
   admin: adminApi,
 };
+
+export default apiServices;
