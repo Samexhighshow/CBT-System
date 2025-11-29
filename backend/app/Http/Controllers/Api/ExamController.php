@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\ExamAnswer;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -150,8 +151,21 @@ class ExamController extends Controller
             return response()->json(['message' => 'Exam is not available'], 403);
         }
 
+        // Enforce exam scheduled window
         if (now() < $exam->start_time || now() > $exam->end_time) {
-            return response()->json(['message' => 'Exam is not within the allowed time window'], 403);
+            return response()->json(['message' => 'Exam is not within the scheduled time window'], 403);
+        }
+
+        // Enforce daily exam window from system settings (HH:MM)
+        $dailyStart = SystemSetting::get('exam_window_start', null);
+        $dailyEnd = SystemSetting::get('exam_window_end', null);
+        if ($dailyStart && $dailyEnd) {
+            $now = now();
+            $startToday = $now->copy()->setTimeFromTimeString($dailyStart);
+            $endToday = $now->copy()->setTimeFromTimeString($dailyEnd);
+            if ($now->lt($startToday) || $now->gt($endToday)) {
+                return response()->json(['message' => 'Exam access is restricted to the daily window: '.$dailyStart.' - '.$dailyEnd], 403);
+            }
         }
 
         // Check if student already has an active attempt
@@ -165,6 +179,20 @@ class ExamController extends Controller
                 'message' => 'You already have an active attempt for this exam',
                 'attempt' => $existingAttempt
             ], 409);
+        }
+
+        // Enforce maximum attempts per student
+        $maxAttempts = (int) (SystemSetting::get('max_exam_attempts', 0) ?? 0);
+        if ($maxAttempts > 0) {
+            $completedAttemptsCount = ExamAttempt::where('exam_id', $id)
+                ->where('student_id', $validated['student_id'])
+                ->whereIn('status', ['completed','submitted'])
+                ->count();
+            if ($completedAttemptsCount >= $maxAttempts) {
+                return response()->json([
+                    'message' => 'Maximum allowed attempts ('.$maxAttempts.') reached for this exam.'
+                ], 403);
+            }
         }
 
         // Create new attempt

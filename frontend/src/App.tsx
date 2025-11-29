@@ -16,6 +16,7 @@ import PasswordOtpRequest from './pages/PasswordOtpRequest';
 import PasswordOtpReset from './pages/PasswordOtpReset';
 import AdminSignup from './pages/admin/AdminSignup';
 import AdminUserManagement from './pages/admin/AdminUserManagement';
+import AdminSettings from './pages/admin/AdminSettings';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
 
@@ -73,6 +74,17 @@ const App: React.FC = () => {
             <RequireAuth>
               <RequireRole roles={["Main Admin"]}>
                 <AdminUserManagement />
+              </RequireRole>
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/admin/settings"
+          element={
+            <RequireAuth>
+              <RequireRole roles={["Main Admin"]}>
+                <AdminSettings />
               </RequireRole>
             </RequireAuth>
           }

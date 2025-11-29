@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Student;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -63,6 +64,14 @@ class StudentController extends Controller
      */
     public function store(Request $request)
     {
+        // Enforce system setting: student registration toggle
+        $registrationOpen = SystemSetting::get('student_registration_open', true);
+        if (!$registrationOpen) {
+            return response()->json([
+                'message' => 'Student registration is currently closed by the administrator.'
+            ], 403);
+        }
+
         $validated = $request->validate([
             'registration_number' => 'required|string|unique:students,registration_number',
             'first_name' => 'required|string|max:255',

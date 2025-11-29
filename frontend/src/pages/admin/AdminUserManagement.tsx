@@ -11,10 +11,12 @@ const AdminUserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [onlyApplicants, setOnlyApplicants] = useState(true);
 
+  const token = localStorage.getItem('token');
+
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/users`, { params: { only_applicants: onlyApplicants ? 1 : undefined } });
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/users`, { params: { only_applicants: onlyApplicants ? 1 : undefined }, headers: { Authorization: `Bearer ${token}` } });
       setUsers(res.data.data || res.data);
     } catch (err: any) {
       showError('Failed to load users');
@@ -27,7 +29,7 @@ const AdminUserManagement: React.FC = () => {
   useEffect(() => {
     const loadRoles = async () => {
       try {
-        const res = await axios.get(`${process.env.REACT_APP_API_URL}/roles`);
+        const res = await axios.get(`${process.env.REACT_APP_API_URL}/roles`, { headers: { Authorization: `Bearer ${token}` } });
         setRoles(res.data);
       } catch (e) {
         // ignore
@@ -40,7 +42,7 @@ const AdminUserManagement: React.FC = () => {
     const confirm = await showConfirm(`Assign role "${roleName}"?`);
     if (!confirm) return;
     try {
-      await axios.post(`http://127.0.0.1:8000/api/roles/assign/${userId}`, { role: roleName });
+      await axios.post(`${process.env.REACT_APP_API_URL}/roles/assign/${userId}`, { role: roleName }, { headers: { Authorization: `Bearer ${token}` } });
       showSuccess('Role assigned');
       fetchUsers();
     } catch (err: any) {

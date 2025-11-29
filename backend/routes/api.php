@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\SystemSettingController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -117,6 +118,11 @@ Route::middleware(['auth:sanctum','main.admin'])->group(function () {
     Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/roles', [RoleController::class, 'listRoles']);
+
+    // System settings
+    Route::get('/settings', [SystemSettingController::class, 'index']);
+    Route::put('/settings/{key}', [SystemSettingController::class, 'update']);
+    Route::post('/settings/bulk', [SystemSettingController::class, 'bulkUpdate']);
 });
 
 // Auth logout

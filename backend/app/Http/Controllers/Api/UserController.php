@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
@@ -33,9 +34,13 @@ class UserController extends Controller
             'password' => Hash::make($validated['password']),
         ]);
 
-        // Send verification email
-        $user->sendEmailVerificationNotification();
+        // Try to send verification email (don't fail if mail server not configured)
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Exception $e) {
+            Log::warning('Failed to send verification email: ' . $e->getMessage());
+        }
 
-        return response()->json(['message' => 'Admin application submitted', 'user' => $user], 201);
+        return response()->json(['message' => 'Admin application submitted successfully', 'user' => $user], 201);
     }
 }
