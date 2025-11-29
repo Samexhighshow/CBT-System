@@ -17,7 +17,7 @@ use App\Http\Controllers\Api\AuthController;
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
 
 // Auth & Verification
-// Email verification & reset link
+Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/email/verification-notification', [AuthController::class, 'sendVerification']);
 Route::get('/auth/verify-email/{id}', [AuthController::class, 'verifyEmail']);
 Route::post('/auth/password/forgot', [AuthController::class, 'sendPasswordResetLink']);
@@ -29,6 +29,7 @@ Route::post('/auth/password/otp/verify', [AuthController::class, 'resetPasswordW
 
 // Admin signup applicant (public)
 Route::post('/admin/signup', [UserController::class, 'store']);
+
 // Students
 Route::prefix('students')->group(function () {
     Route::get('/', [StudentController::class, 'index']);
@@ -117,3 +118,6 @@ Route::middleware(['auth:sanctum','main.admin'])->group(function () {
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/roles', [RoleController::class, 'listRoles']);
 });
+
+// Auth logout
+Route::middleware('auth:sanctum')->post('/auth/logout', [AuthController::class, 'logout']);

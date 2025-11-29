@@ -12,6 +12,8 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import PasswordResetRequest from './pages/PasswordResetRequest';
 import PasswordReset from './pages/PasswordReset';
+import PasswordOtpRequest from './pages/PasswordOtpRequest';
+import PasswordOtpReset from './pages/PasswordOtpReset';
 import AdminSignup from './pages/admin/AdminSignup';
 import AdminUserManagement from './pages/admin/AdminUserManagement';
 import RequireAuth from './middleware/RequireAuth';
@@ -29,6 +31,8 @@ const App: React.FC = () => {
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route path="/forgot-password" element={<PasswordResetRequest />} />
         <Route path="/reset-password" element={<PasswordReset />} />
+        <Route path="/forgot-password-otp" element={<PasswordOtpRequest />} />
+        <Route path="/reset-password-otp" element={<PasswordOtpReset />} />
         <Route path="/admin/signup" element={<AdminSignup />} />
 
         {/* Student Routes */}

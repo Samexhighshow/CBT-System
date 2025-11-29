@@ -1,5 +1,6 @@
 import React, { useState, FormEvent, ChangeEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import axios from 'axios';
 import { Button, Input, Card, Alert } from '../components';
 
 interface LoginFormData {
@@ -28,20 +29,14 @@ const AdminLogin: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    
     try {
-      // Temporary: simulate login with admin@cbtsystem.local
-      setTimeout(() => {
-        localStorage.setItem('token', 'admin_token_' + Date.now());
-        localStorage.setItem('user', JSON.stringify({ 
-          name: 'Administrator',
-          email: formData.email,
-          role: 'admin'
-        }));
-        navigate('/admin');
-      }, 1000);
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, formData);
+      const { token, user } = res.data;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      navigate('/admin');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      setError(err?.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -56,12 +51,10 @@ const AdminLogin: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Portal</h1>
-          <p className="text-gray-600">Secure access for administrators</p>
+          <h1 className="text-3xl font-bold text-gray-100 mb-2">Admin Portal</h1>
+          <p className="text-gray-300">Secure access for administrators</p>
         </div>
-
         {error && <Alert type="error" message={error} onClose={() => setError('')} />}
-        
         <form onSubmit={handleSubmit} className="space-y-6 mt-6">
           <Input
             label="Email Address"
@@ -69,11 +62,10 @@ const AdminLogin: React.FC = () => {
             name="email"
             value={formData.email}
             onChange={handleChange}
-            placeholder="admin@cbtsystem.local"
+            placeholder="admin@example.com"
             required
             fullWidth
           />
-
           <Input
             label="Password"
             type="password"
@@ -84,19 +76,14 @@ const AdminLogin: React.FC = () => {
             required
             fullWidth
           />
-
           <Button type="submit" fullWidth loading={loading}>
             {loading ? 'Verifying...' : 'Login as Admin'}
           </Button>
         </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-xs text-gray-500 mb-2">
-            Default: admin@cbtsystem.local / admin123456
-          </p>
-          <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">
-            ← Back to Home
-          </Link>
+        <div className="mt-6 text-center space-y-2">
+          <p className="text-xs text-gray-400">Need an account? <Link to="/admin/signup" className="text-blue-400 hover:text-blue-300">Apply for admin access</Link></p>
+          <p className="text-xs text-gray-400">Forgot password? <Link to="/forgot-password-otp" className="text-blue-400 hover:text-blue-300">Use OTP reset</Link></p>
+          <Link to="/" className="text-sm text-gray-300 hover:text-gray-100 block">← Back to Home</Link>
         </div>
       </Card>
     </div>

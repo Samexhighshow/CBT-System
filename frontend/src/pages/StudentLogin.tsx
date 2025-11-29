@@ -1,5 +1,6 @@
 import React, { useState, FormEvent, ChangeEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import axios from 'axios';
 import { Button, Input, Card, Alert } from '../components';
 
 interface LoginFormData {
@@ -28,20 +29,14 @@ const StudentLogin: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    
     try {
-      // Temporary: simulate login
-      setTimeout(() => {
-        localStorage.setItem('token', 'student_token_' + Date.now());
-        localStorage.setItem('user', JSON.stringify({ 
-          name: formData.email.split('@')[0],
-          email: formData.email,
-          role: 'student'
-        }));
-        navigate('/dashboard');
-      }, 1000);
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, formData);
+      const { token, user } = res.data;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      navigate('/student');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      setError(err?.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -54,9 +49,7 @@ const StudentLogin: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Student Login</h1>
           <p className="text-gray-600">Access your exam dashboard</p>
         </div>
-
         {error && <Alert type="error" message={error} onClose={() => setError('')} />}
-        
         <form onSubmit={handleSubmit} className="space-y-6 mt-6">
           <Input
             label="Email Address"
@@ -68,7 +61,6 @@ const StudentLogin: React.FC = () => {
             required
             fullWidth
           />
-
           <Input
             label="Password"
             type="password"
@@ -79,12 +71,10 @@ const StudentLogin: React.FC = () => {
             required
             fullWidth
           />
-
           <Button type="submit" fullWidth loading={loading}>
             {loading ? 'Logging in...' : 'Login'}
           </Button>
         </form>
-
         <div className="mt-6 text-center space-y-2">
           <p className="text-sm text-gray-600">
             Don't have an account?{' '}
@@ -92,6 +82,7 @@ const StudentLogin: React.FC = () => {
               Register here
             </Link>
           </p>
+          <p className="text-xs text-gray-500">Forgot password? <Link to="/forgot-password-otp" className="text-blue-600 hover:text-blue-700">Use OTP reset</Link></p>
           <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">
             ← Back to Home
           </Link>
