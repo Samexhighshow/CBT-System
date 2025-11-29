@@ -47,7 +47,9 @@ const StudentManagement: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to fetch students:', error);
-      showError('Failed to load students. Please try again.');
+      // Don't show error, just show empty state
+      setStudents([]);
+      calculateStats([]);
     } finally {
       setLoading(false);
     }

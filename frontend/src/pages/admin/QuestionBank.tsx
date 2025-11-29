@@ -45,7 +45,9 @@ const QuestionBank: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to fetch questions:', error);
-      showError('Failed to load questions. Please try again.');
+      // Don't show error, just show empty state
+      setQuestions([]);
+      calculateStats([]);
     } finally {
       setLoading(false);
     }

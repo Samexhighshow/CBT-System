@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 import { showSuccess, showError } from '../../utils/alerts';
 
 interface Setting {
@@ -13,14 +13,12 @@ interface Setting {
 const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
-  const token = localStorage.getItem('token');
+  // Token is injected via axios interceptor in `api` using `auth_token` key
 
   const fetchSettings = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/settings`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get('/settings');
       setSettings(res.data);
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to load settings');
@@ -33,9 +31,7 @@ const AdminSettings: React.FC = () => {
 
   const updateSetting = async (key: string, value: any) => {
     try {
-      await axios.put(`${process.env.REACT_APP_API_URL}/settings/${key}`, { value }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.put(`/settings/${key}`, { value });
       showSuccess('Setting updated');
       fetchSettings();
     } catch (err: any) {
@@ -73,6 +69,7 @@ const AdminSettings: React.FC = () => {
                 defaultValue={getValue('exam_window_start') || '08:00'}
                 onBlur={e => updateSetting('exam_window_start', e.target.value)}
                 className="border rounded px-2 py-1"
+                aria-label="Exam window start time"
               />
             </div>
             <div className="flex items-center gap-2 mt-2">
@@ -82,6 +79,7 @@ const AdminSettings: React.FC = () => {
                 defaultValue={getValue('exam_window_end') || '17:00'}
                 onBlur={e => updateSetting('exam_window_end', e.target.value)}
                 className="border rounded px-2 py-1"
+                aria-label="Exam window end time"
               />
             </div>
           </div>
@@ -104,6 +102,7 @@ const AdminSettings: React.FC = () => {
                 min={5}
                 onBlur={e => updateSetting('auto_logout_minutes', e.target.value)}
                 className="border rounded px-2 py-1 w-32 ml-2"
+                aria-label="Auto logout in minutes"
               />
             </div>
           </div>

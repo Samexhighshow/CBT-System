@@ -49,7 +49,9 @@ const ExamManagement: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to fetch exams:', error);
-      showError('Failed to load exams. Please try again.');
+      // Don't show error, just show empty state
+      setExams([]);
+      calculateStats([]);
     } finally {
       setLoading(false);
     }
