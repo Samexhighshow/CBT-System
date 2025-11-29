@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import Modal from './Modal';
-import AdminSettings from '../pages/admin/AdminSettings';
-import Profile from '../pages/Profile';
+const AdminSettings = React.lazy(() => import('../pages/admin/AdminSettings'));
+const Profile = React.lazy(() => import('../pages/Profile'));
 
 interface AvatarDropdownProps {
   showSettings?: boolean; // Only show for Main Admin
@@ -133,13 +133,17 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
 
       {/* Profile Modal */}
       <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} title="Profile Settings" size="2xl">
-        <Profile asModal />
+        <React.Suspense fallback={<div className="p-4">Loading...</div>}>
+          <Profile asModal />
+        </React.Suspense>
       </Modal>
 
       {/* Settings Modal (Main Admin only) */}
       {showSettings && (
         <Modal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} title="System Settings" size="2xl">
-          <AdminSettings />
+          <React.Suspense fallback={<div className="p-4">Loading...</div>}>
+            <AdminSettings />
+          </React.Suspense>
         </Modal>
       )}
     </div>

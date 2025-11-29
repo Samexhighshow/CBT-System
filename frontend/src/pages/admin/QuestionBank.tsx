@@ -23,6 +23,8 @@ interface QuestionStats {
 const QuestionBank: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState<QuestionStats>({
     total_questions: 0,
     multiple_choice: 0,
@@ -30,6 +32,15 @@ const QuestionBank: React.FC = () => {
     essay: 0,
   });
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editing, setEditing] = useState<Question | null>(null);
+  const [form, setForm] = useState({
+    question_text: '',
+    question_type: 'multiple_choice',
+    marks: 1,
+    subject: '',
+    class_level: 'JSS1',
+  });
 
   useEffect(() => {
     loadData();
@@ -75,6 +86,40 @@ const QuestionBank: React.FC = () => {
     }
   };
 
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ question_text: '', question_type: 'multiple_choice', marks: 1, subject: '', class_level: 'JSS1' });
+    setShowCreateModal(true);
+  };
+
+  const openEdit = (q: Question) => {
+    setEditing(q);
+    setForm({
+      question_text: q.question_text,
+      question_type: q.question_type,
+      marks: q.marks,
+      subject: q.subject,
+      class_level: q.class_level,
+    });
+    setShowCreateModal(true);
+  };
+
+  const saveQuestion = async () => {
+    try {
+      if (editing) {
+        await api.put(`/questions/${editing.id}`, form);
+        showSuccess('Question updated');
+      } else {
+        await api.post('/questions', form);
+        showSuccess('Question created');
+      }
+      setShowCreateModal(false);
+      loadData();
+    } catch (error) {
+      showError('Failed to save question');
+    }
+  };
+
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -112,17 +157,30 @@ const QuestionBank: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Question Bank</h1>
-          <p className="text-gray-600 mt-2">Manage your exam questions</p>
+          <p className="text-gray-600 mt-2">Manage exam questions</p>
         </div>
-        <div className="flex space-x-3">
-          <Button onClick={() => navigate('/admin/questions/upload')} variant="secondary">
-            📤 Upload Questions
+        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <i className='bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400'></i>
+            <input
+              type="text"
+              placeholder="Search questions..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Search questions"
+            />
+          </div>
+          <Button onClick={() => navigate('/admin/questions/upload')} variant="secondary" className="flex items-center gap-2">
+            <i className='bx bx-upload'></i>
+            <span>Upload Questions</span>
           </Button>
-          <Button onClick={() => navigate('/admin/questions/create')}>
-            + Create Question
+          <Button onClick={openCreate} className="flex items-center gap-2">
+            <i className='bx bx-plus'></i>
+            <span>Create Question</span>
           </Button>
         </div>
       </div>
@@ -151,23 +209,32 @@ const QuestionBank: React.FC = () => {
       <Card>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Upload Questions</h2>
-          <Button onClick={handleExport} variant="secondary">📥 Export CSV</Button>
+          <Button onClick={handleExport} variant="secondary" className="flex items-center gap-2">
+            <i className='bx bx-download'></i>
+            <span>Export CSV</span>
+          </Button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 cursor-pointer transition">
             <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-            <div className="text-4xl mb-3">📄</div>
+            <div className="text-4xl mb-3">
+              <i className='bx bx-file text-4xl'></i>
+            </div>
             <h3 className="font-semibold mb-2">Upload CSV File</h3>
             <p className="text-sm text-gray-600">Bulk upload questions from CSV</p>
           </label>
           <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 cursor-pointer transition">
             <input type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
-            <div className="text-4xl mb-3">📊</div>
+            <div className="text-4xl mb-3">
+              <i className='bx bx-spreadsheet text-4xl'></i>
+            </div>
             <h3 className="font-semibold mb-2">Upload Excel File</h3>
             <p className="text-sm text-gray-600">Import questions from Excel</p>
           </label>
           <div onClick={() => navigate('/admin/questions/create')} className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-500 cursor-pointer transition">
-            <div className="text-4xl mb-3">✏️</div>
+            <div className="text-4xl mb-3">
+              <i className='bx bx-pencil text-4xl'></i>
+            </div>
             <h3 className="font-semibold mb-2">Manual Entry</h3>
             <p className="text-sm text-gray-600">Add questions one by one</p>
           </div>
@@ -209,7 +276,7 @@ const QuestionBank: React.FC = () => {
                     <td className="px-6 py-4 text-sm text-gray-600">{question.subject}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{question.marks}</td>
                     <td className="px-6 py-4 text-sm">
-                      <button onClick={() => navigate(`/admin/questions/${question.id}`)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                      <button onClick={() => openEdit(question)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
                       <button onClick={() => handleDelete(question.id)} className="text-red-600 hover:text-red-800">Delete</button>
                     </td>
                   </tr>
@@ -219,6 +286,55 @@ const QuestionBank: React.FC = () => {
           </table>
         </div>
       </Card>
+
+      {/* Create/Edit Modal */}
+      <div className={`fixed inset-0 ${showCreateModal ? 'flex' : 'hidden'} items-center justify-center z-50`}>
+        <div className="absolute inset-0 bg-black/40" onClick={() => setShowCreateModal(false)} />
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h3 className="text-lg font-semibold">{editing ? 'Edit Question' : 'Create Question'}</h3>
+            <button aria-label="Close" className="text-gray-500 hover:text-gray-700" onClick={() => setShowCreateModal(false)}>
+              <i className='bx bx-x text-2xl'></i>
+            </button>
+          </div>
+          <div className="p-4 space-y-3">
+            <div>
+              <label className="block text-sm font-medium">Question Text</label>
+              <textarea className="mt-1 w-full border rounded px-3 py-2" rows={4} value={form.question_text} onChange={e => setForm({ ...form, question_text: e.target.value })} aria-label="Question text" placeholder="Enter question text" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium">Type</label>
+                <select className="mt-1 w-full border rounded px-3 py-2" value={form.question_type} onChange={e => setForm({ ...form, question_type: e.target.value })} aria-label="Question type">
+                  <option value="multiple_choice">Multiple Choice</option>
+                  <option value="true_false">True/False</option>
+                  <option value="essay">Essay</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Marks</label>
+                <input type="number" min={1} className="mt-1 w-full border rounded px-3 py-2" value={form.marks} onChange={e => setForm({ ...form, marks: Number(e.target.value) })} aria-label="Question marks" placeholder="Marks" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium">Subject</label>
+                <input className="mt-1 w-full border rounded px-3 py-2" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} aria-label="Subject" placeholder="Subject" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Class Level</label>
+                <select className="mt-1 w-full border rounded px-3 py-2" value={form.class_level} onChange={e => setForm({ ...form, class_level: e.target.value })} aria-label="Class level">
+                  {['JSS1','JSS2','JSS3','SSS1','SSS2','SSS3'].map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="border-t px-4 py-3 flex justify-end gap-2">
+            <button className="px-4 py-2 border rounded" onClick={() => setShowCreateModal(false)}>Cancel</button>
+            <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={saveQuestion}>Save</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

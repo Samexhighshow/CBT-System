@@ -133,7 +133,7 @@ const AdminSettings: React.FC = () => {
               Enable debug logging
             </label>
           </div>
-        </div>
+
           <div className="border rounded p-4 md:col-span-2">
             <h2 className="font-semibold mb-2">Appearance</h2>
             <label className="text-sm mr-2">Theme</label>
@@ -159,6 +159,7 @@ const AdminSettings: React.FC = () => {
             />
             <p className="text-xs text-gray-500 mt-1">Example: {`{"A":80,"B":70,"C":60,"D":50,"F":0}`}</p>
           </div>
+        </div>
       )}
     </div>
   );

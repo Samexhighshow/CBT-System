@@ -71,6 +71,7 @@ const RolesManagement: React.FC = () => {
                         className="border rounded px-2 py-1"
                         onChange={(e) => assignRole(u.id, e.target.value)}
                         defaultValue=""
+                        aria-label={`Assign role to ${u.name}`}
                       >
                         <option value="" disabled>Assign role</option>
                         {roles.map(r => (

@@ -147,6 +147,7 @@ const SubjectSelection: React.FC = () => {
                       type="checkbox"
                       checked={true}
                       readOnly
+                      aria-label={`${subject.name} (compulsory)`}
                       className="w-5 h-5 text-blue-600 rounded cursor-not-allowed"
                     />
                   </div>
@@ -187,6 +188,7 @@ const SubjectSelection: React.FC = () => {
                           type="checkbox"
                           checked={isSelected}
                           readOnly
+                          aria-label={`${subject.name} trade subject`}
                           className="w-5 h-5 text-green-600 rounded pointer-events-none"
                         />
                       </div>
@@ -229,6 +231,7 @@ const SubjectSelection: React.FC = () => {
                           type="checkbox"
                           checked={isSelected}
                           readOnly
+                          aria-label={`${subject.name} optional subject`}
                           className="w-5 h-5 text-purple-600 rounded pointer-events-none"
                         />
                       </div>

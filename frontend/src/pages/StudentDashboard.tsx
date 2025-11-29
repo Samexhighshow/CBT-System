@@ -6,10 +6,13 @@ import StudentOverview from './student/StudentOverview';
 import AvailableExams from './student/AvailableExams';
 import MyResults from './student/MyResults';
 import FooterMinimal from '../components/FooterMinimal';
+import Modal from '../components/Modal';
+const Profile = React.lazy(() => import('./Profile'));
 
 const StudentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -48,7 +51,7 @@ const StudentDashboard: React.FC = () => {
                   Results
                 </button>
                 <button
-                  onClick={() => navigate('/student/profile')}
+                  onClick={() => setShowProfileModal(true)}
                   className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
                 >
                   Profile
@@ -74,6 +77,13 @@ const StudentDashboard: React.FC = () => {
       <div className="mt-auto">
         <FooterMinimal />
       </div>
+
+      {/* Profile Modal */}
+      <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} title="Profile Settings" size="2xl">
+        <React.Suspense fallback={<div className="p-4">Loading...</div>}>
+          <Profile asModal />
+        </React.Suspense>
+      </Modal>
     </div>
   );
 };

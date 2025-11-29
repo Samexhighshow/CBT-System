@@ -51,6 +51,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
             accept="image/*"
             onChange={(e) => setProfilePicture(e.target.files?.[0] || null)}
             className="mt-1 w-full border rounded px-3 py-2"
+            aria-label="Upload profile picture"
           />
         </div>
       </div>

@@ -25,17 +25,20 @@ const Modal: React.FC<ModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const sizeClasses: Record<ModalSize, string> = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl',
-    2xl: 'max-w-4xl'
+  const getSizeClass = (s: ModalSize): string => {
+    switch (s) {
+      case 'sm': return 'max-w-sm';
+      case 'md': return 'max-w-md';
+      case 'lg': return 'max-w-lg';
+      case 'xl': return 'max-w-xl';
+      case '2xl': return 'max-w-4xl';
+      default: return 'max-w-md';
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className={`bg-white rounded-lg shadow-xl ${sizeClasses[size]} w-full mx-4`}>
+      <div className={`bg-white rounded-lg shadow-xl ${getSizeClass(size)} w-full mx-4`}>
         {title && (
           <div className="border-b px-6 py-4">
             <h2 className="text-lg font-bold text-gray-900">{title}</h2>

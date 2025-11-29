@@ -21,6 +21,10 @@ const SubjectManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
+  const [showDeptModal, setShowDeptModal] = useState(false);
+  const [subjectForm, setSubjectForm] = useState({ name: '', code: '', description: '' });
+  const [deptForm, setDeptForm] = useState({ name: '', code: '', description: '' });
 
   useEffect(() => {
     loadData();
@@ -78,8 +82,14 @@ const SubjectManagement: React.FC = () => {
           <p className="text-gray-600 mt-2">Manage academic structure</p>
         </div>
         <div className="flex space-x-3">
-          <Button variant="secondary">+ Add Department</Button>
-          <Button>+ Add Subject</Button>
+          <Button variant="secondary" onClick={() => setShowDeptModal(true)} className="flex items-center gap-2">
+            <i className='bx bx-plus-circle'></i>
+            <span>Add Department</span>
+          </Button>
+          <Button onClick={() => setShowSubjectModal(true)} className="flex items-center gap-2">
+            <i className='bx bx-plus-circle'></i>
+            <span>Add Subject</span>
+          </Button>
         </div>
       </div>
 
@@ -140,6 +150,86 @@ const SubjectManagement: React.FC = () => {
             </div>
           )}
         </Card>
+      </div>
+
+      {/* Add Subject Modal */}
+      <div className={`fixed inset-0 ${showSubjectModal ? 'flex' : 'hidden'} items-center justify-center z-50`}>
+        <div className="absolute inset-0 bg-black/40" onClick={() => setShowSubjectModal(false)} />
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h3 className="text-lg font-semibold">Add Subject</h3>
+            <button aria-label="Close" className="text-gray-500 hover:text-gray-700" onClick={() => setShowSubjectModal(false)}>
+              <i className='bx bx-x text-2xl'></i>
+            </button>
+          </div>
+          <div className="p-4 space-y-3">
+            <div>
+              <label className="block text-sm font-medium">Name</label>
+              <input className="mt-1 w-full border rounded px-3 py-2" value={subjectForm.name} onChange={e => setSubjectForm({...subjectForm, name: e.target.value})} aria-label="Subject name" placeholder="Subject name" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Code</label>
+              <input className="mt-1 w-full border rounded px-3 py-2" value={subjectForm.code} onChange={e => setSubjectForm({...subjectForm, code: e.target.value})} aria-label="Subject code" placeholder="Subject code" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Description</label>
+              <textarea className="mt-1 w-full border rounded px-3 py-2" rows={3} value={subjectForm.description} onChange={e => setSubjectForm({...subjectForm, description: e.target.value})} aria-label="Subject description" placeholder="Description" />
+            </div>
+          </div>
+          <div className="border-t px-4 py-3 flex justify-end gap-2">
+            <button className="px-4 py-2 border rounded" onClick={() => setShowSubjectModal(false)}>Cancel</button>
+            <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={async () => {
+              try {
+                await api.post('/subjects', subjectForm);
+                showSuccess('Subject added');
+                setShowSubjectModal(false);
+                loadData();
+              } catch (error) {
+                showError('Failed to add subject');
+              }
+            }}>Save</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Department Modal */}
+      <div className={`fixed inset-0 ${showDeptModal ? 'flex' : 'hidden'} items-center justify-center z-50`}>
+        <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeptModal(false)} />
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h3 className="text-lg font-semibold">Add Department</h3>
+            <button aria-label="Close" className="text-gray-500 hover:text-gray-700" onClick={() => setShowDeptModal(false)}>
+              <i className='bx bx-x text-2xl'></i>
+            </button>
+          </div>
+          <div className="p-4 space-y-3">
+            <div>
+              <label className="block text-sm font-medium">Name</label>
+              <input className="mt-1 w-full border rounded px-3 py-2" value={deptForm.name} onChange={e => setDeptForm({...deptForm, name: e.target.value})} aria-label="Department name" placeholder="Department name" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Code</label>
+              <input className="mt-1 w-full border rounded px-3 py-2" value={deptForm.code} onChange={e => setDeptForm({...deptForm, code: e.target.value})} aria-label="Department code" placeholder="Department code" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Description</label>
+              <textarea className="mt-1 w-full border rounded px-3 py-2" rows={3} value={deptForm.description} onChange={e => setDeptForm({...deptForm, description: e.target.value})} aria-label="Department description" placeholder="Description" />
+            </div>
+          </div>
+          <div className="border-t px-4 py-3 flex justify-end gap-2">
+            <button className="px-4 py-2 border rounded" onClick={() => setShowDeptModal(false)}>Cancel</button>
+            <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={async () => {
+              try {
+                await api.post('/departments', deptForm);
+                showSuccess('Department added');
+                setShowDeptModal(false);
+                loadData();
+              } catch (error) {
+                showError('Failed to add department');
+              }
+            }}>Save</button>
+          </div>
+        </div>
       </div>
     </div>
   );
