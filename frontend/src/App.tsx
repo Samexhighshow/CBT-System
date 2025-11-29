@@ -37,7 +37,7 @@ const App: React.FC = () => {
         <Route path="/forgot-password-otp" element={<PasswordOtpRequest />} />
         <Route path="/reset-password-otp" element={<PasswordOtpReset />} />
         <Route path="/admin/signup" element={<AdminSignup />} />
-
+        
         {/* Profile Route (All authenticated users) */}
         <Route
           path="/profile"
@@ -47,7 +47,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-
+        
         {/* Subject Selection (Students after registration) */}
         <Route
           path="/select-subjects"
@@ -57,8 +57,8 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-
-        {/* Student Routes */
+        
+        {/* Student Routes */}
         <Route
           path="/student/*"
           element={
@@ -77,7 +77,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-
+        
         {/* Admin Routes */}
         <Route
           path="/admin/*"
@@ -89,7 +89,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-
+        
         <Route
           path="/admin/users"
           element={
@@ -100,7 +100,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-
+        
         <Route
           path="/admin/settings"
           element={
@@ -111,7 +111,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-
+        
         {/* Default Route */}
         <Route path="*" element={<LandingPage />} />
       </Routes>

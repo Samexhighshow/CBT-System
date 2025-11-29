@@ -4,6 +4,9 @@ export interface User {
   name: string;
   email: string;
   email_verified_at?: string;
+  profile_picture?: string;
+  two_factor_enabled: boolean;
+  two_factor_type?: 'google2fa' | 'email';
   created_at: string;
   updated_at: string;
   roles?: Role[];
