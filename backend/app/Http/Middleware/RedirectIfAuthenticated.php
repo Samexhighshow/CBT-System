@@ -3,7 +3,11 @@
 namespace App\Http\Middleware;
 
 use App\Http\Middleware\RedirectIfAuthenticated as Middleware;
+use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use App\Providers\RouteServiceProvider;
+use Symfony\Component\HttpFoundation\Response;
 
 class RedirectIfAuthenticated extends Middleware
 {

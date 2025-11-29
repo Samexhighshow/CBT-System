@@ -10,6 +10,7 @@ import SubjectManagement from './admin/SubjectManagement';
 import ResultsAnalytics from './admin/ResultsAnalytics';
 import FooterMinimal from '../components/FooterMinimal';
 
+// Admin Dashboard with nested routing
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();

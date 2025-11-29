@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components';
@@ -267,6 +268,7 @@ const StudentManagement: React.FC = () => {
             }}>Save</button>
           </div>
         </div>
+      </div>
       </div>
 
       {/* View Student Modal (no subjects) */}

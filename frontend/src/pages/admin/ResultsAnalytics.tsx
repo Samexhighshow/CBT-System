@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../../components';
 import { api } from '../../services/api';
-import { showError } from '../../utils/alerts';
+// import { showError } from '../../utils/alerts';
 
 interface AnalyticsData {
   average_score: number;

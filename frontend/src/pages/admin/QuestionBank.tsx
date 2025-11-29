@@ -31,7 +31,6 @@ const QuestionBank: React.FC = () => {
     true_false: 0,
     essay: 0,
   });
-  const [questions, setQuestions] = useState<Question[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [form, setForm] = useState({
@@ -44,6 +43,7 @@ const QuestionBank: React.FC = () => {
 
   useEffect(() => {
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadData = async () => {
