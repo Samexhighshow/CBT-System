@@ -10,10 +10,12 @@ const RequireRole: React.FC<Props> = ({ roles, children }) => {
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
 
-  const userRole = user?.role || user?.roles?.[0] || null;
+  // Handle both role object array and simple role string
+  const userRoles = user?.roles?.map((r: any) => r.name || r) || [];
+  const hasRole = userRoles.some((role: string) => roles.includes(role));
 
-  if (!userRole || !roles.includes(userRole)) {
-    return <Navigate to={userRole ? '/student' : '/'} replace />;
+  if (!hasRole) {
+    return <Navigate to={userRoles.length > 0 ? '/student' : '/'} replace />;
   }
 
   return <>{children}</>;

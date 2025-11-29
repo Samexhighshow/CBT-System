@@ -37,7 +37,9 @@ const SubjectManagement: React.FC = () => {
       setDepartments(deptRes.data || []);
     } catch (error: any) {
       console.error('Failed to fetch data:', error);
-      showError('Failed to load subjects and departments.');
+      // Don't show error, just show empty state
+      setSubjects([]);
+      setDepartments([]);
     } finally {
       setLoading(false);
     }
@@ -85,9 +87,15 @@ const SubjectManagement: React.FC = () => {
         <Card>
           <h2 className="text-xl font-semibold mb-4">Departments ({departments.length})</h2>
           {loading ? (
-            <p className="text-gray-500">Loading departments...</p>
+            <div className="flex items-center justify-center py-8">
+              <i className='bx bx-loader-alt bx-spin text-3xl text-gray-400'></i>
+            </div>
           ) : departments.length === 0 ? (
-            <p className="text-gray-500">No departments yet.</p>
+            <div className="text-center py-8">
+              <i className='bx bx-folder-open text-5xl text-gray-300 mb-3'></i>
+              <p className="text-gray-500">No departments available</p>
+              <p className="text-gray-400 text-sm mt-1">Click "Add Department" to create one</p>
+            </div>
           ) : (
             <div className="space-y-3">
               {departments.map((dept) => (
@@ -107,9 +115,15 @@ const SubjectManagement: React.FC = () => {
         <Card>
           <h2 className="text-xl font-semibold mb-4">Subjects ({subjects.length})</h2>
           {loading ? (
-            <p className="text-gray-500">Loading subjects...</p>
+            <div className="flex items-center justify-center py-8">
+              <i className='bx bx-loader-alt bx-spin text-3xl text-gray-400'></i>
+            </div>
           ) : subjects.length === 0 ? (
-            <p className="text-gray-500">No subjects yet.</p>
+            <div className="text-center py-8">
+              <i className='bx bx-book text-5xl text-gray-300 mb-3'></i>
+              <p className="text-gray-500">No subjects available</p>
+              <p className="text-gray-400 text-sm mt-1">Click "Add Subject" to create one</p>
+            </div>
           ) : (
             <div className="space-y-3">
               {subjects.map((subject) => (

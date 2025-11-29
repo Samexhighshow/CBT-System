@@ -2,6 +2,7 @@ import React, { useState, FormEvent, ChangeEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Button, Input, Card, Alert } from '../components';
+import useAuthStore from '../store/authStore';
 
 interface LoginFormData {
   email: string;
@@ -10,6 +11,7 @@ interface LoginFormData {
 
 const StudentLogin: React.FC = () => {
   const navigate = useNavigate();
+  const { login } = useAuthStore();
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: ''
@@ -32,8 +34,7 @@ const StudentLogin: React.FC = () => {
     try {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, formData);
       const { token, user } = res.data;
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
+      login(user, token);
       
       // Check if student needs to select subjects
       const subjectsSelected = localStorage.getItem('subjectsSelected');

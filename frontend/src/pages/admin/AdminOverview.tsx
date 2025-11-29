@@ -50,8 +50,7 @@ const AdminOverview: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to fetch admin stats:', error);
-      showError('Failed to load dashboard statistics. Using sample data.');
-      // Fallback to sample data
+      // Don't show error dialog, just use default empty stats
       setStats({
         total_students: 0,
         active_students: 0,
