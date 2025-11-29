@@ -77,6 +77,8 @@ Route::prefix('subjects')->group(function () {
     Route::post('/', [SubjectController::class, 'store']);
     Route::put('/{id}', [SubjectController::class, 'update']);
     Route::delete('/{id}', [SubjectController::class, 'destroy']);
+    Route::post('/for-student', [SubjectController::class, 'getSubjectsForStudent']);
+    Route::post('/student/save', [SubjectController::class, 'saveStudentSubjects']);
 });
 
 // Departments

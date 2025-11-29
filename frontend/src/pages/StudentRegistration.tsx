@@ -1,6 +1,10 @@
-import React, { useState, FormEvent, ChangeEvent } from 'react';
+import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button, Input, Card, Alert } from '../components';
+import { showSuccess, showError } from '../utils/alerts';
+import axios from 'axios';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
 
 type ClassLevel = 'JSS1' | 'JSS2' | 'JSS3' | 'SSS1' | 'SSS2' | 'SSS3';
 
@@ -34,6 +38,39 @@ const StudentRegistration: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [registrationClosed, setRegistrationClosed] = useState(false);
+
+  // Check if department should be shown (only for SSS classes)
+  const showDepartment = formData.class_level.startsWith('SSS');
+
+  useEffect(() => {
+    fetchDepartments();
+    checkRegistrationStatus();
+  }, []);
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/departments`);
+      setDepartments(response.data.data || response.data);
+    } catch (error) {
+      console.error('Failed to fetch departments');
+    }
+  };
+
+  const checkRegistrationStatus = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/settings`);
+      const settings = response.data;
+      const regOpen = settings.find((s: any) => s.key === 'student_registration_open');
+      if (regOpen && !regOpen.value) {
+        setRegistrationClosed(true);
+        showError('Student registration is currently closed by the administrator');
+      }
+    } catch (error) {
+      // Settings endpoint might be restricted, ignore error
+    }
+  };
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -45,6 +82,12 @@ const StudentRegistration: React.FC = () => {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (registrationClosed) {
+      showError('Student registration is currently closed');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccess('');
@@ -57,13 +100,37 @@ const StudentRegistration: React.FC = () => {
     }
 
     try {
-      // Temporary: simulate registration
-      setTimeout(() => {
-        setSuccess('Registration successful! Redirecting to login...');
-        setTimeout(() => navigate('/login'), 2000);
-      }, 1000);
+      const payload = {
+        first_name: formData.name.split(' ')[0],
+        last_name: formData.name.split(' ').slice(1).join(' ') || formData.name.split(' ')[0],
+        email: formData.email,
+        password: formData.password,
+        registration_number: formData.registration_number,
+        class_level: formData.class_level,
+        department_id: showDepartment ? formData.department_id : null,
+        phone_number: formData.phone,
+        address: formData.address,
+        date_of_birth: '2000-01-01', // Default, should be added to form
+        gender: 'male' // Default, should be added to form
+      };
+
+      const response = await axios.post(`${API_URL}/students`, payload);
+      
+      // Store student data for subject selection
+      localStorage.setItem('studentData', JSON.stringify({
+        ...response.data.student,
+        class_level: formData.class_level,
+        department_id: formData.department_id
+      }));
+
+      await showSuccess('Registration successful! Please check your email for verification.');
+      
+      // Redirect to login
+      setTimeout(() => navigate('/login'), 1500);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      const errorMsg = err.response?.data?.message || 'Registration failed. Please try again.';
+      setError(errorMsg);
+      showError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -149,6 +216,7 @@ const StudentRegistration: React.FC = () => {
                   value={formData.class_level}
                   onChange={handleChange}
                   required
+                  title="Select your class level"
                   className="px-4 py-2 border rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300 focus:border-blue-500"
                 >
                   <option value="JSS1">JSS 1</option>
@@ -160,20 +228,26 @@ const StudentRegistration: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex flex-col gap-2 w-full">
-                <label className="text-sm font-medium text-gray-700">Department *</label>
-                <select
-                  name="department_id"
-                  value={formData.department_id}
-                  onChange={handleChange}
-                  required
-                  className="px-4 py-2 border rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300 focus:border-blue-500"
-                >
-                  <option value="1">Science</option>
-                  <option value="2">Commercial</option>
-                  <option value="3">Arts</option>
-                </select>
-              </div>
+              {showDepartment && (
+                <div className="flex flex-col gap-2 w-full">
+                  <label className="text-sm font-medium text-gray-700">Department *</label>
+                  <select
+                    name="department_id"
+                    value={formData.department_id}
+                    onChange={handleChange}
+                    required
+                    title="Select your department"
+                    className="px-4 py-2 border rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300 focus:border-blue-500"
+                  >
+                    <option value="">Select Department</option>
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">

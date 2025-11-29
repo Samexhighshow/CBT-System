@@ -64,11 +64,26 @@ const ExamPortal: React.FC = () => {
       setExam(examData);
       setTimeRemaining(examData.duration_minutes * 60);
       setLoading(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      showError('Failed to load exam.');
+      const errorMsg = e?.response?.data?.message || 'Failed to load exam.';
+      
+      // Show specific error messages for restrictions
+      if (errorMsg.includes('daily window') || errorMsg.includes('restricted to')) {
+        await showError(errorMsg + ' Please try again during the allowed time.');
+      } else if (errorMsg.includes('Maximum allowed attempts')) {
+        await showError(errorMsg);
+      } else if (errorMsg.includes('not within the scheduled')) {
+        await showError('This exam is not currently available. Please check the exam schedule.');
+      } else {
+        await showError(errorMsg);
+      }
+      
+      setLoading(false);
+      // Redirect back to student dashboard
+      setTimeout(() => navigate('/student'), 3000);
     }
-  }, [examId]);
+  }, [examId, navigate]);
 
   const handleSubmit = React.useCallback(() => {
     // Sync local answers then submit

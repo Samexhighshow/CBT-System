@@ -34,7 +34,15 @@ const StudentLogin: React.FC = () => {
       const { token, user } = res.data;
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
-      navigate('/student');
+      
+      // Check if student needs to select subjects
+      const subjectsSelected = localStorage.getItem('subjectsSelected');
+      if (!subjectsSelected && user.roles?.some((r: any) => r.name === 'Student')) {
+        // Redirect to subject selection
+        navigate('/select-subjects');
+      } else {
+        navigate('/student');
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {

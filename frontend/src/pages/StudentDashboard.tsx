@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Button } from '../components';
+import { AvatarDropdown } from '../components';
+import useAuthStore from '../store/authStore';
 import StudentOverview from './student/StudentOverview';
 import AvailableExams from './student/AvailableExams';
 import MyResults from './student/MyResults';
@@ -8,22 +9,14 @@ import FooterMinimal from '../components/FooterMinimal';
 
 const StudentDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
+  const { user } = useAuthStore();
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
+    if (!user) {
       navigate('/login');
       return;
     }
-    setUser(JSON.parse(userData));
-  }, [navigate]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('auth_token');
-    navigate('/login');
-  };
+  }, [navigate, user]);
 
   if (!user) return null;
 
@@ -62,13 +55,8 @@ const StudentDashboard: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">
-                {user.name || user.email}
-              </span>
-              <Button onClick={handleLogout} variant="secondary" size="sm">
-                Logout
-              </Button>
+            <div className="flex items-center">
+              <AvatarDropdown showSettings={false} />
             </div>
           </div>
         </div>

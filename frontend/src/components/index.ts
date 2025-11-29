@@ -5,3 +5,4 @@ export { default as Timer } from './Timer';
 export { default as Card } from './Card';
 export { default as Alert } from './Alert';
 export { default as Loading } from './Loading';
+export { default as AvatarDropdown } from './AvatarDropdown';

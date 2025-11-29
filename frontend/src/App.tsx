@@ -17,6 +17,8 @@ import PasswordOtpReset from './pages/PasswordOtpReset';
 import AdminSignup from './pages/admin/AdminSignup';
 import AdminUserManagement from './pages/admin/AdminUserManagement';
 import AdminSettings from './pages/admin/AdminSettings';
+import Profile from './pages/Profile';
+import SubjectSelection from './pages/SubjectSelection';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
 
@@ -36,7 +38,27 @@ const App: React.FC = () => {
         <Route path="/reset-password-otp" element={<PasswordOtpReset />} />
         <Route path="/admin/signup" element={<AdminSignup />} />
 
-        {/* Student Routes */}
+        {/* Profile Route (All authenticated users) */}
+        <Route
+          path="/profile"
+          element={
+            <RequireAuth>
+              <Profile />
+            </RequireAuth>
+          }
+        />
+
+        {/* Subject Selection (Students after registration) */}
+        <Route
+          path="/select-subjects"
+          element={
+            <RequireAuth>
+              <SubjectSelection />
+            </RequireAuth>
+          }
+        />
+
+        {/* Student Routes */
         <Route
           path="/student/*"
           element={

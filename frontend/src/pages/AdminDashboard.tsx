@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import { Button } from '../components';
+import { AvatarDropdown } from '../components';
+import useAuthStore from '../store/authStore';
 import AdminOverview from './admin/AdminOverview';
 import QuestionBank from './admin/QuestionBank';
 import ExamManagement from './admin/ExamManagement';
@@ -11,22 +12,18 @@ import FooterMinimal from '../components/FooterMinimal';
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
+  const { user } = useAuthStore();
+  const [isMainAdmin, setIsMainAdmin] = useState(false);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
+    if (!user) {
       navigate('/admin-login');
       return;
     }
-    setUser(JSON.parse(userData));
-  }, [navigate]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('auth_token');
-    navigate('/admin-login');
-  };
+    // Check if user has Main Admin role
+    const hasMainAdminRole = user.roles?.some((role: any) => role.name === 'Main Admin');
+    setIsMainAdmin(hasMainAdminRole || false);
+  }, [navigate, user]);
 
   if (!user) return null;
 
@@ -77,13 +74,8 @@ const AdminDashboard: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">
-                {user.name || user.email}
-              </span>
-              <Button onClick={handleLogout} variant="secondary" size="sm">
-                Logout
-              </Button>
+            <div className="flex items-center">
+              <AvatarDropdown showSettings={isMainAdmin} />
             </div>
           </div>
         </div>
