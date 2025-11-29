@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
+import Modal from './Modal';
+import AdminSettings from '../pages/admin/AdminSettings';
+import Profile from '../pages/Profile';
 
 interface AvatarDropdownProps {
   showSettings?: boolean; // Only show for Main Admin
@@ -10,6 +13,8 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const getInitials = (name: string) => {
@@ -82,7 +87,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
           {/* Profile Link */}
           <button
             onClick={() => {
-              navigate('/profile');
+              setShowProfileModal(true);
               setIsOpen(false);
             }}
             className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
@@ -97,7 +102,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
           {showSettings && (
             <button
               onClick={() => {
-                navigate('/admin/settings');
+                setShowSettingsModal(true);
                 setIsOpen(false);
               }}
               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
@@ -124,6 +129,18 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
             <span>Logout</span>
           </button>
         </div>
+      )}
+
+      {/* Profile Modal */}
+      <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} title="Profile Settings" size="2xl">
+        <Profile asModal />
+      </Modal>
+
+      {/* Settings Modal (Main Admin only) */}
+      {showSettings && (
+        <Modal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} title="System Settings" size="2xl">
+          <AdminSettings />
+        </Modal>
       )}
     </div>
   );

@@ -58,6 +58,25 @@ const AdminSettings: React.FC = () => {
               />
               Allow new student registrations
             </label>
+            <label className="flex items-center gap-2 mt-3">
+              <input
+                type="checkbox"
+                checked={!!getValue('allow_exam_retakes')}
+                onChange={e => updateSetting('allow_exam_retakes', e.target.checked ? '1' : '0')}
+              />
+              Allow exam retakes
+            </label>
+            <div className="mt-3">
+              <label className="text-sm">Max exam attempts</label>
+              <input
+                type="number"
+                defaultValue={getValue('max_exam_attempts') || '1'}
+                min={1}
+                onBlur={e => updateSetting('max_exam_attempts', e.target.value)}
+                className="border rounded px-2 py-1 w-32 ml-2"
+                aria-label="Maximum exam attempts"
+              />
+            </div>
           </div>
 
           <div className="border rounded p-4">
@@ -105,8 +124,41 @@ const AdminSettings: React.FC = () => {
                 aria-label="Auto logout in minutes"
               />
             </div>
+            <label className="flex items-center gap-2 mt-3">
+              <input
+                type="checkbox"
+                checked={!!getValue('debug_logging')}
+                onChange={e => updateSetting('debug_logging', e.target.checked ? '1' : '0')}
+              />
+              Enable debug logging
+            </label>
           </div>
         </div>
+          <div className="border rounded p-4 md:col-span-2">
+            <h2 className="font-semibold mb-2">Appearance</h2>
+            <label className="text-sm mr-2">Theme</label>
+            <select
+              defaultValue={getValue('theme') || 'auto'}
+              onChange={e => updateSetting('theme', e.target.value)}
+              className="border rounded px-2 py-1"
+              aria-label="Theme selection"
+            >
+              <option value="auto">Auto</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+
+          <div className="border rounded p-4 md:col-span-2">
+            <h2 className="font-semibold mb-2">Grading Scale (JSON)</h2>
+            <textarea
+              defaultValue={getValue('grading_scale') || '{"A":80,"B":70,"C":60,"D":50,"F":0}'}
+              onBlur={e => updateSetting('grading_scale', e.target.value)}
+              className="border rounded px-3 py-2 w-full h-28"
+              aria-label="Grading scale JSON"
+            />
+            <p className="text-xs text-gray-500 mt-1">Example: {`{"A":80,"B":70,"C":60,"D":50,"F":0}`}</p>
+          </div>
       )}
     </div>
   );

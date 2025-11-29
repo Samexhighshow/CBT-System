@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../../services/api';
 import { showSuccess, showError, showConfirm } from '../../utils/alerts';
 import { Card } from '../../components';
 
@@ -23,13 +23,16 @@ const AdminUserManagement: React.FC = () => {
   const [onlyApplicants, setOnlyApplicants] = useState(true);
   const [showRoleDetails, setShowRoleDetails] = useState(false);
 
-  const token = localStorage.getItem('token');
+  // Use shared api client which injects `auth_token` automatically
+  const [editMode, setEditMode] = useState(false);
+  const availableModules = ['Dashboard','Users','Roles','System Settings','Questions','Exams','Students','Subjects','Results','Reports','Analytics','Profile','Classes'];
+  const [roleModulesState, setRoleModulesState] = useState<Record<string, string[]>>(roleModules);
 
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_URL}/users`, { params: { only_applicants: onlyApplicants ? 1 : undefined }, headers: { Authorization: `Bearer ${token}` } });
-      setUsers(res.data.data || res.data);
+      const res = await api.get(`/users`, { params: { only_applicants: onlyApplicants ? 1 : undefined } });
+      setUsers((res.data as any).data || res.data);
     } catch (err: any) {
       showError('Failed to load users');
     } finally {
@@ -41,8 +44,8 @@ const AdminUserManagement: React.FC = () => {
   useEffect(() => {
     const loadRoles = async () => {
       try {
-        const res = await axios.get(`${process.env.REACT_APP_API_URL}/roles`, { headers: { Authorization: `Bearer ${token}` } });
-        setRoles(res.data);
+        const res = await api.get(`/roles`);
+        setRoles(res.data as any);
       } catch (e) {
         // ignore
       }
@@ -54,7 +57,7 @@ const AdminUserManagement: React.FC = () => {
     const confirm = await showConfirm(`Assign role "${roleName}"?`);
     if (!confirm) return;
     try {
-      await axios.post(`${process.env.REACT_APP_API_URL}/roles/assign/${userId}`, { role: roleName }, { headers: { Authorization: `Bearer ${token}` } });
+      await api.post(`/roles/assign/${userId}`, { role: roleName });
       showSuccess('Role assigned');
       fetchUsers();
     } catch (err: any) {
@@ -65,7 +68,7 @@ const AdminUserManagement: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
+      {/* Header + Quick Navigation */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Admin User Management</h1>
         <button
@@ -75,11 +78,26 @@ const AdminUserManagement: React.FC = () => {
           {showRoleDetails ? 'Hide' : 'View'} Role Permissions
         </button>
       </div>
+      <div className="flex flex-wrap gap-2 mt-2">
+        {['/admin','/admin/students','/admin/subjects','/admin/exams','/admin/results'].map((path, idx) => (
+          <a key={path} href={path} className="px-3 py-1 text-sm border rounded hover:bg-gray-50">
+            {['Dashboard','Students','Subjects','Exams','Results'][idx]}
+          </a>
+        ))}
+      </div>
 
       {/* Role Permissions Card */}
       {showRoleDetails && (
         <Card>
-          <h2 className="text-xl font-semibold mb-4">Role Module Access</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Role Module Access</h2>
+            <button
+              onClick={() => setEditMode(!editMode)}
+              className="px-3 py-2 text-sm border rounded hover:bg-gray-50"
+            >
+              {editMode ? 'Done' : 'Edit Role Permissions'}
+            </button>
+          </div>
           <p className="text-sm text-gray-600 mb-4">
             This table shows which modules each role can access in the system.
           </p>
@@ -92,28 +110,77 @@ const AdminUserManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(roleModules).map(([role, modules]) => (
+                {Object.entries(roleModulesState).map(([role, modules]) => (
                   <tr key={role} className="hover:bg-gray-50">
                     <td className="p-3 border-b">
                       <span className="font-medium text-blue-600">{role}</span>
                     </td>
                     <td className="p-3 border-b">
-                      <div className="flex flex-wrap gap-2">
-                        {modules.map(module => (
-                          <span
-                            key={module}
-                            className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium"
-                          >
-                            {module}
-                          </span>
-                        ))}
-                      </div>
+                      {!editMode ? (
+                        <div className="flex flex-wrap gap-2">
+                          {modules.map(module => (
+                            <span
+                              key={module}
+                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium"
+                            >
+                              {module}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {availableModules.map(m => {
+                            const checked = modules.includes(m);
+                            return (
+                              <label key={m} className="flex items-center gap-2 text-xs border rounded px-2 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    setRoleModulesState(prev => {
+                                      const next = { ...prev };
+                                      const arr = [...(next[role] || [])];
+                                      if (e.target.checked && !arr.includes(m)) arr.push(m);
+                                      if (!e.target.checked) {
+                                        const idx = arr.indexOf(m);
+                                        if (idx >= 0) arr.splice(idx, 1);
+                                      }
+                                      next[role] = arr;
+                                      return next;
+                                    });
+                                  }}
+                                  aria-label={`Allow ${role} to access ${m}`}
+                                />
+                                {m}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {editMode && (
+            <div className="mt-4 flex justify-end">
+              <button
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                onClick={async () => {
+                  try {
+                    await api.post('/admin/roles/modules', roleModulesState);
+                    showSuccess('Role permissions updated');
+                    setEditMode(false);
+                  } catch (err: any) {
+                    showError(err?.response?.data?.message || 'Failed to update role permissions');
+                  }
+                }}
+              >
+                Save Changes
+              </button>
+            </div>
+          )}
           <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
             <p className="text-sm text-yellow-800">
               <strong>Note:</strong> Main Admin has full system access including user management and system settings.

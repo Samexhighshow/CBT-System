@@ -111,6 +111,8 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
+
+        {/* Roles management is accessible via existing /admin/users page */}
         
         {/* Default Route */}
         <Route path="*" element={<LandingPage />} />

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components';
 import { api } from '../../services/api';
 import { showError } from '../../utils/alerts';
+import { useAuthStore } from '../../store/authStore';
 
 interface DashboardStats {
   total_students: number;
@@ -25,6 +26,7 @@ interface ModuleCard {
 
 const AdminOverview: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     total_students: 0,
@@ -118,13 +120,31 @@ const AdminOverview: React.FC = () => {
       path: '/admin/classes',
       color: 'bg-pink-500',
     },
+    {
+      title: 'Roles & Users',
+      description: 'Manage roles, permissions, and users',
+      icon: 'bx-shield',
+      path: '/admin/users',
+      color: 'bg-sky-500',
+    },
   ];
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">{name}</h1>
+        <h1
+          className={
+            `text-3xl font-bold ` +
+            (user?.name?.toLowerCase() === 'maximus'
+              ? 'text-blue-600'
+              : user?.name?.toLowerCase() === 'mavis'
+              ? 'bg-gradient-to-r from-yellow-400 to-blue-500 bg-clip-text text-transparent'
+              : 'text-gray-900')
+          }
+        >
+          {user?.name ?? 'Admin'}
+        </h1>
         <p className="text-gray-600 mt-2">Welcome back! Here's an overview of your system.</p>
       </div>
 
@@ -252,6 +272,8 @@ const AdminOverview: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Footer is provided by layout. Removed local footer to avoid duplicates. */}
     </div>
   );
 };

@@ -20,7 +20,8 @@ interface TwoFAStatus {
   type: string | null;
 }
 
-const Profile: React.FC = () => {
+interface ProfileProps { asModal?: boolean }
+const Profile: React.FC<ProfileProps> = ({ asModal = false }) => {
   const { token, user, setUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'general' | 'security'>('general');
   const [loading, setLoading] = useState(false);
@@ -259,9 +260,11 @@ const Profile: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Profile Settings</h1>
+    <div className={asModal ? "p-2" : "min-h-screen bg-gray-50 p-6"}>
+      <div className={asModal ? "max-w-4xl" : "max-w-4xl mx-auto"}>
+        {!asModal && (
+          <h1 className="text-3xl font-bold text-gray-900 mb-6">Profile Settings</h1>
+        )}
 
         {/* Tabs */}
         <div className="flex space-x-4 mb-6 border-b">
@@ -332,6 +335,7 @@ const Profile: React.FC = () => {
                     accept="image/*"
                     onChange={handlePictureChange}
                     className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    aria-label="Upload profile picture"
                   />
                   <div className="flex space-x-3">
                     {pictureFile && (
