@@ -233,6 +233,18 @@ class ExamController extends Controller
             return response()->json(['message' => 'This exam attempt has already been completed'], 403);
         }
 
+        // Enforce daily exam window on submission
+        $dailyStart = SystemSetting::get('exam_window_start', null);
+        $dailyEnd = SystemSetting::get('exam_window_end', null);
+        if ($dailyStart && $dailyEnd) {
+            $now = now();
+            $startToday = $now->copy()->setTimeFromTimeString($dailyStart);
+            $endToday = $now->copy()->setTimeFromTimeString($dailyEnd);
+            if ($now->lt($startToday) || $now->gt($endToday)) {
+                return response()->json(['message' => 'Exam submission is restricted to the daily window: '.$dailyStart.' - '.$dailyEnd], 403);
+            }
+        }
+
         DB::beginTransaction();
         try {
             // Save answers
@@ -286,6 +298,18 @@ class ExamController extends Controller
 
         if ($attempt->exam_id != $id) {
             return response()->json(['message' => 'Invalid attempt for this exam'], 403);
+        }
+
+        // Enforce daily exam window from system settings
+        $dailyStart = SystemSetting::get('exam_window_start', null);
+        $dailyEnd = SystemSetting::get('exam_window_end', null);
+        if ($dailyStart && $dailyEnd) {
+            $now = now();
+            $startToday = $now->copy()->setTimeFromTimeString($dailyStart);
+            $endToday = $now->copy()->setTimeFromTimeString($dailyEnd);
+            if ($now->lt($startToday) || $now->gt($endToday)) {
+                return response()->json(['message' => 'Exam access is restricted to the daily window: '.$dailyStart.' - '.$dailyEnd], 403);
+            }
         }
 
         // Shuffle questions if enabled

@@ -34,13 +34,24 @@ class UserController extends Controller
             'password' => Hash::make($validated['password']),
         ]);
 
-        // Try to send verification email (don't fail if mail server not configured)
-        try {
-            $user->sendEmailVerificationNotification();
-        } catch (\Exception $e) {
-            Log::warning('Failed to send verification email: ' . $e->getMessage());
+        // Check if this is the first admin user
+        $isFirstAdmin = User::count() === 1;
+        
+        if ($isFirstAdmin) {
+            // Auto-verify and assign Main Admin role to first user
+            $user->markEmailAsVerified();
+            $user->assignRole('Main Admin');
+            $message = 'First admin account created successfully with Main Admin privileges';
+        } else {
+            // Try to send verification email (don't fail if mail server not configured)
+            try {
+                $user->sendEmailVerificationNotification();
+            } catch (\Exception $e) {
+                Log::warning('Failed to send verification email: ' . $e->getMessage());
+            }
+            $message = 'Admin application submitted successfully';
         }
 
-        return response()->json(['message' => 'Admin application submitted successfully', 'user' => $user], 201);
+        return response()->json(['message' => $message, 'user' => $user, 'is_first_admin' => $isFirstAdmin], 201);
     }
 }

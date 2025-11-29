@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\SystemSettingController;
+use App\Http\Controllers\Api\ProfileController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -127,3 +128,20 @@ Route::middleware(['auth:sanctum','main.admin'])->group(function () {
 
 // Auth logout
 Route::middleware('auth:sanctum')->post('/auth/logout', [AuthController::class, 'logout']);
+
+// Profile routes (authenticated users)
+Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
+    Route::get('/', [ProfileController::class, 'show']);
+    Route::put('/', [ProfileController::class, 'update']);
+    Route::post('/picture', [ProfileController::class, 'updatePicture']);
+    Route::delete('/picture', [ProfileController::class, 'removePicture']);
+    Route::post('/password', [ProfileController::class, 'changePassword']);
+    
+    // Two-Factor Authentication
+    Route::get('/2fa/status', [ProfileController::class, 'get2FAStatus']);
+    Route::post('/2fa/google/setup', [ProfileController::class, 'setupGoogle2FA']);
+    Route::post('/2fa/google/verify', [ProfileController::class, 'verifyGoogle2FA']);
+    Route::post('/2fa/email/enable', [ProfileController::class, 'enableEmailOTP']);
+    Route::post('/2fa/email/verify', [ProfileController::class, 'verifyEmailOTP']);
+    Route::post('/2fa/disable', [ProfileController::class, 'disable2FA']);
+});
