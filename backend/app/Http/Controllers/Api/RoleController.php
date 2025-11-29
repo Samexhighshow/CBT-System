@@ -22,4 +22,10 @@ class RoleController extends Controller
 
         return response()->json(['message' => 'Role assigned successfully', 'user' => $user->load('roles')]);
     }
+
+    public function listRoles()
+    {
+        $roles = Role::query()->pluck('name')->filter(fn($r) => $r !== 'Main Admin')->values();
+        return response()->json($roles);
+    }
 }

@@ -12,6 +12,8 @@ import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import PasswordResetRequest from './pages/PasswordResetRequest';
 import PasswordReset from './pages/PasswordReset';
+import AdminSignup from './pages/admin/AdminSignup';
+import AdminUserManagement from './pages/admin/AdminUserManagement';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
 
@@ -27,14 +29,14 @@ const App: React.FC = () => {
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route path="/forgot-password" element={<PasswordResetRequest />} />
         <Route path="/reset-password" element={<PasswordReset />} />
+        <Route path="/admin/signup" element={<AdminSignup />} />
 
         {/* Student Routes */}
-        <Route path="/student/*" element={<StudentDashboard />} />
         <Route
           path="/student/*"
           element={
             <RequireAuth>
-              <RequireRole roles={["student"]}>
+              <RequireRole roles={["Student"]}>
                 <StudentDashboard />
               </RequireRole>
             </RequireAuth>
@@ -54,8 +56,19 @@ const App: React.FC = () => {
           path="/admin/*"
           element={
             <RequireAuth>
-              <RequireRole roles={["admin","subadmin","teacher"]}>
+              <RequireRole roles={["Admin","Main Admin"]}>
                 <AdminDashboard />
+              </RequireRole>
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/admin/users"
+          element={
+            <RequireAuth>
+              <RequireRole roles={["Main Admin"]}>
+                <AdminUserManagement />
               </RequireRole>
             </RequireAuth>
           }

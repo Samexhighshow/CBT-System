@@ -17,17 +17,18 @@ use App\Http\Controllers\Api\AuthController;
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
 
 // Auth & Verification
+// Email verification & reset link
 Route::post('/auth/email/verification-notification', [AuthController::class, 'sendVerification']);
-
-// Admin signup applicant (public)
-Route::post('/admin/signup', [UserController::class, 'store']);
 Route::get('/auth/verify-email/{id}', [AuthController::class, 'verifyEmail']);
 Route::post('/auth/password/forgot', [AuthController::class, 'sendPasswordResetLink']);
 Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
 
-    
-    // List users/applicants (restrict in policy/middleware as needed)
-    Route::get('/users', [UserController::class, 'index']);
+// OTP password reset (public)
+Route::post('/auth/password/otp/request', [AuthController::class, 'requestPasswordOtp']);
+Route::post('/auth/password/otp/verify', [AuthController::class, 'resetPasswordWithOtp']);
+
+// Admin signup applicant (public)
+Route::post('/admin/signup', [UserController::class, 'store']);
 // Students
 Route::prefix('students')->group(function () {
     Route::get('/', [StudentController::class, 'index']);
@@ -110,5 +111,9 @@ Route::prefix('reports')->group(function () {
     Route::get('/attempt/{attemptId}/pdf', [ReportController::class, 'downloadAttemptReportPdf']);
 });
 
-// Roles (restricted in middleware/group in production)
-Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
+// Restricted Main Admin operations
+Route::middleware(['auth:sanctum','main.admin'])->group(function () {
+    Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
+    Route::get('/users', [UserController::class, 'index']);
+    Route::get('/roles', [RoleController::class, 'listRoles']);
+});

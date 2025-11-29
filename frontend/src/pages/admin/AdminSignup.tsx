@@ -12,7 +12,7 @@ const AdminSignup: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post('http://127.0.0.1:8000/api/admin/signup', { name, email, password });
+      await axios.post(`${process.env.REACT_APP_API_URL}/admin/signup`, { name, email, password });
       showSuccess('Application submitted. Please verify your email.');
       setName(''); setEmail(''); setPassword('');
     } catch (err: any) {

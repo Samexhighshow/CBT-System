@@ -2,18 +2,19 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { showSuccess, showError, showConfirm } from '../../utils/alerts';
 
-interface Role { id: number; name: string; }
+interface Role { name: string; }
 interface User { id: number; name: string; email: string; email_verified_at?: string | null; roles: Role[]; }
 
 const AdminUserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [onlyApplicants, setOnlyApplicants] = useState(true);
 
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('http://127.0.0.1:8000/api/users', { params: { only_applicants: onlyApplicants ? 1 : undefined } });
+      const res = await axios.get(`${process.env.REACT_APP_API_URL}/users`, { params: { only_applicants: onlyApplicants ? 1 : undefined } });
       setUsers(res.data.data || res.data);
     } catch (err: any) {
       showError('Failed to load users');
@@ -23,6 +24,17 @@ const AdminUserManagement: React.FC = () => {
   };
 
   useEffect(() => { fetchUsers(); }, [onlyApplicants]);
+  useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        const res = await axios.get(`${process.env.REACT_APP_API_URL}/roles`);
+        setRoles(res.data);
+      } catch (e) {
+        // ignore
+      }
+    };
+    loadRoles();
+  }, []);
 
   const assignRole = async (userId: number, roleName: string) => {
     const confirm = await showConfirm(`Assign role "${roleName}"?`);
@@ -69,9 +81,17 @@ const AdminUserManagement: React.FC = () => {
                   <td className="p-2 border">{u.roles?.map(r=>r.name).join(', ') || '-'}</td>
                   <td className="p-2 border">
                     <div className="flex gap-2">
-                      <button className="px-2 py-1 text-xs bg-green-600 text-white rounded" onClick={()=>assignRole(u.id, 'Admin')}>Make Admin</button>
-                      <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded" onClick={()=>assignRole(u.id, 'Moderator')}>Moderator</button>
-                      <button className="px-2 py-1 text-xs bg-purple-600 text-white rounded" onClick={()=>assignRole(u.id, 'Teacher')}>Teacher</button>
+                      <select
+                        aria-label="Assign role"
+                        className="px-2 py-1 text-xs border rounded"
+                        onChange={(e) => e.target.value && assignRole(u.id, e.target.value)}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Select role</option>
+                        {roles.map(r => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
                     </div>
                   </td>
                 </tr>
