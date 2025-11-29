@@ -10,6 +10,8 @@ import StudentDashboard from './pages/StudentDashboard';
 import ExamPortal from './pages/ExamPortal';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
+import PasswordResetRequest from './pages/PasswordResetRequest';
+import PasswordReset from './pages/PasswordReset';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
 
@@ -23,6 +25,8 @@ const App: React.FC = () => {
         <Route path="/login" element={<StudentLogin />} />
         <Route path="/student-login" element={<StudentLogin />} />
         <Route path="/admin-login" element={<AdminLogin />} />
+        <Route path="/forgot-password" element={<PasswordResetRequest />} />
+        <Route path="/reset-password" element={<PasswordReset />} />
 
         {/* Student Routes */}
         <Route path="/student/*" element={<StudentDashboard />} />

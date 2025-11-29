@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use App\Models\User;
 
 class RoleSeeder extends Seeder
 {
@@ -57,5 +58,13 @@ class RoleSeeder extends Seeder
 
         $studentRole = Role::firstOrCreate(['name' => 'Student']);
         $studentRole->syncPermissions([]);
+
+        // Ensure a Main Admin role exists and is assigned to first user without a role
+        $mainAdminRole = Role::firstOrCreate(['name' => 'Main Admin']);
+
+        $firstUser = User::orderBy('id','asc')->first();
+        if ($firstUser && !$firstUser->hasAnyRole(['Admin','Sub-Admin','Moderator','Teacher','Student','Main Admin'])) {
+            $firstUser->assignRole($mainAdminRole);
+        }
     }
 }

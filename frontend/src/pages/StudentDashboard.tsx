@@ -4,6 +4,7 @@ import { Button } from '../components';
 import StudentOverview from './student/StudentOverview';
 import AvailableExams from './student/AvailableExams';
 import MyResults from './student/MyResults';
+import FooterMinimal from '../components/FooterMinimal';
 
 const StudentDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ const StudentDashboard: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Top Navigation */}
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -82,6 +83,9 @@ const StudentDashboard: React.FC = () => {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
+      <div className="mt-auto">
+        <FooterMinimal />
+      </div>
     </div>
   );
 };

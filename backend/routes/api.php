@@ -8,11 +8,26 @@ use App\Http\Controllers\Api\SubjectController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\ResultController;
 use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\AuthController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
 
+// Auth & Verification
+Route::post('/auth/email/verification-notification', [AuthController::class, 'sendVerification']);
+
+// Admin signup applicant (public)
+Route::post('/admin/signup', [UserController::class, 'store']);
+Route::get('/auth/verify-email/{id}', [AuthController::class, 'verifyEmail']);
+Route::post('/auth/password/forgot', [AuthController::class, 'sendPasswordResetLink']);
+Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
+
+    
+    // List users/applicants (restrict in policy/middleware as needed)
+    Route::get('/users', [UserController::class, 'index']);
 // Students
 Route::prefix('students')->group(function () {
     Route::get('/', [StudentController::class, 'index']);
@@ -94,3 +109,6 @@ Route::prefix('reports')->group(function () {
     Route::get('/student/{studentId}/excel', [ReportController::class, 'downloadStudentResultsExcel']);
     Route::get('/attempt/{attemptId}/pdf', [ReportController::class, 'downloadAttemptReportPdf']);
 });
+
+// Roles (restricted in middleware/group in production)
+Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);

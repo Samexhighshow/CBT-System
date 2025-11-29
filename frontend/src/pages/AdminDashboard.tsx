@@ -7,6 +7,7 @@ import ExamManagement from './admin/ExamManagement';
 import StudentManagement from './admin/StudentManagement';
 import SubjectManagement from './admin/SubjectManagement';
 import ResultsAnalytics from './admin/ResultsAnalytics';
+import FooterMinimal from '../components/FooterMinimal';
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -30,7 +31,7 @@ const AdminDashboard: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Top Navigation */}
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -100,6 +101,10 @@ const AdminDashboard: React.FC = () => {
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </main>
+
+      <div className="mt-auto">
+        <FooterMinimal />
+      </div>
     </div>
   );
 };
