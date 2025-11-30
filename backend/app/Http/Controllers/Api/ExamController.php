@@ -17,26 +17,24 @@ class ExamController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Exam::with(['subject', 'departments', 'questions']);
+        // Align with schema: Exam has questions, published flag, and string department
+        $query = Exam::with(['questions']);
 
         // Filter by subject
-        if ($request->has('subject_id')) {
-            $query->where('subject_id', $request->subject_id);
-        }
+        // No subject_id column in current schema
 
         // Filter by status
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
+        if ($request->has('published')) {
+            $query->where('published', (bool)$request->published);
         }
 
         // Filter by department
-        if ($request->has('department_id')) {
-            $query->whereHas('departments', function($q) use ($request) {
-                $q->where('departments.id', $request->department_id);
-            });
+        if ($request->has('department')) {
+            $query->where('department', $request->department);
         }
 
-        $exams = $query->orderBy('created_at', 'desc')->paginate(20);
+        // Frontend expects a plain array (not paginator)
+        $exams = $query->orderBy('created_at', 'desc')->get();
 
         return response()->json($exams);
     }
@@ -46,7 +44,7 @@ class ExamController extends Controller
      */
     public function show($id)
     {
-        $exam = Exam::with(['subject', 'departments', 'questions.options'])->findOrFail($id);
+        $exam = Exam::with(['questions.options'])->findOrFail($id);
         
         return response()->json($exam);
     }
@@ -56,32 +54,44 @@ class ExamController extends Controller
      */
     public function store(Request $request)
     {
+        // Accept legacy/front-end fields and map to current schema
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'subject_id' => 'required|exists:subjects,id',
-            'duration_minutes' => 'required|integer|min:1',
-            'total_marks' => 'required|integer|min:1',
-            'passing_marks' => 'required|integer|min:0',
-            'start_time' => 'required|date',
-            'end_time' => 'required|date|after:start_time',
-            'instructions' => 'nullable|string',
-            'status' => 'required|in:draft,published,archived',
-            'shuffle_questions' => 'boolean',
-            'show_results_immediately' => 'boolean',
-            'department_ids' => 'required|array',
-            'department_ids.*' => 'exists:departments,id',
+            'class_level' => 'sometimes|string',
+            'department' => 'nullable|string',
+            'duration' => 'sometimes|integer|min:1',
+            'duration_minutes' => 'sometimes|integer|min:1',
+            'status' => 'sometimes|in:draft,published,archived',
+            'published' => 'sometimes|boolean',
+            'total_marks' => 'sometimes|integer|min:0',
+            'passing_marks' => 'sometimes|integer|min:0',
+            'start_time' => 'sometimes|date',
+            'end_time' => 'sometimes|date|after:start_time',
+            'metadata' => 'sometimes|array',
+            'subject_id' => 'sometimes|integer',
         ]);
 
-        $departmentIds = $validated['department_ids'];
-        unset($validated['department_ids']);
+        $payload = [
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'class_level' => $validated['class_level'] ?? ($request->input('class_level') ?? ''),
+            'department' => $validated['department'] ?? null,
+            'duration_minutes' => $validated['duration_minutes'] ?? ($validated['duration'] ?? 0),
+            'published' => isset($validated['published']) ? (bool)$validated['published'] : (($validated['status'] ?? null) === 'published'),
+            'metadata' => $validated['metadata'] ?? [
+                'total_marks' => $validated['total_marks'] ?? null,
+                'passing_marks' => $validated['passing_marks'] ?? null,
+                'start_time' => $validated['start_time'] ?? null,
+                'end_time' => $validated['end_time'] ?? null,
+            ],
+        ];
 
-        $exam = Exam::create($validated);
-        $exam->departments()->attach($departmentIds);
+        $exam = Exam::create($payload);
 
         return response()->json([
             'message' => 'Exam created successfully',
-            'exam' => $exam->load(['subject', 'departments'])
+            'exam' => $exam
         ], 201);
     }
 
@@ -95,30 +105,49 @@ class ExamController extends Controller
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
-            'subject_id' => 'sometimes|exists:subjects,id',
+            'class_level' => 'sometimes|string',
+            'department' => 'sometimes|string',
+            'duration' => 'sometimes|integer|min:1',
             'duration_minutes' => 'sometimes|integer|min:1',
-            'total_marks' => 'sometimes|integer|min:1',
+            'status' => 'sometimes|in:draft,published,archived',
+            'published' => 'sometimes|boolean',
+            'total_marks' => 'sometimes|integer|min:0',
             'passing_marks' => 'sometimes|integer|min:0',
             'start_time' => 'sometimes|date',
             'end_time' => 'sometimes|date|after:start_time',
-            'instructions' => 'nullable|string',
-            'status' => 'sometimes|in:draft,published,archived',
-            'shuffle_questions' => 'boolean',
-            'show_results_immediately' => 'boolean',
-            'department_ids' => 'sometimes|array',
-            'department_ids.*' => 'exists:departments,id',
+            'metadata' => 'sometimes|array',
+            'subject_id' => 'sometimes|integer',
         ]);
 
-        if (isset($validated['department_ids'])) {
-            $exam->departments()->sync($validated['department_ids']);
-            unset($validated['department_ids']);
+        $update = [];
+        foreach (['title','description','class_level','department'] as $f) {
+            if (array_key_exists($f, $validated)) $update[$f] = $validated[$f];
+        }
+        if (array_key_exists('duration_minutes', $validated) || array_key_exists('duration', $validated)) {
+            $update['duration_minutes'] = $validated['duration_minutes'] ?? $validated['duration'];
+        }
+        if (array_key_exists('published', $validated) || array_key_exists('status', $validated)) {
+            $update['published'] = array_key_exists('published', $validated)
+                ? (bool)$validated['published']
+                : (($validated['status'] ?? null) === 'published');
+        }
+        if (array_key_exists('metadata', $validated) || array_key_exists('total_marks', $validated) || array_key_exists('passing_marks', $validated) || array_key_exists('start_time', $validated) || array_key_exists('end_time', $validated)) {
+            $meta = is_array($exam->metadata) ? $exam->metadata : [];
+            if (array_key_exists('metadata', $validated)) {
+                $meta = $validated['metadata'];
+            }
+            if (array_key_exists('total_marks', $validated)) $meta['total_marks'] = $validated['total_marks'];
+            if (array_key_exists('passing_marks', $validated)) $meta['passing_marks'] = $validated['passing_marks'];
+            if (array_key_exists('start_time', $validated)) $meta['start_time'] = $validated['start_time'];
+            if (array_key_exists('end_time', $validated)) $meta['end_time'] = $validated['end_time'];
+            $update['metadata'] = $meta;
         }
 
-        $exam->update($validated);
+        $exam->update($update);
 
         return response()->json([
             'message' => 'Exam updated successfully',
-            'exam' => $exam->load(['subject', 'departments'])
+            'exam' => $exam
         ]);
     }
 
@@ -147,14 +176,12 @@ class ExamController extends Controller
         $exam = Exam::with('questions')->findOrFail($id);
 
         // Check if exam is available
-        if ($exam->status !== 'published') {
+        if (!$exam->published) {
             return response()->json(['message' => 'Exam is not available'], 403);
         }
 
         // Enforce exam scheduled window
-        if (now() < $exam->start_time || now() > $exam->end_time) {
-            return response()->json(['message' => 'Exam is not within the scheduled time window'], 403);
-        }
+        // Scheduled window not enforced (no start/end columns in schema)
 
         // Enforce daily exam window from system settings (HH:MM)
         $dailyStart = SystemSetting::get('exam_window_start', null);
@@ -218,7 +245,7 @@ class ExamController extends Controller
         $validated = $request->validate([
             'attempt_id' => 'required|exists:exam_attempts,id',
             'answers' => 'required|array',
-            'answers.*.question_id' => 'required|exists:questions,id',
+            'answers.*.question_id' => 'required|exists:exam_questions,id',
             'answers.*.selected_option' => 'nullable|string',
             'answers.*.answer_text' => 'nullable|string',
         ]);
@@ -338,7 +365,8 @@ class ExamController extends Controller
             if ($question->question_type === 'multiple_choice') {
                 $correctOption = $question->options->where('is_correct', true)->first();
                 if ($correctOption && $answer->selected_option === $correctOption->option_text) {
-                    $totalScore += $question->marks;
+                    $marks = $question->metadata['marks'] ?? 1;
+                    $totalScore += is_numeric($marks) ? (int)$marks : 1;
                 }
             }
             // Add scoring logic for other question types if needed
@@ -373,8 +401,8 @@ class ExamController extends Controller
             'highest_score' => $highestScore,
             'lowest_score' => $lowestScore,
             'total_questions' => $exam->questions->count(),
-            'total_marks' => $exam->total_marks,
-            'passing_marks' => $exam->passing_marks,
+            'total_marks' => $exam->metadata['total_marks'] ?? null,
+            'passing_marks' => $exam->metadata['passing_marks'] ?? null,
         ]);
     }
 }

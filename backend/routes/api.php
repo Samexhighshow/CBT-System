@@ -135,6 +135,9 @@ Route::middleware(['auth:sanctum','main.admin'])->group(function () {
     Route::post('/settings/bulk', [SystemSettingController::class, 'bulkUpdate']);
 });
 
+// Dedicated theme update endpoint (matches frontend call)
+Route::middleware(['auth:sanctum'])->put('/settings/theme', [SystemSettingController::class, 'updateTheme']);
+
 // Auth logout
 Route::middleware('auth:sanctum')->post('/auth/logout', [AuthController::class, 'logout']);
 

@@ -10,13 +10,14 @@ class SubjectController extends Controller
 {
     public function index()
     {
-        $subjects = Subject::with('department')->orderBy('name')->get();
+        // Align with current model: no singular department relation, uses pivot or JSON configuration
+        $subjects = Subject::orderBy('name')->get();
         return response()->json($subjects);
     }
 
     public function show($id)
     {
-        $subject = Subject::with(['department', 'exams'])->findOrFail($id);
+        $subject = Subject::findOrFail($id);
         return response()->json($subject);
     }
 
@@ -140,3 +141,4 @@ class SubjectController extends Controller
             'subjects' => $student->subjects
         ]);
     }
+}

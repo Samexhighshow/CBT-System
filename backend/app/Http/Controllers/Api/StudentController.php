@@ -44,7 +44,7 @@ class StudentController extends Controller
             $query->where('status', $request->status);
         }
 
-        $students = $query->orderBy('created_at', 'desc')->paginate(20);
+            $students = $query->orderBy('created_at', 'desc')->get();
 
         return response()->json($students);
     }

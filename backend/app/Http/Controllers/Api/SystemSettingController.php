@@ -44,4 +44,26 @@ class SystemSettingController extends Controller
 
         return response()->json(['message' => 'Settings updated successfully']);
     }
+
+    // Convenience: dedicated theme update endpoint used by frontend
+    public function updateTheme(Request $request)
+    {
+        $validated = $request->validate([
+            'value' => 'required|string',
+        ]);
+
+        $setting = SystemSetting::where('key', 'theme')->first();
+        if (!$setting) {
+            $setting = SystemSetting::create([
+                'key' => 'theme',
+                'value' => $validated['value'],
+                'type' => 'string',
+                'description' => 'UI theme',
+            ]);
+        } else {
+            $setting->update(['value' => $validated['value']]);
+        }
+
+        return response()->json(['message' => 'Theme updated', 'setting' => $setting]);
+    }
 }

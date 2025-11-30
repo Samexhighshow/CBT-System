@@ -17,12 +17,10 @@ class QuestionController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Question::with(['subject', 'exam', 'options']);
+        $query = Question::with(['exam', 'options']);
 
         // Filter by subject
-        if ($request->has('subject_id')) {
-            $query->where('subject_id', $request->subject_id);
-        }
+        // Subject filtering not supported (no subject relation/column)
 
         // Filter by exam
         if ($request->has('exam_id')) {
@@ -40,7 +38,7 @@ class QuestionController extends Controller
             $query->where('question_text', 'like', "%{$search}%");
         }
 
-        $questions = $query->orderBy('created_at', 'desc')->paginate(20);
+        $questions = $query->orderBy('created_at', 'desc')->get();
 
         return response()->json($questions);
     }
@@ -50,7 +48,7 @@ class QuestionController extends Controller
      */
     public function show($id)
     {
-        $question = Question::with(['subject', 'exam', 'options'])->findOrFail($id);
+        $question = Question::with(['exam', 'options'])->findOrFail($id);
         
         return response()->json($question);
     }
@@ -62,7 +60,7 @@ class QuestionController extends Controller
     {
         $validated = $request->validate([
             'exam_id' => 'required|exists:exams,id',
-            'subject_id' => 'required|exists:subjects,id',
+            // Subject not stored on questions; remove validation
             'question_text' => 'required|string',
             'question_type' => 'required|in:multiple_choice,true_false,short_answer,essay',
             'marks' => 'required|integer|min:1',
@@ -105,7 +103,7 @@ class QuestionController extends Controller
 
         $validated = $request->validate([
             'exam_id' => 'sometimes|exists:exams,id',
-            'subject_id' => 'sometimes|exists:subjects,id',
+            // Subject not stored on questions
             'question_text' => 'sometimes|string',
             'question_type' => 'sometimes|in:multiple_choice,true_false,short_answer,essay',
             'marks' => 'sometimes|integer|min:1',
@@ -294,15 +292,13 @@ class QuestionController extends Controller
      */
     public function exportQuestions(Request $request)
     {
-        $query = Question::with(['options', 'subject', 'exam']);
+        $query = Question::with(['options', 'exam']);
 
         if ($request->has('exam_id')) {
             $query->where('exam_id', $request->exam_id);
         }
 
-        if ($request->has('subject_id')) {
-            $query->where('subject_id', $request->subject_id);
-        }
+        // Subject filter not supported
 
         $questions = $query->get();
 
@@ -340,7 +336,7 @@ class QuestionController extends Controller
                     $question->question_type,
                     $question->marks,
                     $question->difficulty_level ?? 'medium',
-                    $question->subject->name ?? '',
+                    '',
                     $question->exam->title ?? '',
                     $options[0] ?? '',
                     $options[1] ?? '',

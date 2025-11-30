@@ -22,14 +22,11 @@ class AnalyticsController extends Controller
             'total_students' => Student::count(),
             'active_students' => Student::where('status', 'active')->count(),
             'total_exams' => Exam::count(),
-            'published_exams' => Exam::where('status', 'published')->count(),
+            'published_exams' => Exam::where('published', true)->count(),
             'total_departments' => Department::count(),
             'total_subjects' => Subject::count(),
             'total_attempts' => ExamAttempt::where('status', 'completed')->count(),
-            'ongoing_exams' => Exam::where('status', 'published')
-                ->where('start_time', '<=', now())
-                ->where('end_time', '>=', now())
-                ->count(),
+            'ongoing_exams' => Exam::where('published', true)->count(),
         ];
 
         // Recent activity
@@ -43,7 +40,7 @@ class AnalyticsController extends Controller
                     'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
                     'exam_title' => $attempt->exam->title,
                     'score' => $attempt->score,
-                    'total_marks' => $attempt->exam->total_marks,
+                    'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
                     'completed_at' => $attempt->completed_at,
                 ];
             });
@@ -67,9 +64,7 @@ class AnalyticsController extends Controller
             ->get();
 
         $availableExams = $student->department->exams()
-            ->where('status', 'published')
-            ->where('start_time', '<=', now())
-            ->where('end_time', '>=', now())
+            ->where('published', true)
             ->count();
 
         $stats = [
@@ -78,7 +73,7 @@ class AnalyticsController extends Controller
             'average_score' => round($completedExams->avg('score'), 2),
             'total_marks_obtained' => $completedExams->sum('score'),
             'highest_score' => $completedExams->max('score'),
-            'pass_rate' => $this->calculateStudentPassRate($completedExams),
+            'pass_rate' => $this->calculatePassRate($completedExams),
         ];
 
         // Recent results
@@ -88,9 +83,9 @@ class AnalyticsController extends Controller
                 return [
                     'exam_title' => $attempt->exam->title,
                     'score' => $attempt->score,
-                    'total_marks' => $attempt->exam->total_marks,
-                    'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
-                    'passed' => $attempt->score >= $attempt->exam->passing_marks,
+                    'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
+                    'percentage' => $this->safePercentage($attempt->score, $attempt->exam->metadata['total_marks'] ?? null),
+                    'passed' => $this->safePassed($attempt->score, $attempt->exam->metadata['passing_marks'] ?? null),
                     'completed_at' => $attempt->completed_at,
                 ];
             })
@@ -159,7 +154,7 @@ class AnalyticsController extends Controller
         $comparison = [];
 
         foreach ($validated['exam_ids'] as $examId) {
-            $exam = Exam::with('subject')->findOrFail($examId);
+            $exam = Exam::findOrFail($examId);
             $attempts = ExamAttempt::where('exam_id', $examId)
                 ->where('status', 'completed')
                 ->get();
@@ -167,7 +162,7 @@ class AnalyticsController extends Controller
             $comparison[] = [
                 'exam_id' => $exam->id,
                 'exam_title' => $exam->title,
-                'subject' => $exam->subject->name,
+                'subject' => $exam->metadata['subject'] ?? null,
                 'total_attempts' => $attempts->count(),
                 'average_score' => round($attempts->avg('score'), 2),
                 'pass_rate' => $this->calculatePassRate($attempts),
@@ -230,17 +225,16 @@ class AnalyticsController extends Controller
     /**
      * Helper: Calculate student pass rate
      */
-    private function calculateStudentPassRate($attempts)
+    private function safePercentage($score, $total)
     {
-        if ($attempts->isEmpty()) {
-            return 0;
-        }
+        if (!$total || $total <= 0) return null;
+        return round(($score / $total) * 100, 2);
+    }
 
-        $passed = $attempts->filter(function($attempt) {
-            return $attempt->score >= $attempt->exam->passing_marks;
-        })->count();
-
-        return round(($passed / $attempts->count()) * 100, 2);
+    private function safePassed($score, $passing)
+    {
+        if ($passing === null) return null;
+        return $score >= $passing;
     }
 
     /**
@@ -301,7 +295,9 @@ class AnalyticsController extends Controller
         ];
 
         foreach ($attempts as $attempt) {
-            $percentage = ($attempt->score / $attempt->exam->total_marks) * 100;
+            $total = $attempt->exam->metadata['total_marks'] ?? null;
+            if (!$total || $total <= 0) { continue; }
+            $percentage = ($attempt->score / $total) * 100;
             
             if ($percentage <= 25) {
                 $distribution['0-25%']++;
@@ -329,8 +325,8 @@ class AnalyticsController extends Controller
                     'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
                     'registration_number' => $attempt->student->registration_number,
                     'score' => $attempt->score,
-                    'total_marks' => $attempt->exam->total_marks,
-                    'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
+                    'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
+                    'percentage' => $this->safePercentage($attempt->score, $attempt->exam->metadata['total_marks'] ?? null),
                 ];
             })
             ->values();
@@ -348,8 +344,8 @@ class AnalyticsController extends Controller
                     'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
                     'registration_number' => $attempt->student->registration_number,
                     'score' => $attempt->score,
-                    'total_marks' => $attempt->exam->total_marks,
-                    'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
+                    'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
+                    'percentage' => $this->safePercentage($attempt->score, $attempt->exam->metadata['total_marks'] ?? null),
                 ];
             })
             ->values();

@@ -29,6 +29,6 @@ class ExamAnswer extends Model
 
     public function option(): BelongsTo
     {
-        return $this->belongsTo(Option::class);
+        return $this->belongsTo(QuestionOption::class, 'option_id');
     }
 }
