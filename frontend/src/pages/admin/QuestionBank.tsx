@@ -20,10 +20,20 @@ interface QuestionStats {
   essay: number;
 }
 
+interface CbtSubject {
+  id: number;
+  subject_name: string;
+  class_level: string;
+  shuffle_questions: boolean;
+  questions_required: number;
+}
+
 const QuestionBank: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [cbtSubjects, setCbtSubjects] = useState<CbtSubject[]>([]);
+  const [selectedCbtSubject, setSelectedCbtSubject] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState<QuestionStats>({
     total_questions: 0,
@@ -43,6 +53,7 @@ const QuestionBank: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    loadCbtSubjects();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -61,6 +72,17 @@ const QuestionBank: React.FC = () => {
       calculateStats([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCbtSubjects = async () => {
+    try {
+      const response = await api.get('/cbt/subjects');
+      if (response.data?.subjects) {
+        setCbtSubjects(response.data.subjects);
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch CBT subjects:', error);
     }
   };
 
@@ -124,11 +146,16 @@ const QuestionBank: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!selectedCbtSubject) {
+      showError('Please select a CBT subject first');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      await api.post('/questions/import', formData, {
+      await api.post(`/cbt/subjects/${selectedCbtSubject}/questions/import`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       showSuccess('Questions imported successfully');
@@ -209,10 +236,25 @@ const QuestionBank: React.FC = () => {
       <Card>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Upload Questions</h2>
-          <Button onClick={handleExport} variant="secondary" className="flex items-center gap-2">
-            <i className='bx bx-download'></i>
-            <span>Export CSV</span>
-          </Button>
+          <div className="flex gap-2">
+            <select 
+              className="border rounded px-3 py-2" 
+              value={selectedCbtSubject ?? ''} 
+              onChange={e => setSelectedCbtSubject(Number(e.target.value))}
+              aria-label="Select CBT subject"
+            >
+              <option value="">Select CBT Subject</option>
+              {cbtSubjects.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.subject_name} ({s.class_level}) {s.shuffle_questions ? '🔀' : ''}
+                </option>
+              ))}
+            </select>
+            <Button onClick={handleExport} variant="secondary" className="flex items-center gap-2">
+              <i className='bx bx-download'></i>
+              <span>Export CSV</span>
+            </Button>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 cursor-pointer transition">
@@ -222,6 +264,15 @@ const QuestionBank: React.FC = () => {
             </div>
             <h3 className="font-semibold mb-2">Upload CSV File</h3>
             <p className="text-sm text-gray-600">Bulk upload questions from CSV</p>
+            <div className="mt-3">
+              <Button 
+                onClick={(e) => { e.stopPropagation(); window.open('/api/cbt/sample-csv', '_blank'); }} 
+                variant="secondary" 
+                className="text-sm"
+              >
+                Download Sample CSV
+              </Button>
+            </div>
           </label>
           <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 cursor-pointer transition">
             <input type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />

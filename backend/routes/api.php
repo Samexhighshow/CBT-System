@@ -14,6 +14,10 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\SystemSettingController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\CbtQuestionImportController;
+use App\Http\Controllers\CbtExamController;
+use App\Http\Controllers\CbtResultsController;
+use App\Http\Controllers\CbtSubjectController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -146,4 +150,37 @@ Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
     Route::post('/2fa/email/enable', [ProfileController::class, 'enableEmailOTP']);
     Route::post('/2fa/email/verify', [ProfileController::class, 'verifyEmailOTP']);
     Route::post('/2fa/disable', [ProfileController::class, 'disable2FA']);
+});
+
+// CBT System routes (authenticated)
+Route::middleware('auth:sanctum')->group(function () {
+    // Sample CSV for question import
+    Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv']);
+
+    // Import questions to a subject
+    Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
+
+    // Start exam for a subject
+    Route::post('/cbt/subjects/{subject}/exam/start', [CbtExamController::class, 'start']);
+
+    // Save an answer (auto-save)
+    Route::post('/cbt/exams/{exam}/questions/{question}/answer', [CbtExamController::class, 'saveAnswer']);
+
+    // Submit exam
+    Route::post('/cbt/exams/{exam}/submit', [CbtExamController::class, 'submit']);
+    // Manual grade long-answer
+    Route::post('/cbt/exams/{exam}/questions/{question}/grade', [CbtExamController::class, 'manualGrade']);
+    // Result breakdown
+    Route::get('/cbt/exams/{exam}/results', [CbtExamController::class, 'resultBreakdown']);
+    // Subject summary
+    Route::get('/cbt/results/subject/{subject}', [CbtResultsController::class, 'subjectSummary']);
+    // All results with filters
+    Route::get('/cbt/results', [CbtResultsController::class, 'allResults']);
+    
+    // CBT Subjects management
+    Route::get('/cbt/subjects', [CbtSubjectController::class, 'index']);
+    Route::post('/cbt/subjects', [CbtSubjectController::class, 'store']);
+    Route::post('/cbt/subjects/assign-teacher', [CbtSubjectController::class, 'assignTeacher']);
+    Route::get('/cbt/teachers/{teacher}/subjects', [CbtSubjectController::class, 'teacherSubjects']);
+    Route::post('/cbt/teachers/self-assign', [CbtSubjectController::class, 'selfAssignSubjects']);
 });
