@@ -266,7 +266,7 @@ const QuestionBank: React.FC = () => {
             <p className="text-sm text-gray-600">Bulk upload questions from CSV</p>
             <div className="mt-3">
               <Button 
-                onClick={(e) => { e.stopPropagation(); window.open('/api/cbt/sample-csv', '_blank'); }} 
+                onClick={(e) => { e.stopPropagation(); window.open('http://127.0.0.1:8000/api/cbt/sample-csv', '_blank'); }} 
                 variant="secondary" 
                 className="text-sm"
               >

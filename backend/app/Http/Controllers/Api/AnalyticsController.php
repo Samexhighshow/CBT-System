@@ -245,7 +245,7 @@ class AnalyticsController extends Controller
         $bySubject = [];
 
         foreach ($attempts as $attempt) {
-            $subject = $attempt->exam->subject->name;
+            $subject = $attempt->exam->metadata['subject'] ?? 'Unknown';
             
             if (!isset($bySubject[$subject])) {
                 $bySubject[$subject] = [
@@ -276,7 +276,11 @@ class AnalyticsController extends Controller
         }
 
         $passed = $attempts->filter(function($attempt) {
-            return $attempt->score >= $attempt->exam->passing_marks;
+            $passing_marks = $attempt->exam->metadata['passing_marks'] ?? null;
+            if ($passing_marks === null) {
+                return false;
+            }
+            return $attempt->score >= $passing_marks;
         })->count();
 
         return round(($passed / $attempts->count()) * 100, 2);

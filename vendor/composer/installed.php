@@ -3,7 +3,7 @@
         'name' => 'school/cbt-system',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => 'aa108e37646182953bd2cb8c72645a060a95911a',
+        'reference' => '005db6bdc93d1b4e425173d24b4e150141a98ae0',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -695,7 +695,7 @@
         'school/cbt-system' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => 'aa108e37646182953bd2cb8c72645a060a95911a',
+            'reference' => '005db6bdc93d1b4e425173d24b4e150141a98ae0',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

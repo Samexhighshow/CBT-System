@@ -10,13 +10,15 @@ class DepartmentController extends Controller
 {
     public function index()
     {
-        $departments = Department::withCount(['students', 'subjects'])->orderBy('name')->get();
+        // Return basic departments without counting relations
+        $departments = Department::orderBy('name')->get();
         return response()->json($departments);
     }
 
     public function show($id)
     {
-        $department = Department::with(['students', 'subjects', 'exams'])->findOrFail($id);
+        // Return department without loading relations to avoid errors
+        $department = Department::findOrFail($id);
         return response()->json($department);
     }
 

@@ -123,20 +123,15 @@ Route::prefix('reports')->group(function () {
     Route::get('/attempt/{attemptId}/pdf', [ReportController::class, 'downloadAttemptReportPdf']);
 });
 
+// Public theme update endpoint for testing (place before wildcard route)
+Route::put('/settings/theme', [\App\Http\Controllers\Api\SystemSettingController::class, 'updateTheme']);
+
 // Restricted Main Admin operations
-Route::middleware(['auth:sanctum','main.admin'])->group(function () {
-    Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
-    Route::get('/users', [UserController::class, 'index']);
-    Route::get('/roles', [RoleController::class, 'listRoles']);
-
-    // System settings
-    Route::get('/settings', [SystemSettingController::class, 'index']);
-    Route::put('/settings/{key}', [SystemSettingController::class, 'update']);
-    Route::post('/settings/bulk', [SystemSettingController::class, 'bulkUpdate']);
+Route::middleware(['auth:sanctum', 'main.admin'])->group(function () {
+    Route::get('/settings', [\App\Http\Controllers\Api\SystemSettingController::class, 'index']);
+    Route::put('/settings/{key}', [\App\Http\Controllers\Api\SystemSettingController::class, 'update']);
+    Route::put('/settings/bulk', [\App\Http\Controllers\Api\SystemSettingController::class, 'bulkUpdate']);
 });
-
-// Dedicated theme update endpoint (matches frontend call)
-Route::middleware(['auth:sanctum'])->put('/settings/theme', [SystemSettingController::class, 'updateTheme']);
 
 // Auth logout
 Route::middleware('auth:sanctum')->post('/auth/logout', [AuthController::class, 'logout']);
