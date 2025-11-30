@@ -18,37 +18,51 @@ class AnalyticsController extends Controller
      */
     public function getAdminDashboardStats()
     {
-        $stats = [
-            'total_students' => Student::count(),
-            'active_students' => Student::where('status', 'active')->count(),
-            'total_exams' => Exam::count(),
-            'published_exams' => Exam::where('published', true)->count(),
-            'total_departments' => Department::count(),
-            'total_subjects' => Subject::count(),
-            'total_attempts' => ExamAttempt::where('status', 'completed')->count(),
-            'ongoing_exams' => Exam::where('published', true)->count(),
-        ];
+        try {
+            $stats = [
+                'total_students' => Student::count(),
+                'active_students' => Student::where('is_active', true)->count(),
+                'total_exams' => Exam::count(),
+                'published_exams' => Exam::where('published', true)->count(),
+                'total_departments' => Department::count(),
+                'total_subjects' => Subject::count(),
+                'total_attempts' => ExamAttempt::where('status', 'completed')->count(),
+                'ongoing_exams' => Exam::where('published', true)->count(),
+            ];
 
-        // Recent activity
-        $stats['recent_attempts'] = ExamAttempt::with(['student', 'exam'])
-            ->where('status', 'completed')
-            ->orderBy('completed_at', 'desc')
-            ->limit(5)
-            ->get()
-            ->map(function($attempt) {
-                return [
-                    'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
-                    'exam_title' => $attempt->exam->title,
-                    'score' => $attempt->score,
-                    'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
-                    'completed_at' => $attempt->completed_at,
-                ];
-            });
+            // Recent activity
+            $stats['recent_attempts'] = ExamAttempt::with(['student', 'exam'])
+                ->where('status', 'completed')
+                ->orderBy('ended_at', 'desc')
+                ->limit(5)
+                ->get()
+                ->map(function($attempt) {
+                    if (!$attempt->student || !$attempt->exam) {
+                        return null;
+                    }
+                    return [
+                        'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
+                        'exam_title' => $attempt->exam->title,
+                        'score' => $attempt->score,
+                        'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
+                        'completed_at' => $attempt->ended_at,
+                    ];
+                })
+                ->filter();
 
-        // Performance trends (last 30 days)
-        $stats['performance_trend'] = $this->getPerformanceTrend(30);
+            // Performance trends (last 30 days)
+            $stats['performance_trend'] = $this->getPerformanceTrend(30);
 
-        return response()->json($stats);
+            return response()->json($stats);
+        } catch (\Exception $e) {
+            \Log::error('Analytics error: ' . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+            return response()->json([
+                'error' => 'Failed to fetch analytics',
+                'message' => $e->getMessage(),
+                'line' => $e->getLine()
+            ], 500);
+        }
     }
 
     /**
@@ -77,7 +91,7 @@ class AnalyticsController extends Controller
         ];
 
         // Recent results
-        $stats['recent_results'] = $completedExams->sortByDesc('completed_at')
+        $stats['recent_results'] = $completedExams->sortByDesc('ended_at')
             ->take(5)
             ->map(function($attempt) {
                 return [
@@ -86,7 +100,7 @@ class AnalyticsController extends Controller
                     'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
                     'percentage' => $this->safePercentage($attempt->score, $attempt->exam->metadata['total_marks'] ?? null),
                     'passed' => $this->safePassed($attempt->score, $attempt->exam->metadata['passing_marks'] ?? null),
-                    'completed_at' => $attempt->completed_at,
+                    'completed_at' => $attempt->ended_at,
                 ];
             })
             ->values();
@@ -116,11 +130,11 @@ class AnalyticsController extends Controller
         }
 
         if ($request->has('start_date')) {
-            $query->where('completed_at', '>=', $request->start_date);
+            $query->where('ended_at', '>=', $request->start_date);
         }
 
         if ($request->has('end_date')) {
-            $query->where('completed_at', '<=', $request->end_date);
+            $query->where('ended_at', '<=', $request->end_date);
         }
 
         $attempts = $query->with(['exam', 'student'])->get();
@@ -208,7 +222,7 @@ class AnalyticsController extends Controller
 
         for ($i = 0; $i < $days; $i++) {
             $date = $startDate->copy()->addDays($i);
-            $attempts = ExamAttempt::whereDate('completed_at', $date)
+            $attempts = ExamAttempt::whereDate('ended_at', $date)
                 ->where('status', 'completed')
                 ->get();
 
