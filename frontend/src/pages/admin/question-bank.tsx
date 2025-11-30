@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Button } from '../../components/Button';
-import { Card } from '../../components/Card';
-import { Input } from '../../components/Input';
-import { Alert } from '../../components/Alert';
+import Button from '../../components/Button';
+import Card from '../../components/Card';
+import Input from '../../components/Input';
+import Alert from '../../components/Alert';
 
 type Subject = {
   id: number;
@@ -81,7 +81,7 @@ export default function QuestionBank() {
     <div className="p-4 space-y-4">
       <Card>
         <div className="flex items-center gap-2">
-          <select className="border p-2" value={selectedSubject ?? ''} onChange={e => setSelectedSubject(Number(e.target.value))}>
+          <select className="border p-2" aria-label="Select subject" value={selectedSubject ?? ''} onChange={e => setSelectedSubject(Number(e.target.value))}>
             <option value="">Select subject</option>
             {subjects.map(s => (
               <option key={s.id} value={s.id}>{s.subject_name} ({s.class_level})</option>
@@ -93,7 +93,7 @@ export default function QuestionBank() {
 
       <Card>
         <div className="flex items-center gap-2">
-          <Input type="file" accept=".csv,.txt" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+          <Input type="file" accept=".csv,.txt" onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFile(e.target.files?.[0] ?? null)} />
           <Button onClick={handleUpload} disabled={!selectedSubject || !file}>Upload CSV</Button>
           <Button onClick={loadQuestions} disabled={!selectedSubject}>Refresh Questions</Button>
         </div>

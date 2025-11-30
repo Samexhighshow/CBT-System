@@ -22,6 +22,9 @@ use App\Http\Controllers\CbtSubjectController;
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
 
+// Sample CSV for question import (public for easy access)
+Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv']);
+
 // Auth & Verification
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/email/verification-notification', [AuthController::class, 'sendVerification']);
@@ -154,9 +157,6 @@ Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
 
 // CBT System routes (authenticated)
 Route::middleware('auth:sanctum')->group(function () {
-    // Sample CSV for question import
-    Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv']);
-
     // Import questions to a subject
     Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
 

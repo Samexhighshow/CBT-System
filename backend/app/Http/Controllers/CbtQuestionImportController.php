@@ -1,12 +1,12 @@
 <?php
 
-namespace App\\Http\\Controllers;
+namespace App\Http\Controllers;
 
-use App\\Models\\CbtQuestion;
-use App\\Models\\CbtSubject;
-use Illuminate\\Http\\Request;
-use Illuminate\\Support\\Facades\\Validator;
-use Illuminate\\Support\\Facades\\Storage;
+use App\Models\CbtQuestion;
+use App\Models\CbtSubject;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Storage;
 
 class CbtQuestionImportController extends Controller
 {

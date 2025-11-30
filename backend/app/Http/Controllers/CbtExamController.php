@@ -1,13 +1,13 @@
 <?php
 
-namespace App\\Http\\Controllers;
+namespace App\Http\Controllers;
 
-use App\\Models\\CbtQuestion;
-use App\\Models\\CbtStudentAnswer;
-use App\\Models\\CbtStudentExam;
-use App\\Models\\CbtSubject;
-use Illuminate\\Http\\Request;
-use Illuminate\\Support\\Facades\\DB;
+use App\Models\CbtQuestion;
+use App\Models\CbtStudentAnswer;
+use App\Models\CbtStudentExam;
+use App\Models\CbtSubject;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CbtExamController extends Controller
 {

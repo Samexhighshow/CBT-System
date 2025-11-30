@@ -1,6 +1,8 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
+import { useTeacherSetup } from './hooks/useTeacherSetup';
+import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -19,13 +21,23 @@ import AdminUserManagement from './pages/admin/AdminUserManagement';
 import AdminSettings from './pages/admin/AdminSettings';
 import Profile from './pages/Profile';
 import SubjectSelection from './pages/SubjectSelection';
+import QuestionBank from './pages/admin/QuestionBank';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
 
 const App: React.FC = () => {
+  const { showModal, handleComplete, handleSkip } = useTeacherSetup();
+
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Routes>
+    <>
+      <TeacherSubjectAssignmentModal
+        isOpen={showModal}
+        onClose={handleSkip}
+        onComplete={handleComplete}
+      />
+      
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes>
         {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/register" element={<StudentRegistration />} />
@@ -111,6 +123,17 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
+        
+        <Route
+          path="/admin/question-entry"
+          element={
+            <RequireAuth>
+              <RequireRole roles={["Admin","Main Admin","Teacher"]}>
+                <QuestionBank />
+              </RequireRole>
+            </RequireAuth>
+          }
+        />
 
         {/* Roles management is accessible via existing /admin/users page */}
         
@@ -118,6 +141,7 @@ const App: React.FC = () => {
         <Route path="*" element={<LandingPage />} />
       </Routes>
     </Router>
+    </>
   );
 };
 

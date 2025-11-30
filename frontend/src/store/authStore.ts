@@ -8,6 +8,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  hasCompletedTeacherSetup: boolean;
   
   // Actions
   setUser: (user: User | null) => void;
@@ -17,6 +18,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
+  completeTeacherSetup: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -27,6 +29,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      hasCompletedTeacherSetup: false,
 
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       
@@ -66,6 +69,8 @@ export const useAuthStore = create<AuthState>()(
       setError: (error) => set({ error }),
       
       clearError: () => set({ error: null }),
+      
+      completeTeacherSetup: () => set({ hasCompletedTeacherSetup: true }),
     }),
     {
       name: 'auth-storage',
@@ -73,6 +78,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         token: state.token,
         isAuthenticated: state.isAuthenticated,
+        hasCompletedTeacherSetup: state.hasCompletedTeacherSetup,
       }),
     }
   )

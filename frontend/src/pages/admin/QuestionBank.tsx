@@ -201,7 +201,7 @@ const QuestionBank: React.FC = () => {
               aria-label="Search questions"
             />
           </div>
-          <Button onClick={() => navigate('/admin/questions/upload')} variant="secondary" className="flex items-center gap-2">
+          <Button onClick={() => setShowCreateModal(true)} variant="secondary" className="flex items-center gap-2">
             <i className='bx bx-upload'></i>
             <span>Upload Questions</span>
           </Button>
@@ -282,7 +282,7 @@ const QuestionBank: React.FC = () => {
             <h3 className="font-semibold mb-2">Upload Excel File</h3>
             <p className="text-sm text-gray-600">Import questions from Excel</p>
           </label>
-          <div onClick={() => navigate('/admin/questions/create')} className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-500 cursor-pointer transition">
+          <div onClick={() => setShowCreateModal(true)} className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-500 cursor-pointer transition">
             <div className="text-4xl mb-3">
               <i className='bx bx-pencil text-4xl'></i>
             </div>
