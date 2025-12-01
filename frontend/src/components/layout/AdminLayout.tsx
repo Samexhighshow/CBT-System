@@ -42,6 +42,7 @@ const AdminLayout: React.FC = () => {
     { name: 'Subjects', path: '/admin/subjects', icon: 'bx-folder' },
     { name: 'Results', path: '/admin/results', icon: 'bx-bar-chart-alt-2' },
     { name: 'Users', path: '/admin/users', icon: 'bx-shield' },
+    { name: 'Activity Logs', path: '/admin/activity-logs', icon: 'bx-history' },
   ];
 
   const isActivePath = (path: string) => {

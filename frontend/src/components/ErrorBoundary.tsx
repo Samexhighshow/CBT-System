@@ -51,8 +51,8 @@ class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="max-w-2xl w-full bg-white rounded-lg shadow-xl p-8">
+        <div className="fixed inset-0 bg-gray-50 flex items-center justify-center p-4 z-50 overflow-auto">
+          <div className="max-w-2xl w-full bg-white rounded-lg shadow-xl p-8 my-8">
             <div className="text-center mb-6">
               <div className="text-red-500 text-6xl mb-4">
                 <i className='bx bx-error-circle'></i>
@@ -73,7 +73,7 @@ class ErrorBoundary extends Component<Props, State> {
                 <div className="text-sm text-gray-600 space-y-2">
                   <p className="font-mono text-red-600">{this.state.error.toString()}</p>
                   {this.state.errorInfo && (
-                    <pre className="bg-gray-900 text-white p-4 rounded overflow-auto text-xs">
+                    <pre className="bg-gray-900 text-white p-4 rounded overflow-auto text-xs max-h-96">
                       {this.state.errorInfo.componentStack}
                     </pre>
                   )}
@@ -81,22 +81,22 @@ class ErrorBoundary extends Component<Props, State> {
               </details>
             )}
 
-            <div className="flex gap-3 justify-center">
+            <div className="flex gap-3 justify-center flex-wrap">
               <button
                 onClick={() => window.history.back()}
-                className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
               >
                 Go Back
               </button>
               <button
                 onClick={this.handleReset}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
               >
                 Return to Home
               </button>
               <button
                 onClick={() => window.location.reload()}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
               >
                 Reload Page
               </button>

@@ -41,16 +41,6 @@ const ActivityLogs: React.FC = () => {
     to_date: '',
   });
 
-  useEffect(() => {
-    loadLogs();
-    loadStats();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, filters]);
-
-  useKeyboardShortcuts({
-    onRefresh: loadLogs,
-  });
-
   const loadLogs = async () => {
     try {
       setLoading(true);
@@ -85,13 +75,23 @@ const ActivityLogs: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    loadLogs();
+    loadStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, filters]);
+
+  useKeyboardShortcuts({
+    onRefresh: loadLogs,
+  });
+
   const handleCleanup = async () => {
-    const days = prompt('Delete logs older than how many days?', '90');
-    if (!days) return;
+    const daysInput = prompt('Delete logs older than how many days?', '90');
+    if (!daysInput) return;
 
     try {
       const response = await api.delete('/activity-logs/cleanup', {
-        data: { days: parseInt(days) },
+        data: { days: parseInt(daysInput) },
       });
       showSuccess(response.data.message);
       loadLogs();

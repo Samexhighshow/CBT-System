@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components';
-import { api } from '../../services/api';
+import { api, API_URL } from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 
 interface Student {
@@ -127,11 +127,11 @@ const StudentManagement: React.FC = () => {
   };
 
   const downloadTemplate = () => {
-    window.open(`${api.defaults.baseURL}/students/import/template`, '_blank');
+    window.open(`${API_URL}/students/import/template`, '_blank');
   };
 
   const exportStudents = () => {
-    window.open(`${api.defaults.baseURL}/students/export`, '_blank');
+    window.open(`${API_URL}/students/export`, '_blank');
     showSuccess('Downloading student list...');
   };
 

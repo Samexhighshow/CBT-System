@@ -8,7 +8,7 @@ class Question extends Model
 {
     protected $table = 'exam_questions';
     protected $fillable = [
-        'exam_id', 'question_text', 'question_type', 'metadata'
+        'exam_id', 'question_text', 'question_type', 'marks', 'difficulty_level', 'metadata'
     ];
 
     protected $casts = [

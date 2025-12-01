@@ -8,6 +8,7 @@ import StudentManagement from './admin/StudentManagement';
 import SubjectManagement from './admin/SubjectManagement';
 import ResultsAnalytics from './admin/ResultsAnalytics';
 import AdminUserManagement from './admin/AdminUserManagement';
+import ActivityLogs from './admin/ActivityLogs';
 
 // Admin Dashboard with shared layout
 const AdminDashboard: React.FC = () => {
@@ -21,6 +22,7 @@ const AdminDashboard: React.FC = () => {
         <Route path="subjects" element={<SubjectManagement />} />
         <Route path="results" element={<ResultsAnalytics />} />
         <Route path="users" element={<AdminUserManagement />} />
+        <Route path="activity-logs" element={<ActivityLogs />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>

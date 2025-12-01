@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 import { useTeacherSetup } from './hooks/useTeacherSetup';
 import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
-import { ErrorBoundary } from './components';
+import { ErrorBoundary, KeyboardShortcutsHelp } from './components';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -40,6 +40,9 @@ const App: React.FC = () => {
       
       <ErrorBoundary>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          {/* Global Keyboard Shortcuts Help */}
+          <KeyboardShortcutsHelp />
+          
           <Routes>
           {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />

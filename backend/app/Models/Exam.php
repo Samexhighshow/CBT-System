@@ -8,7 +8,9 @@ class Exam extends Model
 {
     protected $table = 'exams';
     protected $fillable = [
-        'title', 'description', 'class_level', 'department', 'duration_minutes', 'published', 'metadata'
+        'title', 'description', 'subject_id', 'class_level', 'department', 
+        'duration', 'duration_minutes', 'total_marks', 'passing_marks',
+        'start_time', 'end_time', 'status', 'published', 'metadata'
     ];
 
     protected $casts = [
