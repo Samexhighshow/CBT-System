@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ActivityLogController extends Controller
 {
@@ -54,13 +55,13 @@ class ActivityLogController extends Controller
         $totalActivities = ActivityLog::count();
         $todayActivities = ActivityLog::whereDate('created_at', today())->count();
         
-        $topEvents = ActivityLog::select('event', \DB::raw('count(*) as count'))
+        $topEvents = ActivityLog::select('event', DB::raw('count(*) as count'))
             ->groupBy('event')
             ->orderBy('count', 'desc')
             ->limit(10)
             ->get();
 
-        $topUsers = ActivityLog::select('causer_id', 'causer_type', \DB::raw('count(*) as count'))
+        $topUsers = ActivityLog::select('causer_id', 'causer_type', DB::raw('count(*) as count'))
             ->whereNotNull('causer_id')
             ->groupBy('causer_id', 'causer_type')
             ->orderBy('count', 'desc')

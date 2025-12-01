@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card, Button } from './index';
 import { api } from '../services/api';
 import { showSuccess, showError } from '../utils/alerts';
-import QRCode from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface TwoFactorSetupProps {
   user: any;
@@ -96,7 +96,7 @@ export const TwoFactorSetup: React.FC<TwoFactorSetupProps> = ({ user, onComplete
           <div className="text-center">
             <p className="text-gray-600 mb-4">Scan this QR code with your authenticator app:</p>
             <div className="inline-block p-4 bg-white border rounded">
-              {qrCode && <QRCode value={qrCode} size={200} />}
+              {qrCode && <QRCodeSVG value={qrCode} size={200} />}
             </div>
             <p className="text-sm text-gray-500 mt-2">Or enter this code manually:</p>
             <code className="bg-gray-100 px-3 py-1 rounded text-sm font-mono">{secret}</code>

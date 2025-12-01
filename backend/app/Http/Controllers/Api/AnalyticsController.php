@@ -10,6 +10,7 @@ use App\Models\Department;
 use App\Models\Subject;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AnalyticsController extends Controller
 {
@@ -55,8 +56,8 @@ class AnalyticsController extends Controller
 
             return response()->json($stats);
         } catch (\Exception $e) {
-            \Log::error('Analytics error: ' . $e->getMessage());
-            \Log::error($e->getTraceAsString());
+            Log::error('Analytics error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
             return response()->json([
                 'error' => 'Failed to fetch analytics',
                 'message' => $e->getMessage(),
