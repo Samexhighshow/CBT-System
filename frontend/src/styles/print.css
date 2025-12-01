@@ -1,0 +1,369 @@
+/* Print Stylesheet for CBT System */
+
+@media print {
+  /* Hide non-essential elements */
+  nav,
+  header,
+  footer,
+  .sidebar,
+  .navbar,
+  .no-print,
+  button:not(.print-button),
+  input[type="button"],
+  input[type="submit"],
+  .btn,
+  .pagination,
+  .breadcrumb,
+  .alert:not(.print-alert),
+  .modal-backdrop,
+  .toast,
+  .dropdown-menu,
+  .tooltip,
+  .search-box,
+  .filter-controls,
+  .action-buttons {
+    display: none !important;
+  }
+
+  /* Reset page margins and colors */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  @page {
+    margin: 1.5cm;
+    size: A4;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background: white !important;
+    color: black !important;
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+
+  /* Container adjustments */
+  .container,
+  .content,
+  .main-content {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Card styles for print */
+  .card {
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    margin-bottom: 1rem;
+  }
+
+  /* Table styles */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  th,
+  td {
+    padding: 8px !important;
+    border: 1px solid #ddd !important;
+    text-align: left;
+  }
+
+  th {
+    background-color: #f5f5f5 !important;
+    font-weight: bold !important;
+  }
+
+  /* Headings */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    color: black !important;
+  }
+
+  h1 {
+    font-size: 24pt;
+    margin-bottom: 1rem;
+  }
+
+  h2 {
+    font-size: 18pt;
+    margin-bottom: 0.8rem;
+  }
+
+  h3 {
+    font-size: 14pt;
+    margin-bottom: 0.6rem;
+  }
+
+  /* Links */
+  a {
+    color: black !important;
+    text-decoration: none !important;
+  }
+
+  a[href]:after {
+    content: " (" attr(href) ")";
+    font-size: 10pt;
+    color: #666;
+  }
+
+  /* Avoid breaking these elements */
+  .result-item,
+  .exam-details,
+  .student-info,
+  .score-card,
+  .question-block {
+    page-break-inside: avoid;
+  }
+
+  /* Result/Report specific styles */
+  .result-header,
+  .report-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid black;
+    padding-bottom: 1rem;
+  }
+
+  .result-logo {
+    max-width: 150px;
+    margin-bottom: 1rem;
+  }
+
+  .result-title {
+    font-size: 20pt;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+
+  .result-subtitle {
+    font-size: 12pt;
+    color: #666;
+  }
+
+  /* Student info box */
+  .student-info-box {
+    border: 1px solid #ddd;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background-color: #f9f9f9 !important;
+  }
+
+  .student-info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Score display */
+  .score-display {
+    text-align: center;
+    font-size: 36pt;
+    font-weight: bold;
+    padding: 2rem;
+    border: 2px solid black;
+    margin: 1rem 0;
+  }
+
+  .grade-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: 2px solid black;
+    font-weight: bold;
+    margin-left: 1rem;
+  }
+
+  /* Pass/Fail status */
+  .status-pass {
+    color: #008000 !important;
+  }
+
+  .status-fail {
+    color: #ff0000 !important;
+  }
+
+  /* Question list for print */
+  .question-list {
+    margin-top: 2rem;
+  }
+
+  .question-item {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    border: 1px solid #ddd;
+    page-break-inside: avoid;
+  }
+
+  .question-number {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+
+  .question-text {
+    margin-bottom: 1rem;
+  }
+
+  .answer-options {
+    margin-left: 2rem;
+  }
+
+  .option-item {
+    margin-bottom: 0.3rem;
+  }
+
+  .correct-answer {
+    font-weight: bold;
+    color: #008000 !important;
+  }
+
+  .student-answer {
+    color: #000080 !important;
+  }
+
+  .wrong-answer {
+    color: #ff0000 !important;
+    text-decoration: line-through;
+  }
+
+  /* Statistics tables */
+  .stats-table {
+    margin: 1rem 0;
+  }
+
+  .stats-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .stats-label {
+    font-weight: bold;
+  }
+
+  /* Footer for print */
+  .print-footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #ddd;
+    font-size: 10pt;
+    text-align: center;
+  }
+
+  .print-date {
+    font-style: italic;
+    color: #666;
+  }
+
+  /* Signature section */
+  .signature-section {
+    margin-top: 3rem;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature-box {
+    width: 45%;
+    text-align: center;
+  }
+
+  .signature-line {
+    border-top: 1px solid black;
+    margin-top: 3rem;
+    padding-top: 0.5rem;
+  }
+
+  /* Force page breaks */
+  .page-break {
+    page-break-after: always;
+  }
+
+  .page-break-before {
+    page-break-before: always;
+  }
+
+  /* Chart adjustments for print */
+  canvas,
+  .chart-container {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Ensure backgrounds print */
+  .bg-success,
+  .bg-danger,
+  .bg-warning,
+  .bg-info {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Grid layouts for print */
+  .grid {
+    display: block !important;
+  }
+
+  .grid > * {
+    width: 100% !important;
+    margin-bottom: 1rem;
+  }
+}
+
+/* Print-specific utility classes */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .print-only {
+    display: block !important;
+  }
+}
+
+/* Print button styling (visible on screen, hidden in print) */
+.print-button {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 1000;
+  padding: 1rem 2rem;
+  background-color: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+}
+
+.print-button:hover {
+  background-color: #1d4ed8;
+}
+
+@media print {
+  .print-button {
+    display: none !important;
+  }
+}

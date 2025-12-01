@@ -69,8 +69,8 @@ const AvailableExams: React.FC = () => {
                 </div>
                 <p className="text-sm text-gray-600">{exam.subject?.name || 'N/A'} • {exam.class_level}</p>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">⏱ {exam.duration} minutes</span>
-                  <span className="text-gray-600">📝 {exam.total_marks} marks</span>
+                  <span className="text-gray-600 flex items-center gap-1"><i className='bx bx-time-five'></i> {exam.duration} minutes</span>
+                  <span className="text-gray-600 flex items-center gap-1"><i className='bx bx-edit-alt'></i> {exam.total_marks} marks</span>
                 </div>
                 <Button onClick={() => navigate(`/exam/${exam.id}`)} className="w-full">
                   Start Exam

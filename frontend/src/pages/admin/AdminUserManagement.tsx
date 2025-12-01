@@ -67,64 +67,17 @@ const AdminUserManagement: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top Navigation - CBT Admin Style */}
-      <nav className="bg-white shadow-sm border-b w-full">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-xl font-bold text-blue-600">CBT Admin</h1>
-              <div className="hidden md:flex space-x-1">
-                <a
-                  href="/admin"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
-                >
-                  Overview
-                </a>
-                <a
-                  href="/admin/questions"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
-                >
-                  Questions
-                </a>
-                <a
-                  href="/admin/exams"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
-                >
-                  Exams
-                </a>
-                <a
-                  href="/admin/students"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
-                >
-                  Students
-                </a>
-                <a
-                  href="/admin/subjects"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
-                >
-                  Subjects
-                </a>
-                <a
-                  href="/admin/results"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
-                >
-                  Results
-                </a>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowRoleDetails(!showRoleDetails)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
-            >
-              {showRoleDetails ? 'Hide' : 'View'} Role Permissions
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      <div className="p-6 space-y-6">
+    <div className="space-y-6">
+      {/* Header with Role Permissions Button */}
+      <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Admin User Management</h2>
+        <button
+          onClick={() => setShowRoleDetails(!showRoleDetails)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+        >
+          {showRoleDetails ? 'Hide' : 'View'} Role Permissions
+        </button>
+      </div>
 
       {/* Role Permissions Card */}
       {showRoleDetails && (
@@ -318,11 +271,10 @@ const AdminUserManagement: React.FC = () => {
         )}
       </Card>
 
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800">
-            <strong>Access Control:</strong> Only Main Admin should access this page. Backend middleware ensures this restriction is enforced.
-          </p>
-        </div>
+      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <p className="text-sm text-blue-800">
+          <strong>Access Control:</strong> Only Main Admin should access this page. Backend middleware ensures this restriction is enforced.
+        </p>
       </div>
     </div>
   );

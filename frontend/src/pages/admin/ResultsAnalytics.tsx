@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card } from '../../components';
+import { Card, Button, SkeletonCard, SkeletonList } from '../../components';
 import { api } from '../../services/api';
-// import { showError } from '../../utils/alerts';
+import { showError, showSuccess } from '../../utils/alerts';
 
 interface AnalyticsData {
   average_score: number;
@@ -86,11 +86,36 @@ const ResultsAnalytics: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const downloadPdf = (subjectId: number) => {
+    window.open(`${api.defaults.baseURL}/reports/exam/${subjectId}/pdf`, '_blank');
+    showSuccess('Downloading PDF report...');
+  };
+
+  const downloadExcel = (subjectId: number) => {
+    window.open(`${api.defaults.baseURL}/reports/exam/${subjectId}/excel`, '_blank');
+    showSuccess('Downloading Excel report...');
+  };
+  
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Results & Analytics</h1>
-        <p className="text-gray-600 mt-2">View exam results and performance metrics</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Results & Analytics</h1>
+          <p className="text-gray-600 mt-2">View exam results and performance metrics</p>
+        </div>
+        {subjectId && (
+          <div className="flex gap-2">
+            <Button onClick={() => downloadPdf(Number(subjectId))} variant="secondary" className="flex items-center gap-2">
+              <i className='bx bx-download'></i>
+              <span>Download PDF</span>
+            </Button>
+            <Button onClick={() => downloadExcel(Number(subjectId))} variant="secondary" className="flex items-center gap-2">
+              <i className='bx bx-spreadsheet'></i>
+              <span>Download Excel</span>
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card>
@@ -133,24 +158,34 @@ const ResultsAnalytics: React.FC = () => {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-green-50">
-          <p className="text-sm text-gray-600">Average Score</p>
-            <h3 className="text-2xl font-bold text-green-600 mt-1">
-              {loading ? '...' : `${Number(analytics.average_score ?? 0).toFixed(1)}%`}
-            </h3>
-        </Card>
-        <Card className="bg-blue-50">
-          <p className="text-sm text-gray-600">Pass Rate</p>
-            <h3 className="text-2xl font-bold text-blue-600 mt-1">
-              {loading ? '...' : `${Number(analytics.pass_rate ?? 0).toFixed(1)}%`}
-            </h3>
-        </Card>
-        <Card className="bg-purple-50">
-          <p className="text-sm text-gray-600">Submissions</p>
-            <h3 className="text-2xl font-bold text-purple-600 mt-1">
-              {loading ? '...' : Number(analytics.total_submissions ?? 0).toLocaleString()}
-            </h3>
-        </Card>
+        {loading ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          <>
+            <Card className="bg-green-50">
+              <p className="text-sm text-gray-600">Average Score</p>
+                <h3 className="text-2xl font-bold text-green-600 mt-1">
+                  {`${Number(analytics.average_score ?? 0).toFixed(1)}%`}
+                </h3>
+            </Card>
+            <Card className="bg-blue-50">
+              <p className="text-sm text-gray-600">Pass Rate</p>
+                <h3 className="text-2xl font-bold text-blue-600 mt-1">
+                  {`${Number(analytics.pass_rate ?? 0).toFixed(1)}%`}
+                </h3>
+            </Card>
+            <Card className="bg-purple-50">
+              <p className="text-sm text-gray-600">Submissions</p>
+                <h3 className="text-2xl font-bold text-purple-600 mt-1">
+                  {Number(analytics.total_submissions ?? 0).toLocaleString()}
+                </h3>
+            </Card>
+          </>
+        )}
       </div>
 
       <Card>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Card } from '../../components';
+import { Card, Button, SkeletonCard, SkeletonList } from '../../components';
 import { api } from '../../services/api';
-import { showError } from '../../utils/alerts';
+import { showError, showSuccess } from '../../utils/alerts';
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 interface Result {
   id: number;
@@ -60,32 +61,75 @@ const MyResults: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onRefresh: loadResults,
+  });
+
+  const downloadPdf = () => {
+    const userData = localStorage.getItem('user');
+    if (!userData) return;
+    const user = JSON.parse(userData);
+    window.open(`${api.defaults.baseURL}/reports/student/${user.id}/pdf`, '_blank');
+    showSuccess('Downloading PDF report...');
+  };
+
+  const downloadExcel = () => {
+    const userData = localStorage.getItem('user');
+    if (!userData) return;
+    const user = JSON.parse(userData);
+    window.open(`${api.defaults.baseURL}/reports/student/${user.id}/excel`, '_blank');
+    showSuccess('Downloading Excel report...');
+  };
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">My Results</h1>
-        <p className="text-gray-600 mt-2">View your exam performance</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">My Results</h1>
+          <p className="text-gray-600 mt-2">View your exam performance</p>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={downloadPdf} variant="secondary" className="flex items-center gap-2">
+            <i className='bx bx-download'></i>
+            <span>Download PDF</span>
+          </Button>
+          <Button onClick={downloadExcel} variant="secondary" className="flex items-center gap-2">
+            <i className='bx bx-spreadsheet'></i>
+            <span>Download Excel</span>
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-green-50">
-          <p className="text-sm text-gray-600">Average Score</p>
-          <h3 className="text-2xl font-bold text-green-600 mt-1">{loading ? '...' : `${stats.average_score.toFixed(1)}%`}</h3>
-        </Card>
-        <Card className="bg-blue-50">
-          <p className="text-sm text-gray-600">Exams Taken</p>
-          <h3 className="text-2xl font-bold text-blue-600 mt-1">{loading ? '...' : stats.total_exams}</h3>
-        </Card>
-        <Card className="bg-purple-50">
-          <p className="text-sm text-gray-600">Pass Rate</p>
-          <h3 className="text-2xl font-bold text-purple-600 mt-1">{loading ? '...' : `${stats.pass_rate.toFixed(1)}%`}</h3>
-        </Card>
+        {loading ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          <>
+            <Card className="bg-green-50">
+              <p className="text-sm text-gray-600">Average Score</p>
+              <h3 className="text-2xl font-bold text-green-600 mt-1">{`${stats.average_score.toFixed(1)}%`}</h3>
+            </Card>
+            <Card className="bg-blue-50">
+              <p className="text-sm text-gray-600">Exams Taken</p>
+              <h3 className="text-2xl font-bold text-blue-600 mt-1">{stats.total_exams}</h3>
+            </Card>
+            <Card className="bg-purple-50">
+              <p className="text-sm text-gray-600">Pass Rate</p>
+              <h3 className="text-2xl font-bold text-purple-600 mt-1">{`${stats.pass_rate.toFixed(1)}%`}</h3>
+            </Card>
+          </>
+        )}
       </div>
 
       <Card>
         <h2 className="text-xl font-semibold mb-4">Recent Results</h2>
         {loading ? (
-          <p className="text-gray-500">Loading results...</p>
+          <SkeletonList items={5} />
         ) : results.length === 0 ? (
           <p className="text-gray-500">No exam results yet. Take your first exam!</p>
         ) : (

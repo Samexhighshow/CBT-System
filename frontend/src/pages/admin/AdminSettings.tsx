@@ -42,11 +42,12 @@ const AdminSettings: React.FC = () => {
   const getValue = (key: string) => settings.find(s => s.key === key)?.value;
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">System Settings</h1>
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
+    <div className="min-h-screen bg-gray-50">
+      <div className="p-6">
+        <h1 className="text-2xl font-semibold mb-4">System Settings</h1>
+        {loading ? (
+          <p>Loading...</p>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="border rounded p-4">
             <h2 className="font-semibold mb-2">Registration</h2>
@@ -161,6 +162,7 @@ const AdminSettings: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

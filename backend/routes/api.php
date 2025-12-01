@@ -18,6 +18,9 @@ use App\Http\Controllers\CbtQuestionImportController;
 use App\Http\Controllers\CbtExamController;
 use App\Http\Controllers\CbtResultsController;
 use App\Http\Controllers\CbtSubjectController;
+use App\Http\Controllers\Api\StudentBulkController;
+use App\Http\Controllers\Api\ExamDuplicationController;
+use App\Http\Controllers\Api\ActivityLogController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -49,6 +52,11 @@ Route::prefix('students')->group(function () {
     Route::get('/{id}/exams', [StudentController::class, 'getExams']);
     Route::get('/{id}/results', [StudentController::class, 'getResults']);
     Route::get('/{id}/statistics', [StudentController::class, 'getStatistics']);
+    
+    // Bulk operations
+    Route::post('/import', [StudentBulkController::class, 'importCsv']);
+    Route::get('/export', [StudentBulkController::class, 'exportCsv']);
+    Route::get('/import/template', [StudentBulkController::class, 'downloadTemplate']);
 });
 
 // Exams
@@ -62,6 +70,9 @@ Route::prefix('exams')->group(function () {
     Route::post('/{id}/submit', [ExamController::class, 'submitExam']);
     Route::get('/{id}/questions', [ExamController::class, 'getQuestions']);
     Route::get('/{id}/statistics', [ExamController::class, 'getStatistics']);
+    
+    // Duplicate exam
+    Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
 });
 
 // Questions
@@ -155,6 +166,11 @@ Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
 
 // CBT System routes (authenticated)
 Route::middleware('auth:sanctum')->group(function () {
+    // User management (Main Admin only - enforced by middleware in controller)
+    Route::get('/users', [UserController::class, 'index']);
+    Route::get('/roles', [RoleController::class, 'listRoles']);
+    Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
+    
     // Import questions to a subject
     Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
 
@@ -181,4 +197,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/cbt/subjects/assign-teacher', [CbtSubjectController::class, 'assignTeacher']);
     Route::get('/cbt/teachers/{teacher}/subjects', [CbtSubjectController::class, 'teacherSubjects']);
     Route::post('/cbt/teachers/self-assign', [CbtSubjectController::class, 'selfAssignSubjects']);
+    
+    // Activity Logs (Admin only)
+    Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+    Route::get('/activity-logs/stats', [ActivityLogController::class, 'stats']);
+    Route::delete('/activity-logs/cleanup', [ActivityLogController::class, 'cleanup']);
 });

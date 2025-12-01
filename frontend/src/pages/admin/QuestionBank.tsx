@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button } from '../../components';
+import { Card, Button, SkeletonCard, SkeletonTable } from '../../components';
 import { api } from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 interface Question {
   id: number;
@@ -30,6 +31,7 @@ interface CbtSubject {
 
 const QuestionBank: React.FC = () => {
   const navigate = useNavigate();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [cbtSubjects, setCbtSubjects] = useState<CbtSubject[]>([]);
@@ -114,6 +116,14 @@ const QuestionBank: React.FC = () => {
     setShowCreateModal(true);
   };
 
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onSearch: () => searchInputRef.current?.focus(),
+    onNew: openCreate,
+    onEscape: () => setShowCreateModal(false),
+    onRefresh: loadData,
+  });
+
   const openEdit = (q: Question) => {
     setEditing(q);
     setForm({
@@ -190,13 +200,14 @@ const QuestionBank: React.FC = () => {
           <p className="text-gray-600 mt-2">Manage exam questions</p>
         </div>
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <i className='bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400'></i>
+          <div className="relative">
+            <i className='bx bx-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400'></i>
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Search questions..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={e => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Search questions"
             />
@@ -214,22 +225,33 @@ const QuestionBank: React.FC = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-blue-50">
-          <p className="text-sm text-gray-600">Total Questions</p>
-          <h3 className="text-2xl font-bold text-blue-600 mt-1">{loading ? '...' : stats.total_questions}</h3>
-        </Card>
-        <Card className="bg-green-50">
-          <p className="text-sm text-gray-600">Multiple Choice</p>
-          <h3 className="text-2xl font-bold text-green-600 mt-1">{loading ? '...' : stats.multiple_choice}</h3>
-        </Card>
-        <Card className="bg-purple-50">
-          <p className="text-sm text-gray-600">True/False</p>
-          <h3 className="text-2xl font-bold text-purple-600 mt-1">{loading ? '...' : stats.true_false}</h3>
-        </Card>
-        <Card className="bg-orange-50">
-          <p className="text-sm text-gray-600">Essay</p>
-          <h3 className="text-2xl font-bold text-orange-600 mt-1">{loading ? '...' : stats.essay}</h3>
-        </Card>
+        {loading ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          <>
+            <Card className="bg-blue-50">
+              <p className="text-sm text-gray-600">Total Questions</p>
+              <h3 className="text-2xl font-bold text-blue-600 mt-1">{stats.total_questions}</h3>
+            </Card>
+            <Card className="bg-green-50">
+              <p className="text-sm text-gray-600">Multiple Choice</p>
+              <h3 className="text-2xl font-bold text-green-600 mt-1">{stats.multiple_choice}</h3>
+            </Card>
+            <Card className="bg-purple-50">
+              <p className="text-sm text-gray-600">True/False</p>
+              <h3 className="text-2xl font-bold text-purple-600 mt-1">{stats.true_false}</h3>
+            </Card>
+            <Card className="bg-orange-50">
+              <p className="text-sm text-gray-600">Essay</p>
+              <h3 className="text-2xl font-bold text-orange-600 mt-1">{stats.essay}</h3>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Upload Options */}
@@ -246,7 +268,7 @@ const QuestionBank: React.FC = () => {
               <option value="">Select CBT Subject</option>
               {cbtSubjects.map(s => (
                 <option key={s.id} value={s.id}>
-                  {s.subject_name} ({s.class_level}) {s.shuffle_questions ? '🔀' : ''}
+                  {s.subject_name} ({s.class_level}) {s.shuffle_questions ? '(Shuffled)' : ''}
                 </option>
               ))}
             </select>
@@ -308,11 +330,7 @@ const QuestionBank: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr>
-                  <td className="px-6 py-4 text-sm text-gray-500 text-center" colSpan={5}>
-                    Loading questions...
-                  </td>
-                </tr>
+                <SkeletonTable rows={5} cols={5} />
               ) : questions.length === 0 ? (
                 <tr>
                   <td className="px-6 py-4 text-sm text-gray-500 text-center" colSpan={5}>

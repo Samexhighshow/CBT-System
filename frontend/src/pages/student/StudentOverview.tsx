@@ -72,7 +72,7 @@ const StudentOverview: React.FC = () => {
     {
       title: 'My Results',
       description: 'View your exam results and scores',
-      icon: '📊',
+      icon: 'bx bx-bar-chart-alt-2',
       path: '/student/results',
       color: 'bg-green-500',
     },
@@ -93,14 +93,14 @@ const StudentOverview: React.FC = () => {
     {
       title: 'Practice Tests',
       description: 'Take practice tests to prepare',
-      icon: '📝',
+      icon: 'bx bx-edit-alt',
       path: '/student/practice',
       color: 'bg-indigo-500',
     },
     {
       title: 'Completed Exams',
       description: 'Review your completed exams',
-      icon: '✅',
+      icon: 'bx bx-check-circle',
       path: '/student/completed',
       color: 'bg-pink-500',
     },
@@ -134,7 +134,7 @@ const StudentOverview: React.FC = () => {
               <h3 className="text-3xl font-bold mt-2">{stats.averageScore}%</h3>
               <p className="text-green-100 text-xs mt-1">Overall performance</p>
             </div>
-            <span className="text-5xl">📊</span>
+            <i className='bx bx-bar-chart-alt-2 text-5xl'></i>
           </div>
         </Card>
 
@@ -145,7 +145,7 @@ const StudentOverview: React.FC = () => {
               <h3 className="text-3xl font-bold mt-2">{stats.completedExams}</h3>
               <p className="text-purple-100 text-xs mt-1">This term</p>
             </div>
-            <span className="text-5xl">✅</span>
+            <i className='bx bx-check-circle text-5xl'></i>
           </div>
         </Card>
 
@@ -156,7 +156,7 @@ const StudentOverview: React.FC = () => {
               <h3 className="text-3xl font-bold mt-2">{stats.upcomingExams}</h3>
               <p className="text-orange-100 text-xs mt-1">This week</p>
             </div>
-            <span className="text-5xl">🕐</span>
+            <i className='bx bx-time-five text-5xl'></i>
           </div>
         </Card>
       </div>
@@ -178,7 +178,7 @@ const StudentOverview: React.FC = () => {
               )}
               <div className="flex items-start space-x-4">
                 <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center w-16 h-16`}>
-                  <span className="text-3xl">{module.icon}</span>
+                  <i className={`${module.icon} text-3xl`}></i>
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900">{module.title}</h3>
@@ -201,7 +201,7 @@ const StudentOverview: React.FC = () => {
             <div className="flex items-center justify-between border-b pb-4">
               <div className="flex items-center space-x-3">
                 <div className="bg-green-100 p-2 rounded-lg">
-                  <span className="text-2xl">✅</span>
+                  <i className='bx bx-check-circle text-2xl text-green-600'></i>
                 </div>
                 <div>
                   <p className="font-medium">Mathematics Mid-Term Exam</p>

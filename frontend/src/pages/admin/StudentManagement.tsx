@@ -104,6 +104,37 @@ const StudentManagement: React.FC = () => {
     }
   };
 
+  const handleBulkUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await api.post('/students/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      showSuccess(`Imported ${response.data.imported} students successfully`);
+      if (response.data.errors?.length > 0) {
+        console.warn('Import errors:', response.data.errors);
+      }
+      loadStudents();
+    } catch (error) {
+      showError('Failed to import students');
+    }
+    event.target.value = ''; // Reset file input
+  };
+
+  const downloadTemplate = () => {
+    window.open(`${api.defaults.baseURL}/students/import/template`, '_blank');
+  };
+
+  const exportStudents = () => {
+    window.open(`${api.defaults.baseURL}/students/export`, '_blank');
+    showSuccess('Downloading student list...');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -124,9 +155,10 @@ const StudentManagement: React.FC = () => {
             />
           </div>
           <Button onClick={() => setShowRegisterModal(true)} className="flex items-center gap-2">
-          <i className='bx bx-user-plus'></i>
-          <span>Register Student</span>
-        </Button>
+            <i className='bx bx-user-plus'></i>
+            <span>Register Student</span>
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -147,6 +179,38 @@ const StudentManagement: React.FC = () => {
           <h3 className="text-2xl font-bold text-indigo-600 mt-1">{loading ? '...' : stats.active}</h3>
         </Card>
       </div>
+
+      {/* Registration Options */}
+      <Card>
+        <h2 className="text-xl font-semibold mb-4">Register Students</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div onClick={() => setShowRegisterModal(true)} className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 cursor-pointer transition">
+            <div className="text-4xl mb-3">
+              <i className='bx bx-user-plus text-4xl'></i>
+            </div>
+            <h3 className="font-semibold mb-2">Single Registration</h3>
+            <p className="text-sm text-gray-600">Register one student at a time</p>
+          </div>
+          <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 cursor-pointer transition">
+            <input type="file" accept=".csv" onChange={handleBulkUpload} className="hidden" />
+            <div className="text-4xl mb-3">
+              <i className='bx bx-spreadsheet text-4xl'></i>
+            </div>
+            <h3 className="font-semibold mb-2">Bulk Upload</h3>
+            <p className="text-sm text-gray-600">Import from Excel/CSV</p>
+            <button onClick={(e) => { e.stopPropagation(); downloadTemplate(); }} className="mt-2 text-xs text-blue-600 hover:underline">
+              Download Template
+            </button>
+          </label>
+          <div onClick={exportStudents} className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-500 cursor-pointer transition">
+            <div className="text-4xl mb-3">
+              <i className='bx bx-download text-4xl'></i>
+            </div>
+            <h3 className="font-semibold mb-2">Export List</h3>
+            <p className="text-sm text-gray-600">Download student records</p>
+          </div>
+        </div>
+      </Card>
 
       <Card>
         <h2 className="text-xl font-semibold mb-4">Student List ({students.filter(s => 
@@ -268,7 +332,6 @@ const StudentManagement: React.FC = () => {
             }}>Save</button>
           </div>
         </div>
-      </div>
       </div>
 
       {/* View Student Modal (no subjects) */}
