@@ -12,7 +12,16 @@ export interface ShortcutHandlers {
 export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
   const navigate = useNavigate();
 
+  // Disable keyboard shortcuts on small screens or touch devices
+  const shouldDisable = (() => {
+    if (typeof window === 'undefined') return true;
+    const isSmall = window.matchMedia('(max-width: 767px)').matches;
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    return isSmall || isTouch;
+  })();
+
   useEffect(() => {
+    if (shouldDisable) return; // Skip registering shortcuts for small / touch devices
     const handleKeyDown = (event: KeyboardEvent) => {
       // Ignore if user is typing in input/textarea
       const target = event.target as HTMLElement;
@@ -95,6 +104,6 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handlers, navigate]);
+  }, [handlers, navigate, shouldDisable]);
 };
 

@@ -22,6 +22,8 @@ use App\Http\Controllers\Api\StudentBulkController;
 use App\Http\Controllers\Api\ExamDuplicationController;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\OfflineExamController;
+use App\Http\Controllers\StudentImportController;
+use App\Http\Controllers\BackupController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -211,4 +213,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/offline/sync', [OfflineExamController::class, 'syncSubmission']);
     Route::post('/offline/batch-sync', [OfflineExamController::class, 'batchSync']);
     Route::post('/offline/check-status', [OfflineExamController::class, 'checkSyncStatus']);
+    
+    // Backup management (Admin only)
+    Route::middleware('role:admin')->prefix('backups')->group(function () {
+        Route::post('/trigger', [BackupController::class, 'triggerBackup']);
+        Route::get('/list', [BackupController::class, 'listBackups']);
+        Route::post('/clean', [BackupController::class, 'cleanBackups']);
+    });
+    
+    // Two-Factor Authentication with recovery codes
+    Route::post('/two-factor/setup', [ProfileController::class, 'setupGoogle2FA']);
+    Route::post('/two-factor/verify', [ProfileController::class, 'verifyGoogle2FA']);
+    Route::post('/two-factor/recovery-codes', [ProfileController::class, 'generateRecoveryCodes']);
 });

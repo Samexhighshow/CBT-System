@@ -153,15 +153,25 @@ class ProfileController extends Controller
             return response()->json(['message' => 'Invalid verification code'], 422);
         }
 
+        // Generate recovery codes
+        $recoveryCodes = [];
+        for ($i = 0; $i < 8; $i++) {
+            $recoveryCodes[] = strtoupper(bin2hex(random_bytes(5)));
+        }
+
         // Enable 2FA
         $user->update([
             'google2fa_secret' => $user->google2fa_secret_temp,
             'google2fa_secret_temp' => null,
             'two_factor_type' => 'google_authenticator',
             'two_factor_enabled' => true,
+            'two_factor_recovery_codes' => json_encode(array_map(fn($code) => Hash::make($code), $recoveryCodes)),
         ]);
 
-        return response()->json(['message' => 'Google Authenticator enabled successfully']);
+        return response()->json([
+            'message' => 'Google Authenticator enabled successfully',
+            'recovery_codes' => $recoveryCodes,
+        ]);
     }
 
     /**

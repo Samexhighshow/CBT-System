@@ -21,6 +21,7 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+        \App\Http\Middleware\ContentSecurityPolicy::class,
     ];
 
     /**
@@ -69,5 +70,6 @@ class Kernel extends HttpKernel
         'role_or_permission' => \Spatie\Permission\Middlewares\RoleOrPermissionMiddleware::class,
         'registration.open' => \App\Http\Middleware\EnsureRegistrationOpen::class,
         'main.admin' => \App\Http\Middleware\EnsureMainAdmin::class,
+        'throttle.strict' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':10,1',
     ];
 }

@@ -213,8 +213,8 @@ const AdminOverview: React.FC = () => {
         </Card>
       </div>
 
-      {/* Modules Section */}
-      <div className="mt-8">
+      {/* Modules Section (hidden on small screens) */}
+      <div className="mt-8 hidden md:block">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Management Modules</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {modules.map((module) => (

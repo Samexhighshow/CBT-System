@@ -39,6 +39,8 @@ const ActivityLogs: React.FC = () => {
     event: '',
     from_date: '',
     to_date: '',
+    causer_id: '',
+    search: '',
   });
 
   const loadLogs = async () => {
@@ -49,6 +51,8 @@ const ActivityLogs: React.FC = () => {
         ...(filters.event && { event: filters.event }),
         ...(filters.from_date && { from_date: filters.from_date }),
         ...(filters.to_date && { to_date: filters.to_date }),
+        ...(filters.causer_id && { causer_id: filters.causer_id }),
+        ...(filters.search && { search: filters.search }),
       });
       
       const response = await api.get(`/activity-logs?${params}`);
@@ -167,13 +171,24 @@ const ActivityLogs: React.FC = () => {
       {/* Filters */}
       <Card>
         <h2 className="text-lg font-semibold mb-4">Filters</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Search Description</label>
+            <input
+              type="text"
+              placeholder="Search logs..."
+              className="w-full border rounded px-3 py-2"
+              value={filters.search}
+              onChange={e => setFilters({ ...filters, search: e.target.value })}
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium mb-1">Event Type</label>
             <select
               className="w-full border rounded px-3 py-2"
               value={filters.event}
               onChange={e => setFilters({ ...filters, event: e.target.value })}
+              aria-label="Filter by event type"
             >
               <option value="">All Events</option>
               <option value="created">Created</option>
@@ -192,6 +207,7 @@ const ActivityLogs: React.FC = () => {
               className="w-full border rounded px-3 py-2"
               value={filters.from_date}
               onChange={e => setFilters({ ...filters, from_date: e.target.value })}
+              aria-label="Filter from date"
             />
           </div>
           <div>
@@ -201,6 +217,7 @@ const ActivityLogs: React.FC = () => {
               className="w-full border rounded px-3 py-2"
               value={filters.to_date}
               onChange={e => setFilters({ ...filters, to_date: e.target.value })}
+              aria-label="Filter to date"
             />
           </div>
         </div>

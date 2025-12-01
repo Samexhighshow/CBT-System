@@ -27,8 +27,22 @@ const shortcuts: Shortcut[] = [
 
 const KeyboardShortcutsHelp: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isSmallOrTouch, setIsSmallOrTouch] = useState(false);
 
   useEffect(() => {
+    const evaluate = () => {
+      if (typeof window === 'undefined') return;
+      const isSmall = window.matchMedia('(max-width: 767px)').matches;
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      setIsSmallOrTouch(isSmall || isTouch);
+    };
+    evaluate();
+    window.addEventListener('resize', evaluate);
+    return () => window.removeEventListener('resize', evaluate);
+  }, []);
+
+  useEffect(() => {
+    if (isSmallOrTouch) return; // Do not enable keyboard listener on small/touch devices
     const handleKeyDown = (e: KeyboardEvent) => {
       // Show shortcuts help with "?" key (Shift + /)
       if ((e.key === '?' || (e.shiftKey && e.key === '/')) && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -49,7 +63,10 @@ const KeyboardShortcutsHelp: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, isSmallOrTouch]);
+
+  // Hide entirely on small/touch devices
+  if (isSmallOrTouch) return null;
 
   if (!isOpen) {
     return (
