@@ -11,5 +11,5 @@ export { default as ErrorBoundary } from './ErrorBoundary';
 export { default as KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 export { default as TwoFactorSetup } from './TwoFactorSetup';
 export { default as DashboardCharts } from './DashboardCharts';
-export { SkeletonCard, SkeletonTable, SkeletonList } from './Skeleton';
+export { SkeletonCard, SkeletonList } from './Skeleton';
 export { default as SkeletonTable } from './SkeletonTable';

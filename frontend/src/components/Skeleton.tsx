@@ -16,40 +16,6 @@ export const SkeletonCard: React.FC<SkeletonCardProps> = ({ className = '' }) =>
   );
 };
 
-interface SkeletonTableProps {
-  rows?: number;
-  cols?: number;
-}
-
-export const SkeletonTable: React.FC<SkeletonTableProps> = ({ rows = 5, cols = 5 }) => {
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            {Array.from({ length: cols }).map((_, i) => (
-              <th key={i} className="px-6 py-3">
-                <div className="animate-pulse h-4 bg-gray-200 rounded"></div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {Array.from({ length: rows }).map((_, rowIndex) => (
-            <tr key={rowIndex}>
-              {Array.from({ length: cols }).map((_, colIndex) => (
-                <td key={colIndex} className="px-6 py-4">
-                  <div className="animate-pulse h-4 bg-gray-200 rounded"></div>
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
 interface SkeletonListProps {
   items?: number;
 }
@@ -78,4 +44,4 @@ export const SkeletonList: React.FC<SkeletonListProps> = ({ items = 3 }) => {
   );
 };
 
-export default { SkeletonCard, SkeletonTable, SkeletonList };
+export default { SkeletonCard, SkeletonList };
