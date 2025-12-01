@@ -11,6 +11,7 @@ import StudentRegistration from './pages/StudentRegistration';
 import StudentLogin from './pages/StudentLogin';
 import StudentDashboard from './pages/StudentDashboard';
 import ExamPortal from './pages/ExamPortal';
+import OfflineExamPortal from './pages/OfflineExamPortal';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import PasswordResetRequest from './pages/PasswordResetRequest';
@@ -88,6 +89,14 @@ const App: React.FC = () => {
           element={
             <RequireAuth>
               <ExamPortal />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/offline-exam/:examId"
+          element={
+            <RequireAuth>
+              <OfflineExamPortal />
             </RequireAuth>
           }
         />

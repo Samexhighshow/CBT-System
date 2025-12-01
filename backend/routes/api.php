@@ -21,6 +21,7 @@ use App\Http\Controllers\CbtSubjectController;
 use App\Http\Controllers\Api\StudentBulkController;
 use App\Http\Controllers\Api\ExamDuplicationController;
 use App\Http\Controllers\Api\ActivityLogController;
+use App\Http\Controllers\Api\OfflineExamController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -73,6 +74,9 @@ Route::prefix('exams')->group(function () {
     
     // Duplicate exam
     Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
+    
+    // Offline exam support
+    Route::get('/{id}/download', [OfflineExamController::class, 'downloadExam']);
 });
 
 // Questions
@@ -202,4 +206,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
     Route::get('/activity-logs/stats', [ActivityLogController::class, 'stats']);
     Route::delete('/activity-logs/cleanup', [ActivityLogController::class, 'cleanup']);
+    
+    // Offline exam sync
+    Route::post('/offline/sync', [OfflineExamController::class, 'syncSubmission']);
+    Route::post('/offline/batch-sync', [OfflineExamController::class, 'batchSync']);
+    Route::post('/offline/check-status', [OfflineExamController::class, 'checkSyncStatus']);
 });

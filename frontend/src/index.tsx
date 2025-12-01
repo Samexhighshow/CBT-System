@@ -4,14 +4,21 @@ import App from './App';
 import './index.css';
 import './styles/print.css';
 
-// Service Worker disabled - uncomment to enable offline support
-// if ('serviceWorker' in navigator) {
-//   window.addEventListener('load', () => {
-//     navigator.serviceWorker.register('/service-worker.js')
-//       .then(reg => console.log('Service Worker registered'))
-//       .catch(err => console.log('Service Worker registration failed'));
-//   });
-// }
+// Service Worker for PWA and offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(reg => {
+        console.log('Service Worker registered successfully:', reg.scope);
+        
+        // Check for updates every 60 seconds
+        setInterval(() => {
+          reg.update();
+        }, 60000);
+      })
+      .catch(err => console.error('Service Worker registration failed:', err));
+  });
+}
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('Failed to find the root element');

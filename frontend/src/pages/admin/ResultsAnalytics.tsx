@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, SkeletonCard, SkeletonList } from '../../components';
-import { api } from '../../services/api';
+import { api, API_URL } from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
 
 interface AnalyticsData {
@@ -88,12 +88,12 @@ const ResultsAnalytics: React.FC = () => {
   };
 
   const downloadPdf = (subjectId: number) => {
-    window.open(`${api.defaults.baseURL}/reports/exam/${subjectId}/pdf`, '_blank');
+    window.open(`${API_URL}/reports/exam/${subjectId}/pdf`, '_blank');
     showSuccess('Downloading PDF report...');
   };
 
   const downloadExcel = (subjectId: number) => {
-    window.open(`${api.defaults.baseURL}/reports/exam/${subjectId}/excel`, '_blank');
+    window.open(`${API_URL}/reports/exam/${subjectId}/excel`, '_blank');
     showSuccess('Downloading Excel report...');
   };
   

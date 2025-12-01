@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline - CBT System</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 500px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    .icon {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 30px;
+      background: #f3f4f6;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 60px;
+    }
+    h1 {
+      color: #1f2937;
+      margin-bottom: 15px;
+      font-size: 28px;
+    }
+    p {
+      color: #6b7280;
+      line-height: 1.6;
+      margin-bottom: 25px;
+      font-size: 16px;
+    }
+    .status {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #fee2e2;
+      color: #991b1b;
+      border-radius: 25px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 25px;
+    }
+    .status.online {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    button:hover {
+      background: #1d4ed8;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
+    }
+    .info-box {
+      background: #f9fafb;
+      border-left: 4px solid #2563eb;
+      padding: 15px;
+      margin-top: 25px;
+      text-align: left;
+      border-radius: 8px;
+    }
+    .info-box h3 {
+      color: #1f2937;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .info-box ul {
+      list-style: none;
+      padding-left: 0;
+    }
+    .info-box li {
+      color: #4b5563;
+      padding: 5px 0;
+      font-size: 14px;
+    }
+    .info-box li:before {
+      content: "✓ ";
+      color: #10b981;
+      font-weight: bold;
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>You're Offline</h1>
+    <div class="status" id="status">No Internet Connection</div>
+    <p>
+      It looks like you've lost your internet connection. Don't worry, the CBT System works offline too!
+    </p>
+    <button onclick="location.reload()">Try Again</button>
+    
+    <div class="info-box">
+      <h3>Available Offline:</h3>
+      <ul>
+        <li>Take exams (answers will sync when online)</li>
+        <li>View cached exam questions</li>
+        <li>Review previously loaded results</li>
+        <li>Browse cached content</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    // Check connection status
+    function updateStatus() {
+      const statusEl = document.getElementById('status');
+      if (navigator.onLine) {
+        statusEl.textContent = 'Back Online!';
+        statusEl.className = 'status online';
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        statusEl.textContent = 'No Internet Connection';
+        statusEl.className = 'status';
+      }
+    }
+
+    // Listen for connection changes
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    
+    // Initial check
+    updateStatus();
+
+    // Auto-retry every 5 seconds
+    setInterval(() => {
+      if (navigator.onLine) {
+        location.reload();
+      }
+    }, 5000);
+  </script>
+</body>
+</html>

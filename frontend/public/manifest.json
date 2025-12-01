@@ -1,17 +1,58 @@
 {
-  "name": "CBT System",
-  "short_name": "CBT",
-  "description": "School Computer-Based Test Platform",
+  "name": "CBT System - Computer Based Testing",
+  "short_name": "CBT System",
+  "description": "School Computer-Based Test Platform with Offline Support",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#007bff",
-  "orientation": "portrait-primary",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "categories": ["education", "productivity"],
   "icons": [
     {
       "src": "/favicon.ico",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
+    },
+    {
+      "src": "/logo192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
-  ]
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot1.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "label": "Exam Portal"
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "shortcuts": [
+    {
+      "name": "Take Exam",
+      "short_name": "Exam",
+      "description": "Start taking an exam",
+      "url": "/student/exams",
+      "icons": [{ "src": "/favicon.ico", "sizes": "96x96" }]
+    },
+    {
+      "name": "View Results",
+      "short_name": "Results",
+      "description": "Check your exam results",
+      "url": "/student/results",
+      "icons": [{ "src": "/favicon.ico", "sizes": "96x96" }]
+    }
+  ],
+  "protocol_handlers": []
 }

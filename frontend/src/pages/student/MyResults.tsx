@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, SkeletonCard, SkeletonList } from '../../components';
-import { api } from '../../services/api';
+import { api, API_URL } from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
@@ -71,7 +71,7 @@ const MyResults: React.FC = () => {
     const userData = localStorage.getItem('user');
     if (!userData) return;
     const user = JSON.parse(userData);
-    window.open(`${api.defaults.baseURL}/reports/student/${user.id}/pdf`, '_blank');
+    window.open(`${API_URL}/reports/student/${user.id}/pdf`, '_blank');
     showSuccess('Downloading PDF report...');
   };
 
@@ -79,7 +79,7 @@ const MyResults: React.FC = () => {
     const userData = localStorage.getItem('user');
     if (!userData) return;
     const user = JSON.parse(userData);
-    window.open(`${api.defaults.baseURL}/reports/student/${user.id}/excel`, '_blank');
+    window.open(`${API_URL}/reports/student/${user.id}/excel`, '_blank');
     showSuccess('Downloading Excel report...');
   };
   return (
