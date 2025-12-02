@@ -6,21 +6,26 @@ export const useTeacherSetup = () => {
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
+    // Always close modal if no user is logged in
     if (!user) {
       setShowModal(false);
       return;
     }
 
-    // Check if user is a teacher
-    const isTeacher = user.roles?.some((role: any) => role.name === 'Teacher');
+    // Check if user is a teacher (case-insensitive to handle Teacher, teacher, TEACHER)
+    const isTeacher = user.roles?.some((role: any) => 
+      role.name?.toLowerCase() === 'teacher'
+    );
     
     // Show modal if:
     // 1. User is a teacher
     // 2. Haven't completed setup yet
-    // 3. Modal isn't already showing
-    if (isTeacher && !hasCompletedTeacherSetup && !showModal) {
+    if (isTeacher && !hasCompletedTeacherSetup) {
       // Small delay to ensure smooth transition after login
       setTimeout(() => setShowModal(true), 500);
+    } else {
+      // Not a teacher or already completed - don't show modal
+      setShowModal(false);
     }
   }, [user, hasCompletedTeacherSetup]);
 

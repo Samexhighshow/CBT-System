@@ -24,21 +24,49 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
 }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Only load subjects when modal is actually open
     if (isOpen) {
       loadSubjects();
+    } else {
+      // Reset state when modal closes
+      setSubjects([]);
+      setSelectedSubjects([]);
+      setError('');
     }
   }, [isOpen]);
 
   const loadSubjects = async () => {
+    setLoading(true);
+    setError('');
     try {
       const res = await api.get('/cbt/subjects');
-      setSubjects(res.data?.data || res.data || []);
+      console.log('Subjects API response:', res.data);
+      
+      // The API returns { status: 'ok', subjects: [...] }
+      const subjectsData = res.data?.subjects || res.data?.data || res.data;
+      console.log('Subjects data:', subjectsData);
+      
+      // Ensure we always set an array
+      if (Array.isArray(subjectsData)) {
+        setSubjects(subjectsData);
+      } else if (subjectsData && typeof subjectsData === 'object') {
+        // If it's an object with data property
+        setSubjects(Array.isArray(subjectsData.data) ? subjectsData.data : []);
+      } else {
+        setSubjects([]);
+      }
     } catch (err: any) {
-      setError('Failed to load subjects');
+      console.error('Failed to load subjects:', err);
+      const errorMsg = err?.response?.data?.message || 'Failed to load subjects. Please try again.';
+      setError(errorMsg);
+      setSubjects([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -100,7 +128,12 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
           <Card>
             <h3 className="text-lg font-semibold mb-4">Available Subjects</h3>
             
-            {subjects.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600"></div>
+                <p className="mt-2 text-gray-600">Loading subjects...</p>
+              </div>
+            ) : !Array.isArray(subjects) || subjects.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 No subjects available. Please contact an administrator.
               </div>
