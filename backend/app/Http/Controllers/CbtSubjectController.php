@@ -14,13 +14,25 @@ class CbtSubjectController extends Controller
     {
         $user = $request->user();
         
-        if ($user->hasRole('admin') || $user->hasRole('main-admin')) {
+        // Check for admin roles (case-insensitive, handle spaces and hyphens)
+        $isAdmin = $user->hasRole(['Admin', 'Main Admin', 'admin', 'main-admin']);
+        
+        if ($isAdmin) {
+            // Admin sees all subjects
             $subjects = CbtSubject::with('owner')->get();
         } else {
-            // Teacher: only their assigned subjects
-            $subjectIds = TeacherSubject::where('teacher_id', $user->id)
-                ->pluck('cbt_subject_id');
-            $subjects = CbtSubject::whereIn('id', $subjectIds)->with('owner')->get();
+            // Teacher: check if they have assigned subjects
+            $hasAssignedSubjects = TeacherSubject::where('teacher_id', $user->id)->exists();
+            
+            if ($hasAssignedSubjects) {
+                // Return only their assigned subjects
+                $subjectIds = TeacherSubject::where('teacher_id', $user->id)
+                    ->pluck('cbt_subject_id');
+                $subjects = CbtSubject::whereIn('id', $subjectIds)->with('owner')->get();
+            } else {
+                // New teacher with no assignments - show all subjects for selection
+                $subjects = CbtSubject::with('owner')->get();
+            }
         }
 
         return response()->json(['status' => 'ok', 'subjects' => $subjects]);
@@ -81,9 +93,8 @@ class CbtSubjectController extends Controller
     public function selfAssignSubjects(Request $request)
     {
         $validated = $request->validate([
-            'assignments' => 'required|array',
-            'assignments.*.cbt_subject_id' => 'required|exists:cbt_subjects,id',
-            'assignments.*.class_category' => 'required|in:junior,senior',
+            'subject_ids' => 'required|array',
+            'subject_ids.*' => 'required|exists:cbt_subjects,id',
         ]);
 
         $teacherId = $request->user()->id;
@@ -91,12 +102,20 @@ class CbtSubjectController extends Controller
         // Remove old assignments
         TeacherSubject::where('teacher_id', $teacherId)->delete();
 
-        // Add new
-        foreach ($validated['assignments'] as $assignment) {
+        // Add new assignments
+        foreach ($validated['subject_ids'] as $subjectId) {
+            $subject = CbtSubject::find($subjectId);
+            
+            // Determine class category from class_level
+            $classCategory = 'junior'; // default
+            if ($subject && str_contains(strtolower($subject->class_level), 'sss')) {
+                $classCategory = 'senior';
+            }
+            
             TeacherSubject::create([
                 'teacher_id' => $teacherId,
-                'cbt_subject_id' => $assignment['cbt_subject_id'],
-                'class_category' => $assignment['class_category'],
+                'cbt_subject_id' => $subjectId,
+                'class_category' => $classCategory,
             ]);
         }
 

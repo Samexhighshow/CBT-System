@@ -6,14 +6,13 @@ import { Card } from '../../components';
 interface Role { name: string; }
 interface User { id: number; name: string; email: string; email_verified_at?: string | null; roles: Role[]; }
 
-// Define module access for each role
+// Define module access for each role (Student role is managed separately)
 const roleModules: Record<string, string[]> = {
   'Main Admin': ['Dashboard', 'Users', 'Roles', 'System Settings', 'Questions', 'Exams', 'Students', 'Subjects', 'Results', 'Reports', 'Analytics'],
   'Admin': ['Dashboard', 'Questions', 'Exams', 'Students', 'Subjects', 'Results', 'Reports', 'Analytics'],
   'Sub-Admin': ['Dashboard', 'Questions', 'Exams', 'Students', 'Results', 'Analytics'],
   'Moderator': ['Dashboard', 'Exams', 'Students', 'Results', 'Analytics'],
-  'Teacher': ['Dashboard', 'Questions', 'Results', 'Analytics'],
-  'Student': ['Dashboard', 'Exams', 'Results', 'Profile']
+  'Teacher': ['Dashboard', 'Questions', 'Results', 'Analytics']
 };
 
 const AdminUserManagement: React.FC = () => {
@@ -258,7 +257,7 @@ const AdminUserManagement: React.FC = () => {
                         defaultValue=""
                       >
                         <option value="" disabled>Select role to assign</option>
-                        {roles.map(r => (
+                        {roles.filter(r => r !== 'Student').map(r => (
                           <option key={r} value={r}>{r}</option>
                         ))}
                       </select>
@@ -274,6 +273,9 @@ const AdminUserManagement: React.FC = () => {
       <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <p className="text-sm text-blue-800">
           <strong>Access Control:</strong> Only Main Admin should access this page. Backend middleware ensures this restriction is enforced.
+        </p>
+        <p className="text-sm text-blue-800 mt-2">
+          <strong>Note:</strong> Student accounts are managed separately through the Student Management section and student registration portal.
         </p>
       </div>
     </div>

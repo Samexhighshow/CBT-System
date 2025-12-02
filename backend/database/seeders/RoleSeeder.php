@@ -56,14 +56,14 @@ class RoleSeeder extends Seeder
             'view_analytics'
         ]);
 
-        $studentRole = Role::firstOrCreate(['name' => 'Student']);
-        $studentRole->syncPermissions([]);
+        // Note: Student role is not created here as students are managed separately
+        // through the student registration system
 
         // Ensure a Main Admin role exists and is assigned to first user without a role
         $mainAdminRole = Role::firstOrCreate(['name' => 'Main Admin']);
 
         $firstUser = User::orderBy('id','asc')->first();
-        if ($firstUser && !$firstUser->hasAnyRole(['Admin','Sub-Admin','Moderator','Teacher','Student','Main Admin'])) {
+        if ($firstUser && !$firstUser->hasAnyRole(['Admin','Sub-Admin','Moderator','Teacher','Main Admin'])) {
             $firstUser->assignRole($mainAdminRole);
         }
     }

@@ -45,7 +45,13 @@ const StudentLogin: React.FC = () => {
         navigate('/student');
       }
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Login failed. Please check your credentials.');
+      const errorMessage = err?.response?.data?.message || 'Login failed. Please check your credentials.';
+      setError(errorMessage);
+      
+      // If email not verified, show specific message
+      if (err?.response?.status === 403 && err?.response?.data?.email_verified === false) {
+        setError(`${errorMessage}\n\nPlease check your email (${err?.response?.data?.email}) for the verification link.`);
+      }
     } finally {
       setLoading(false);
     }

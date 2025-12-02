@@ -27,6 +27,17 @@ class AuthController extends Controller
         }
 
         $user = $request->user();
+        
+        // Check if email is verified
+        if (!$user->hasVerifiedEmail()) {
+            Auth::logout();
+            return response()->json([
+                'message' => 'Please verify your email before logging in. Check your inbox for the verification link.',
+                'email_verified' => false,
+                'email' => $user->email
+            ], 403);
+        }
+
         $token = $user->createToken('api')->plainTextToken;
 
         return response()->json([

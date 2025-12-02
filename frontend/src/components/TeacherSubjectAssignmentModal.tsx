@@ -41,7 +41,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
   }, [isOpen]);
 
   const loadSubjects = async () => {
-    setLoading(true);
+    setLoadingSubjects(true);
     setError('');
     try {
       const res = await api.get('/cbt/subjects');
@@ -66,7 +66,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
       setError(errorMsg);
       setSubjects([]);
     } finally {
-      setLoading(false);
+      setLoadingSubjects(false);
     }
   };
 
@@ -86,7 +86,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
     setError('');
 
     try {
@@ -102,7 +102,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
       showError(msg);
       setError(msg);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -128,7 +128,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
           <Card>
             <h3 className="text-lg font-semibold mb-4">Available Subjects</h3>
             
-            {loading ? (
+            {loadingSubjects ? (
               <div className="text-center py-8">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600"></div>
                 <p className="mt-2 text-gray-600">Loading subjects...</p>
@@ -172,14 +172,14 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
             <Button
               variant="outline"
               onClick={onClose}
-              disabled={loading}
+              disabled={submitting}
             >
               Skip for Now
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={selectedSubjects.length === 0 || loading}
-              loading={loading}
+              disabled={selectedSubjects.length === 0 || submitting}
+              loading={submitting}
             >
               Confirm Subjects ({selectedSubjects.length})
             </Button>

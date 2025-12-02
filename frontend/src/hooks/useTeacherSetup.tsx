@@ -12,6 +12,12 @@ export const useTeacherSetup = () => {
       return;
     }
 
+    // Don't show modal if email is not verified
+    if (!user.email_verified_at) {
+      setShowModal(false);
+      return;
+    }
+
     // Check if user is a teacher (case-insensitive to handle Teacher, teacher, TEACHER)
     const isTeacher = user.roles?.some((role: any) => 
       role.name?.toLowerCase() === 'teacher'
