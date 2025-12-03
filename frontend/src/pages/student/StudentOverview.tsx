@@ -64,7 +64,7 @@ const StudentOverview: React.FC = () => {
     {
       title: 'Available Exams',
       description: 'View and take available exams',
-      icon: '📚',
+      icon: 'bx bx-book-content',
       path: '/student/exams',
       color: 'bg-blue-500',
       badge: '5 New',
@@ -79,14 +79,14 @@ const StudentOverview: React.FC = () => {
     {
       title: 'Exam History',
       description: 'View all your past exam attempts',
-      icon: '🕐',
+      icon: 'bx bx-time-five',
       path: '/student/history',
       color: 'bg-purple-500',
     },
     {
       title: 'My Profile',
       description: 'View and update your profile',
-      icon: '👤',
+      icon: 'bx bx-user',
       path: '/student/profile',
       color: 'bg-orange-500',
     },
@@ -123,7 +123,7 @@ const StudentOverview: React.FC = () => {
               <h3 className="text-3xl font-bold mt-2">{stats.availableExams}</h3>
               <p className="text-blue-100 text-xs mt-1">Ready to take</p>
             </div>
-            <span className="text-5xl">📚</span>
+            <i className='bx bx-book-content text-5xl'></i>
           </div>
         </Card>
 
@@ -213,7 +213,7 @@ const StudentOverview: React.FC = () => {
             <div className="flex items-center justify-between border-b pb-4">
               <div className="flex items-center space-x-3">
                 <div className="bg-blue-100 p-2 rounded-lg">
-                  <span className="text-2xl">📚</span>
+                  <i className='bx bx-book-content text-2xl text-blue-600'></i>
                 </div>
                 <div>
                   <p className="font-medium">English Language Test</p>
@@ -225,7 +225,7 @@ const StudentOverview: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <div className="bg-purple-100 p-2 rounded-lg">
-                  <span className="text-2xl">🕐</span>
+                  <i className='bx bx-time-five text-2xl text-purple-600'></i>
                 </div>
                 <div>
                   <p className="font-medium">Physics Practical Exam</p>

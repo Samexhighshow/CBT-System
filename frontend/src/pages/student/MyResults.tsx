@@ -147,9 +147,9 @@ const MyResults: React.FC = () => {
                     <p className="text-2xl font-bold text-blue-600">
                       {result.score}/{result.exam.total_marks}
                     </p>
-                    <p className="text-sm">
-                      <span className={result.passed ? 'text-green-600' : 'text-red-600'}>
-                        {result.passed ? '✓ Passed' : '✗ Failed'}
+                    <p className="text-sm flex items-center gap-1">
+                      <span className={result.passed ? 'text-green-600 flex items-center gap-1' : 'text-red-600 flex items-center gap-1'}>
+                        {result.passed ? <><i className='bx bx-check'></i> Passed</> : <><i className='bx bx-x'></i> Failed</>}
                       </span>
                     </p>
                   </div>

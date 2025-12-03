@@ -8,11 +8,20 @@ class Question extends Model
 {
     protected $table = 'exam_questions';
     protected $fillable = [
-        'exam_id', 'question_text', 'question_type', 'marks', 'difficulty_level', 'metadata'
+        'exam_id', 
+        'question_text', 
+        'question_type', 
+        'marks', 
+        'difficulty_level', 
+        'max_words',
+        'marking_rubric',
+        'metadata'
     ];
 
     protected $casts = [
-        'metadata' => 'array'
+        'metadata' => 'array',
+        'marks' => 'integer',
+        'max_words' => 'integer',
     ];
 
     public function exam()

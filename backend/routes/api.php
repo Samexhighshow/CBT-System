@@ -116,6 +116,15 @@ Route::prefix('departments')->group(function () {
     Route::delete('/{id}', [DepartmentController::class, 'destroy']);
 });
 
+// Classes
+Route::middleware('auth:sanctum')->prefix('classes')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\ClassController::class, 'index']);
+    Route::get('/{id}', [\App\Http\Controllers\Api\ClassController::class, 'show']);
+    Route::post('/', [\App\Http\Controllers\Api\ClassController::class, 'store']);
+    Route::put('/{id}', [\App\Http\Controllers\Api\ClassController::class, 'update']);
+    Route::delete('/{id}', [\App\Http\Controllers\Api\ClassController::class, 'destroy']);
+});
+
 // Results
 Route::prefix('results')->group(function () {
     Route::get('/student/{studentId}', [ResultController::class, 'getStudentResults']);

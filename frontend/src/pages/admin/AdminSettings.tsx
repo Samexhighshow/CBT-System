@@ -13,6 +13,13 @@ interface Setting {
 const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
+  const [systemName, setSystemName] = useState('');
+  const [emailSettings, setEmailSettings] = useState({
+    smtp_host: '',
+    smtp_port: '',
+    smtp_user: '',
+    smtp_from: '',
+  });
   // Token is injected via axios interceptor in `api` using `auth_token` key
 
   const fetchSettings = async () => {
@@ -20,6 +27,17 @@ const AdminSettings: React.FC = () => {
     try {
       const res = await api.get('/settings');
       setSettings(res.data);
+      
+      // Load system name
+      setSystemName(getValue('system_name', res.data) || 'CBT System');
+      
+      // Load email settings
+      setEmailSettings({
+        smtp_host: getValue('smtp_host', res.data) || '',
+        smtp_port: getValue('smtp_port', res.data) || '587',
+        smtp_user: getValue('smtp_user', res.data) || '',
+        smtp_from: getValue('smtp_from', res.data) || '',
+      });
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to load settings');
     } finally {
@@ -38,8 +56,26 @@ const AdminSettings: React.FC = () => {
       showError(err?.response?.data?.message || 'Failed to update setting');
     }
   };
+  
+  const saveEmailSettings = async () => {
+    try {
+      await Promise.all([
+        api.put('/settings/smtp_host', { value: emailSettings.smtp_host }),
+        api.put('/settings/smtp_port', { value: emailSettings.smtp_port }),
+        api.put('/settings/smtp_user', { value: emailSettings.smtp_user }),
+        api.put('/settings/smtp_from', { value: emailSettings.smtp_from }),
+      ]);
+      showSuccess('Email settings updated successfully');
+      fetchSettings();
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to update email settings');
+    }
+  };
 
-  const getValue = (key: string) => settings.find(s => s.key === key)?.value;
+  const getValue = (key: string, settingsList?: Setting[]) => {
+    const list = settingsList || settings;
+    return list.find(s => s.key === key)?.value;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -49,6 +85,22 @@ const AdminSettings: React.FC = () => {
           <p>Loading...</p>
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* System Name */}
+          <div className="border rounded p-4 md:col-span-2">
+            <h2 className="font-semibold mb-2">System Name</h2>
+            <input
+              type="text"
+              value={systemName}
+              onChange={e => setSystemName(e.target.value)}
+              onBlur={e => updateSetting('system_name', e.target.value)}
+              className="border rounded px-3 py-2 w-full"
+              placeholder="Enter system name"
+              aria-label="System name"
+            />
+            <p className="text-xs text-gray-500 mt-1">This name will appear throughout the application</p>
+          </div>
+          
+          {/* Registration Settings */}
           <div className="border rounded p-4">
             <h2 className="font-semibold mb-2">Registration</h2>
             <label className="flex items-center gap-2">
@@ -80,6 +132,7 @@ const AdminSettings: React.FC = () => {
             </div>
           </div>
 
+          {/* Exam Window */}
           <div className="border rounded p-4">
             <h2 className="font-semibold mb-2">Exam Window (Daily)</h2>
             <div className="flex items-center gap-2">
@@ -104,6 +157,64 @@ const AdminSettings: React.FC = () => {
             </div>
           </div>
 
+          {/* Email Settings */}
+          <div className="border rounded p-4 md:col-span-2">
+            <h2 className="font-semibold mb-3">Email Settings (SMTP)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm block mb-1">SMTP Host</label>
+                <input
+                  type="text"
+                  value={emailSettings.smtp_host}
+                  onChange={e => setEmailSettings({ ...emailSettings, smtp_host: e.target.value })}
+                  className="border rounded px-3 py-2 w-full"
+                  placeholder="smtp.gmail.com"
+                  aria-label="SMTP host"
+                />
+              </div>
+              <div>
+                <label className="text-sm block mb-1">SMTP Port</label>
+                <input
+                  type="number"
+                  value={emailSettings.smtp_port}
+                  onChange={e => setEmailSettings({ ...emailSettings, smtp_port: e.target.value })}
+                  className="border rounded px-3 py-2 w-full"
+                  placeholder="587"
+                  aria-label="SMTP port"
+                />
+              </div>
+              <div>
+                <label className="text-sm block mb-1">SMTP Username</label>
+                <input
+                  type="text"
+                  value={emailSettings.smtp_user}
+                  onChange={e => setEmailSettings({ ...emailSettings, smtp_user: e.target.value })}
+                  className="border rounded px-3 py-2 w-full"
+                  placeholder="your-email@example.com"
+                  aria-label="SMTP username"
+                />
+              </div>
+              <div>
+                <label className="text-sm block mb-1">From Email</label>
+                <input
+                  type="email"
+                  value={emailSettings.smtp_from}
+                  onChange={e => setEmailSettings({ ...emailSettings, smtp_from: e.target.value })}
+                  className="border rounded px-3 py-2 w-full"
+                  placeholder="noreply@example.com"
+                  aria-label="From email address"
+                />
+              </div>
+            </div>
+            <button
+              onClick={saveEmailSettings}
+              className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Save Email Settings
+            </button>
+          </div>
+
+          {/* Security Settings */}
           <div className="border rounded p-4">
             <h2 className="font-semibold mb-2">Security</h2>
             <label className="flex items-center gap-2">
@@ -135,7 +246,8 @@ const AdminSettings: React.FC = () => {
             </label>
           </div>
 
-          <div className="border rounded p-4 md:col-span-2">
+          {/* Appearance Settings */}
+          <div className="border rounded p-4">
             <h2 className="font-semibold mb-2">Appearance</h2>
             <label className="text-sm mr-2">Theme</label>
             <select
@@ -150,6 +262,7 @@ const AdminSettings: React.FC = () => {
             </select>
           </div>
 
+          {/* Grading Scale */}
           <div className="border rounded p-4 md:col-span-2">
             <h2 className="font-semibold mb-2">Grading Scale (JSON)</h2>
             <textarea

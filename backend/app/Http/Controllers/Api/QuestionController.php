@@ -60,15 +60,30 @@ class QuestionController extends Controller
     {
         $validated = $request->validate([
             'exam_id' => 'required|exists:exams,id',
-            // Subject not stored on questions; remove validation
+            'subject_id' => 'nullable|exists:subjects,id',
             'question_text' => 'required|string',
             'question_type' => 'required|in:multiple_choice,true_false,short_answer,essay',
             'marks' => 'required|integer|min:1',
             'difficulty_level' => 'nullable|in:easy,medium,hard',
+            'max_words' => 'nullable|integer|min:1',
+            'marking_rubric' => 'nullable|string',
             'options' => 'required_if:question_type,multiple_choice,true_false|array|min:2',
             'options.*.option_text' => 'required|string',
             'options.*.is_correct' => 'required|boolean',
         ]);
+        
+        // Verify subject exists if provided
+        if (!empty($validated['subject_id'])) {
+            $subject = \App\Models\Subject::find($validated['subject_id']);
+            if (!$subject) {
+                return response()->json(['message' => 'Subject not found'], 404);
+            }
+        }
+        
+        // Validate essay questions have max_words
+        if (in_array($validated['question_type'], ['short_answer', 'essay']) && empty($validated['max_words'])) {
+            $validated['max_words'] = $validated['question_type'] === 'short_answer' ? 100 : 500;
+        }
 
         DB::beginTransaction();
         try {

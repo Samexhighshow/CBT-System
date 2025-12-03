@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Card, Button, Alert, Loading, Input } from '../components';
-import api from '../services/api';
+import { Card, Button, Alert, Loading } from '../../components';
+import { api } from '../../services/api';
 
 interface Teacher {
   id: number;
@@ -173,8 +173,8 @@ const TeacherAssignment: React.FC = () => {
             Assign invigilators to exam halls
           </p>
         </div>
-        <Button onClick={saveAllAssignments} disabled={saving}>
-          {saving ? 'Saving...' : '💾 Save All Assignments'}
+        <Button onClick={saveAllAssignments} disabled={saving} className="flex items-center gap-2">
+          {saving ? 'Saving...' : <><i className='bx bx-save'></i> Save All Assignments</>}
         </Button>
       </div>
 
@@ -229,15 +229,17 @@ const TeacherAssignment: React.FC = () => {
                       size="small"
                       variant="secondary"
                       onClick={() => addTeacherSlot(hall.id)}
+                      className="flex items-center gap-1"
                     >
-                      ➕ Add Teacher
+                      <i className='bx bx-plus'></i> Add Teacher
                     </Button>
                     <Button
                       size="small"
                       onClick={() => saveAssignments(hall.id)}
                       disabled={saving}
+                      className="flex items-center gap-1"
                     >
-                      💾 Save
+                      <i className='bx bx-save'></i> Save
                     </Button>
                   </div>
                 </div>
@@ -282,7 +284,7 @@ const TeacherAssignment: React.FC = () => {
                       size="small"
                       onClick={() => removeTeacherSlot(hall.id, index)}
                     >
-                      ❌
+                      <i className='bx bx-x'></i>
                     </Button>
                   </div>
                 ))}

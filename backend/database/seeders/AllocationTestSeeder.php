@@ -5,9 +5,10 @@ namespace Database\Seeders;
 use App\Models\Hall;
 use App\Models\User;
 use App\Models\Student;
-use App\Models\Teacher;
 use App\Models\Exam;
 use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\DB;
 
 class AllocationTestSeeder extends Seeder
 {
@@ -42,7 +43,10 @@ class AllocationTestSeeder extends Seeder
 
         $this->command->info('Created ' . count($halls) . ' test halls');
 
-        // Create test teachers (invigilators)
+        // Ensure teacher role exists
+        $teacherRole = Role::firstOrCreate(['name' => 'teacher']);
+
+        // Create test teachers (invigilators) - Users with teacher role
         $teacherNames = [
             'Dr. John Smith',
             'Prof. Sarah Johnson',
@@ -56,6 +60,7 @@ class AllocationTestSeeder extends Seeder
             'Mrs. Patricia Moore',
         ];
 
+        $teacherCount = 0;
         foreach ($teacherNames as $index => $name) {
             $user = User::updateOrCreate(
                 ['email' => 'teacher' . ($index + 1) . '@test.com'],
@@ -65,16 +70,18 @@ class AllocationTestSeeder extends Seeder
                 ]
             );
 
-            Teacher::updateOrCreate(
-                ['user_id' => $user->id],
-                [
-                    'department' => 'General',
-                    'specialization' => 'Invigilation',
-                ]
-            );
+            // Assign teacher role
+            if (!$user->hasRole('teacher')) {
+                $user->assignRole('teacher');
+            }
+            
+            $teacherCount++;
         }
 
-        $this->command->info('Created ' . count($teacherNames) . ' test teachers');
+        $this->command->info('Created ' . $teacherCount . ' test teachers');
+
+        // Ensure student role exists
+        $studentRole = Role::firstOrCreate(['name' => 'student']);
 
         // Create test students across different classes
         $classes = ['Grade 10A', 'Grade 10B', 'Grade 11A', 'Grade 11B', 'Grade 12A', 'Grade 12B'];
@@ -84,20 +91,17 @@ class AllocationTestSeeder extends Seeder
         foreach ($classes as $classIndex => $className) {
             for ($i = 1; $i <= $studentsPerClass; $i++) {
                 $studentCount++;
-                $user = User::updateOrCreate(
+                
+                // Create student record
+                $student = Student::updateOrCreate(
                     ['email' => 'student' . $studentCount . '@test.com'],
                     [
-                        'name' => 'Student ' . $studentCount,
-                        'password' => bcrypt('password'),
-                    ]
-                );
-
-                Student::updateOrCreate(
-                    ['user_id' => $user->id],
-                    [
                         'student_id' => 'S' . str_pad($studentCount, 4, '0', STR_PAD_LEFT),
+                        'first_name' => 'Student',
+                        'last_name' => (string)$studentCount,
+                        'email' => 'student' . $studentCount . '@test.com',
                         'class_level' => $className,
-                        'date_of_birth' => now()->subYears(15 + $classIndex),
+                        'is_active' => true,
                     ]
                 );
             }
@@ -110,30 +114,35 @@ class AllocationTestSeeder extends Seeder
             ['title' => 'Mid-Term Mathematics Exam'],
             [
                 'description' => 'Test exam for allocation engine',
-                'exam_date' => now()->addDays(7),
-                'duration' => 120,
-                'total_marks' => 100,
-                'passing_marks' => 40,
-                'instructions' => 'This is a test exam for the allocation system.',
-                'shuffle_questions' => true,
-                'seat_numbering' => 'row_major',
-                'enforce_adjacency_rules' => true,
+                'class_level' => 'Grade 10',
+                'department' => 'General',
+                'duration_minutes' => 120,
+                'published' => true,
+                'metadata' => json_encode([
+                    'instructions' => 'This is a test exam for the allocation system.',
+                    'total_marks' => 100,
+                    'passing_marks' => 40,
+                ]),
             ]
         );
 
-        // Enroll all students in the exam
-        $students = Student::all();
-        foreach ($students as $student) {
-            $exam->students()->syncWithoutDetaching([$student->id]);
-        }
+        // Note: Since students table doesn't have user relationships for enrollment,
+        // we'll skip the enrollment step for now
+        // The exam is created and can be used for allocation testing via API
 
-        $this->command->info('Created test exam and enrolled all students');
+        $this->command->info('Created test exam');
         $this->command->newLine();
         $this->command->info('=== Test Data Summary ===');
         $this->command->info('Halls: ' . Hall::count());
-        $this->command->info('Teachers: ' . Teacher::count());
+        $this->command->info('Teachers: ' . User::role('teacher')->count());
         $this->command->info('Students: ' . Student::count());
-        $this->command->info('Total Capacity: ' . Hall::sum(\DB::raw('rows * columns')));
+        
+        // Calculate total capacity
+        $totalCapacity = Hall::all()->sum(function($hall) {
+            return $hall->rows * $hall->columns;
+        });
+        $this->command->info('Total Capacity: ' . $totalCapacity);
+        
         $this->command->info('Exam: ' . $exam->title . ' (ID: ' . $exam->id . ')');
         $this->command->newLine();
         $this->command->info('✓ Allocation test data seeded successfully!');

@@ -21,6 +21,16 @@ const AdminUserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [onlyApplicants, setOnlyApplicants] = useState(true);
   const [showRoleDetails, setShowRoleDetails] = useState(false);
+  
+  // Get current logged-in user ID
+  const currentUserId = (() => {
+    try {
+      const userData = localStorage.getItem('user');
+      return userData ? JSON.parse(userData).id : null;
+    } catch {
+      return null;
+    }
+  })();
 
   // Use shared api client which injects `auth_token` automatically
   const [editMode, setEditMode] = useState(false);
@@ -53,6 +63,12 @@ const AdminUserManagement: React.FC = () => {
   }, []);
 
   const assignRole = async (userId: number, roleName: string) => {
+    // Prevent assigning role to current user
+    if (userId === currentUserId) {
+      showError('You cannot modify your own roles');
+      return;
+    }
+    
     const confirm = await showConfirm(`Assign role "${roleName}"?`);
     if (!confirm) return;
     try {
@@ -61,6 +77,25 @@ const AdminUserManagement: React.FC = () => {
       fetchUsers();
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to assign role';
+      showError(msg);
+    }
+  };
+  
+  const deleteUser = async (userId: number) => {
+    // Prevent deleting current user
+    if (userId === currentUserId) {
+      showError('You cannot delete your own account');
+      return;
+    }
+    
+    const confirm = await showConfirm('Delete this user? This action cannot be undone.');
+    if (!confirm) return;
+    try {
+      await api.delete(`/users/${userId}`);
+      showSuccess('User deleted successfully');
+      fetchUsers();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to delete user';
       showError(msg);
     }
   };
@@ -214,6 +249,7 @@ const AdminUserManagement: React.FC = () => {
                   <th className="p-3 border-b text-left font-semibold text-sm">Email</th>
                   <th className="p-3 border-b text-left font-semibold text-sm">Verified</th>
                   <th className="p-3 border-b text-left font-semibold text-sm">Current Roles</th>
+                  <th className="p-3 border-b text-left font-semibold text-sm">Assign Role</th>
                   <th className="p-3 border-b text-left font-semibold text-sm">Actions</th>
                 </tr>
               </thead>
@@ -252,15 +288,27 @@ const AdminUserManagement: React.FC = () => {
                     <td className="p-3 border-b">
                       <select
                         aria-label="Assign role"
-                        className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className={`px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${u.id === currentUserId ? 'opacity-50 cursor-not-allowed' : ''}`}
                         onChange={(e) => e.target.value && assignRole(u.id, e.target.value)}
                         defaultValue=""
+                        disabled={u.id === currentUserId}
+                        title={u.id === currentUserId ? 'You cannot modify your own roles' : 'Select role to assign'}
                       >
                         <option value="" disabled>Select role to assign</option>
                         {roles.filter(r => r !== 'Student').map(r => (
                           <option key={r} value={r}>{r}</option>
                         ))}
                       </select>
+                    </td>
+                    <td className="p-3 border-b">
+                      <button
+                        onClick={() => deleteUser(u.id)}
+                        disabled={u.id === currentUserId}
+                        className={`px-3 py-1 text-sm rounded ${u.id === currentUserId ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
+                        title={u.id === currentUserId ? 'You cannot delete your own account' : 'Delete user'}
+                      >
+                        <i className='bx bx-trash'></i> Delete
+                      </button>
                     </td>
                   </tr>
                 ))}

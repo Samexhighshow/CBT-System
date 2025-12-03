@@ -69,8 +69,18 @@ class ExamController extends Controller
             'start_time' => 'sometimes|date',
             'end_time' => 'sometimes|date|after:start_time',
             'metadata' => 'sometimes|array',
-            'subject_id' => 'sometimes|integer',
+            'subject_id' => 'nullable|exists:subjects,id',
         ]);
+        
+        // Verify at least one question exists for the subject if provided
+        if (!empty($validated['subject_id'])) {
+            $questionCount = \App\Models\Question::where('subject_id', $validated['subject_id'])->count();
+            if ($questionCount === 0) {
+                return response()->json([
+                    'message' => 'Cannot create exam. No questions exist for the selected subject. Please create questions first.'
+                ], 422);
+            }
+        }
 
         $payload = [
             'title' => $validated['title'],
