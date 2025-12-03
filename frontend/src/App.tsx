@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 import { useTeacherSetup } from './hooks/useTeacherSetup';
 import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
-import { ErrorBoundary, KeyboardShortcutsHelp } from './components';
+import { ErrorBoundary, KeyboardShortcutsHelp, OfflineRouteHandler } from './components';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -43,7 +43,9 @@ const App: React.FC = () => {
           {/* Global Keyboard Shortcuts Help */}
           <KeyboardShortcutsHelp />
           
-          <Routes>
+          {/* Offline Route Handler - Manages offline routing */}
+          <OfflineRouteHandler>
+            <Routes>
           {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/register" element={<StudentRegistration />} />
@@ -143,6 +145,7 @@ const App: React.FC = () => {
         {/* Default Route */}
         <Route path="*" element={<LandingPage />} />
       </Routes>
+    </OfflineRouteHandler>
     </Router>
       </ErrorBoundary>
     </>
