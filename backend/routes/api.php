@@ -24,6 +24,8 @@ use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\OfflineExamController;
 use App\Http\Controllers\StudentImportController;
 use App\Http\Controllers\BackupController;
+use App\Http\Controllers\Api\HallController;
+use App\Http\Controllers\Api\AllocationController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -225,4 +227,30 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/two-factor/setup', [ProfileController::class, 'setupGoogle2FA']);
     Route::post('/two-factor/verify', [ProfileController::class, 'verifyGoogle2FA']);
     Route::post('/two-factor/recovery-codes', [ProfileController::class, 'generateRecoveryCodes']);
+    
+    // Hall Management
+    Route::prefix('halls')->group(function () {
+        Route::get('/', [HallController::class, 'index']);
+        Route::get('/stats', [HallController::class, 'stats']);
+        Route::get('/{id}', [HallController::class, 'show']);
+        Route::post('/', [HallController::class, 'store']);
+        Route::put('/{id}', [HallController::class, 'update']);
+        Route::delete('/{id}', [HallController::class, 'destroy']);
+        Route::post('/{id}/assign-teachers', [HallController::class, 'assignTeachers']);
+        Route::get('/{id}/grid-layout', [HallController::class, 'getGridLayout']);
+    });
+    
+    // Allocation Management
+    Route::prefix('allocations')->group(function () {
+        Route::get('/exam/{examId}', [AllocationController::class, 'index']);
+        Route::get('/run/{id}', [AllocationController::class, 'show']);
+        Route::post('/generate', [AllocationController::class, 'generate']);
+        Route::post('/regenerate/{id}', [AllocationController::class, 'regenerate']);
+        Route::get('/student/{examId}/{studentId}', [AllocationController::class, 'getStudentAllocation']);
+        Route::post('/reassign', [AllocationController::class, 'reassignStudent']);
+        Route::get('/export/pdf/{runId}', [AllocationController::class, 'exportPDF']);
+        Route::get('/export/excel/{runId}', [AllocationController::class, 'exportExcel']);
+        Route::get('/conflicts/{runId}', [AllocationController::class, 'getConflicts']);
+        Route::get('/status/{runId}', [AllocationController::class, 'checkStatus']);
+    });
 });
