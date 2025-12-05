@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Card, Alert, Loading } from '../components';
-import api from '../services/api';
+import { Card, Alert, Loading } from '../../components';
+import api from '../../services/api';
 
 interface StudentAllocation {
   exam: any;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Modal, Input, Alert } from '../components';
-import api from '../services/api';
+import { Card, Button, Modal, Input, Alert } from '../../components';
+import api from '../../services/api';
 
 interface Hall {
   id: number;
@@ -19,6 +19,7 @@ const HallManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingHall, setEditingHall] = useState<Hall | null>(null);
+  const [selectedHallIds, setSelectedHallIds] = useState<number[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -30,6 +31,25 @@ const HallManagement: React.FC = () => {
     notes: '',
     is_active: true,
   });
+
+  const handleSelectAllHalls = (checked: boolean) => {
+    setSelectedHallIds(checked ? halls.map((h: Hall) => h.id) : []);
+  };
+  const handleSelectOneHall = (id: number, checked: boolean) => {
+    setSelectedHallIds(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
+  };
+  const handleBatchDeleteHalls = async () => {
+    if (selectedHallIds.length === 0) return;
+    if (!confirm(`Delete ${selectedHallIds.length} selected halls?`)) return;
+    try {
+      await Promise.all(selectedHallIds.map(id => api.delete(`/halls/${id}`)));
+      setSelectedHallIds([]);
+      setSuccess('Selected halls deleted');
+      fetchHalls();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to delete selected halls');
+    }
+  };
 
   useEffect(() => {
     fetchHalls();
@@ -157,10 +177,19 @@ const HallManagement: React.FC = () => {
 
       {/* Halls List */}
       <Card>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-xl font-semibold">Halls ({halls.length})</h2>
+          <Button variant="danger" disabled={selectedHallIds.length === 0} onClick={handleBatchDeleteHalls}>
+            Delete Selected ({selectedHallIds.length})
+          </Button>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-2 py-3">
+                  <input type="checkbox" checked={selectedHallIds.length === halls.length && halls.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllHalls(e.target.checked)} title="Select all halls" />
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grid</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Capacity</th>
@@ -173,51 +202,33 @@ const HallManagement: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center">Loading...</td>
+                  <td colSpan={8} className="px-6 py-4 text-center">Loading...</td>
                 </tr>
               ) : halls.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                     No halls configured. Add your first hall to get started.
                   </td>
                 </tr>
               ) : (
                 halls.map((hall) => (
                   <tr key={hall.id}>
+                    <td className="px-2 py-4">
+                      <input type="checkbox" checked={selectedHallIds.includes(hall.id)} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectOneHall(hall.id, e.target.checked)} title={`Select hall ${hall.name}`} />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap font-medium">{hall.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {hall.rows} × {hall.columns}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-blue-600 font-semibold">{hall.capacity}</span>
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">{hall.rows} × {hall.columns}</td>
+                    <td className="px-6 py-4 whitespace-nowrap"><span className="text-blue-600 font-semibold">{hall.capacity}</span></td>
                     <td className="px-6 py-4 whitespace-nowrap">{hall.teachers_needed}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {hall.is_active ? (
-                        <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
-                          Inactive
-                        </span>
-                      )}
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">{hall.is_active ? (
+                      <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Active</span>
+                    ) : (
+                      <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">Inactive</span>
+                    )}</td>
                     <td className="px-6 py-4 whitespace-nowrap">{hall.allocations_count || 0}</td>
                     <td className="px-6 py-4 whitespace-nowrap space-x-2">
-                      <button
-                        onClick={() => handleEdit(hall)}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(hall.id)}
-                        className="text-red-600 hover:text-red-800"
-                        disabled={!!hall.allocations_count}
-                      >
-                        Delete
-                      </button>
+                      <button onClick={() => handleEdit(hall)} className="text-blue-600 hover:text-blue-800">Edit</button>
+                      <button onClick={() => handleDelete(hall.id)} className="text-red-600 hover:text-red-800" disabled={!!hall.allocations_count}>Delete</button>
                     </td>
                   </tr>
                 ))
@@ -245,7 +256,7 @@ const HallManagement: React.FC = () => {
               <Input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
                 required
                 placeholder="e.g., Main Hall A"
               />
@@ -259,7 +270,7 @@ const HallManagement: React.FC = () => {
                 <Input
                   type="number"
                   value={formData.rows}
-                  onChange={(e) => setFormData({ ...formData, rows: parseInt(e.target.value) })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, rows: parseInt(e.target.value) })}
                   min={1}
                   max={100}
                   required
@@ -272,7 +283,7 @@ const HallManagement: React.FC = () => {
                 <Input
                   type="number"
                   value={formData.columns}
-                  onChange={(e) => setFormData({ ...formData, columns: parseInt(e.target.value) })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, columns: parseInt(e.target.value) })}
                   min={1}
                   max={100}
                   required
@@ -296,7 +307,7 @@ const HallManagement: React.FC = () => {
               <Input
                 type="number"
                 value={formData.teachers_needed}
-                onChange={(e) => setFormData({ ...formData, teachers_needed: parseInt(e.target.value) })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, teachers_needed: parseInt(e.target.value) })}
                 min={1}
                 max={10}
               />

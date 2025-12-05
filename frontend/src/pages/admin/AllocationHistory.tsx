@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Alert, Loading } from '../components';
-import api from '../services/api';
+import { Card, Button, Alert, Loading } from '../../components';
+import api from '../../services/api';
 
 interface Exam {
   id: number;
@@ -262,11 +262,11 @@ const AllocationHistory: React.FC = () => {
                     </div>
 
                     <div className="flex flex-col space-y-2 ml-4">
-                      <Button size="small" onClick={() => viewAllocation(run.id)}>
-                        👁️ View
+                      <Button size="sm" onClick={() => viewAllocation(run.id)}>
+                        View Details
                       </Button>
                       <Button
-                        size="small"
+                        size="sm"
                         variant="secondary"
                         onClick={() => regenerateAllocation(run.id)}
                       >

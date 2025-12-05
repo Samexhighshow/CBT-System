@@ -130,6 +130,58 @@ const AdminSettings: React.FC = () => {
                 aria-label="Maximum exam attempts"
               />
             </div>
+            <div className="mt-6">
+              <h3 className="font-semibold mb-2">Registration Number Format</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-sm block mb-1">Prefix</label>
+                  <input
+                    type="text"
+                    defaultValue={getValue('registration_number_prefix') || 'REG'}
+                    onBlur={e => updateSetting('registration_number_prefix', e.target.value)}
+                    className="border rounded px-2 py-1 w-full"
+                    placeholder="REG"
+                    aria-label="Registration number prefix"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm block mb-1">Year</label>
+                  <input
+                    type="text"
+                    defaultValue={getValue('registration_number_year') || new Date().getFullYear().toString()}
+                    onBlur={e => updateSetting('registration_number_year', e.target.value)}
+                    className="border rounded px-2 py-1 w-full"
+                    placeholder="2025"
+                    aria-label="Registration number year"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm block mb-1">Separator</label>
+                  <input
+                    type="text"
+                    defaultValue={getValue('registration_number_separator') || '/'}
+                    onBlur={e => updateSetting('registration_number_separator', e.target.value)}
+                    className="border rounded px-2 py-1 w-full"
+                    placeholder="/"
+                    aria-label="Registration number separator"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm block mb-1">Padding</label>
+                  <input
+                    type="number"
+                    defaultValue={getValue('registration_number_padding') || '4'}
+                    min={1}
+                    max={8}
+                    onBlur={e => updateSetting('registration_number_padding', e.target.value)}
+                    className="border rounded px-2 py-1 w-full"
+                    placeholder="4"
+                    aria-label="Registration number padding"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Example: <span className="font-mono">REG/2025/0001</span></p>
+            </div>
           </div>
 
           {/* Exam Window */}

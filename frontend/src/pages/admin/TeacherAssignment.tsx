@@ -226,7 +226,7 @@ const TeacherAssignment: React.FC = () => {
                   <div className={`font-medium ${status.color}`}>{status.text}</div>
                   <div className="flex space-x-2 mt-2">
                     <Button
-                      size="small"
+                      size="sm"
                       variant="secondary"
                       onClick={() => addTeacherSlot(hall.id)}
                       className="flex items-center gap-1"
@@ -234,7 +234,7 @@ const TeacherAssignment: React.FC = () => {
                       <i className='bx bx-plus'></i> Add Teacher
                     </Button>
                     <Button
-                      size="small"
+                      size="sm"
                       onClick={() => saveAssignments(hall.id)}
                       disabled={saving}
                       className="flex items-center gap-1"
@@ -281,7 +281,7 @@ const TeacherAssignment: React.FC = () => {
                     </div>
                     <Button
                       variant="secondary"
-                      size="small"
+                      size="sm"
                       onClick={() => removeTeacherSlot(hall.id, index)}
                     >
                       <i className='bx bx-x'></i>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Button, Alert, Loading } from '../components';
-import api from '../services/api';
+import { Card, Button, Alert, Loading } from '../../components';
+import api from '../../services/api';
 
 interface AllocationRun {
   id: number;
@@ -239,6 +239,7 @@ const AllocationViewer: React.FC = () => {
           className="border border-gray-300 rounded-md px-3 py-1"
           value={classFilter}
           onChange={(e) => setClassFilter(e.target.value)}
+          aria-label="Filter by Class"
         >
           <option value="all">All Classes</option>
           {getClassList().map((cls) => (
