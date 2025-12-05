@@ -54,4 +54,15 @@ class UserController extends Controller
 
         return response()->json(['message' => $message, 'user' => $user, 'is_first_admin' => $isFirstAdmin], 201);
     }
+
+    public function getTeachers()
+    {
+        $teachers = User::whereHas('roles', function ($query) {
+            $query->where('name', 'Teacher');
+        })->with('roles')->get();
+
+        return response()->json([
+            'data' => $teachers
+        ]);
+    }
 }

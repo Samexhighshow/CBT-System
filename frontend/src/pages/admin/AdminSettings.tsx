@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { showSuccess, showError } from '../../utils/alerts';
+import { useTheme } from '../../hooks/useTheme';
 
 interface Setting {
   id: number;
@@ -14,12 +15,7 @@ const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
   const [systemName, setSystemName] = useState('');
-  const [emailSettings, setEmailSettings] = useState({
-    smtp_host: '',
-    smtp_port: '',
-    smtp_user: '',
-    smtp_from: '',
-  });
+  const { theme, changeTheme } = useTheme();
   // Token is injected via axios interceptor in `api` using `auth_token` key
 
   const fetchSettings = async () => {
@@ -30,14 +26,6 @@ const AdminSettings: React.FC = () => {
       
       // Load system name
       setSystemName(getValue('system_name', res.data) || 'CBT System');
-      
-      // Load email settings
-      setEmailSettings({
-        smtp_host: getValue('smtp_host', res.data) || '',
-        smtp_port: getValue('smtp_port', res.data) || '587',
-        smtp_user: getValue('smtp_user', res.data) || '',
-        smtp_from: getValue('smtp_from', res.data) || '',
-      });
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to load settings');
     } finally {
@@ -57,52 +45,37 @@ const AdminSettings: React.FC = () => {
     }
   };
   
-  const saveEmailSettings = async () => {
-    try {
-      await Promise.all([
-        api.put('/settings/smtp_host', { value: emailSettings.smtp_host }),
-        api.put('/settings/smtp_port', { value: emailSettings.smtp_port }),
-        api.put('/settings/smtp_user', { value: emailSettings.smtp_user }),
-        api.put('/settings/smtp_from', { value: emailSettings.smtp_from }),
-      ]);
-      showSuccess('Email settings updated successfully');
-      fetchSettings();
-    } catch (err: any) {
-      showError(err?.response?.data?.message || 'Failed to update email settings');
-    }
-  };
-
   const getValue = (key: string, settingsList?: Setting[]) => {
     const list = settingsList || settings;
     return list.find(s => s.key === key)?.value;
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="p-6">
-        <h1 className="text-2xl font-semibold mb-4">System Settings</h1>
+        <h1 className="text-2xl font-semibold mb-4 dark:text-white">System Settings</h1>
         {loading ? (
-          <p>Loading...</p>
+          <p className="dark:text-gray-300">Loading...</p>
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* System Name */}
-          <div className="border rounded p-4 md:col-span-2">
-            <h2 className="font-semibold mb-2">System Name</h2>
+          <div className="border dark:border-gray-700 rounded p-4 md:col-span-2 bg-white dark:bg-gray-800">
+            <h2 className="font-semibold mb-2 dark:text-white">System Name</h2>
             <input
               type="text"
               value={systemName}
               onChange={e => setSystemName(e.target.value)}
               onBlur={e => updateSetting('system_name', e.target.value)}
-              className="border rounded px-3 py-2 w-full"
+              className="border dark:border-gray-600 rounded px-3 py-2 w-full bg-white dark:bg-gray-700 dark:text-white"
               placeholder="Enter system name"
               aria-label="System name"
             />
-            <p className="text-xs text-gray-500 mt-1">This name will appear throughout the application</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">This name will appear throughout the application</p>
           </div>
           
           {/* Registration Settings */}
-          <div className="border rounded p-4">
-            <h2 className="font-semibold mb-2">Registration</h2>
+          <div className="border dark:border-gray-700 rounded p-4 bg-white dark:bg-gray-800">
+            <h2 className="font-semibold mb-2 dark:text-white">Registration</h2>
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -185,8 +158,8 @@ const AdminSettings: React.FC = () => {
           </div>
 
           {/* Exam Window */}
-          <div className="border rounded p-4">
-            <h2 className="font-semibold mb-2">Exam Window (Daily)</h2>
+          <div className="border dark:border-gray-700 rounded p-4 bg-white dark:bg-gray-800">
+            <h2 className="font-semibold mb-2 dark:text-white">Exam Window (Daily)</h2>
             <div className="flex items-center gap-2">
               <label className="text-sm w-24">Start:</label>
               <input
@@ -209,66 +182,9 @@ const AdminSettings: React.FC = () => {
             </div>
           </div>
 
-          {/* Email Settings */}
-          <div className="border rounded p-4 md:col-span-2">
-            <h2 className="font-semibold mb-3">Email Settings (SMTP)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm block mb-1">SMTP Host</label>
-                <input
-                  type="text"
-                  value={emailSettings.smtp_host}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_host: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="smtp.gmail.com"
-                  aria-label="SMTP host"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-1">SMTP Port</label>
-                <input
-                  type="number"
-                  value={emailSettings.smtp_port}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_port: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="587"
-                  aria-label="SMTP port"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-1">SMTP Username</label>
-                <input
-                  type="text"
-                  value={emailSettings.smtp_user}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_user: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="your-email@example.com"
-                  aria-label="SMTP username"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-1">From Email</label>
-                <input
-                  type="email"
-                  value={emailSettings.smtp_from}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_from: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="noreply@example.com"
-                  aria-label="From email address"
-                />
-              </div>
-            </div>
-            <button
-              onClick={saveEmailSettings}
-              className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Save Email Settings
-            </button>
-          </div>
-
           {/* Security Settings */}
-          <div className="border rounded p-4">
-            <h2 className="font-semibold mb-2">Security</h2>
+          <div className="border dark:border-gray-700 rounded p-4 bg-white dark:bg-gray-800">
+            <h2 className="font-semibold mb-2 dark:text-white">Security</h2>
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -299,31 +215,42 @@ const AdminSettings: React.FC = () => {
           </div>
 
           {/* Appearance Settings */}
-          <div className="border rounded p-4">
-            <h2 className="font-semibold mb-2">Appearance</h2>
-            <label className="text-sm mr-2">Theme</label>
+          <div className="border dark:border-gray-700 rounded p-4 bg-white dark:bg-gray-800">
+            <h2 className="font-semibold mb-2 dark:text-white">Appearance</h2>
+            <label className="text-sm mr-2 dark:text-gray-300">Theme</label>
             <select
-              defaultValue={getValue('theme') || 'auto'}
-              onChange={e => updateSetting('theme', e.target.value)}
-              className="border rounded px-2 py-1"
+              value={theme}
+              onChange={async (e) => {
+                const newTheme = e.target.value as 'light' | 'dark' | 'auto';
+                try {
+                  await changeTheme(newTheme);
+                  showSuccess(`Theme changed to ${newTheme}`);
+                } catch (error) {
+                  showError('Failed to change theme');
+                }
+              }}
+              className="border dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white"
               aria-label="Theme selection"
             >
-              <option value="auto">Auto</option>
+              <option value="auto">Auto (System)</option>
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </select>
+            <p className="text-xs text-gray-500 mt-2">
+              Auto adjusts based on your device's time or system preference
+            </p>
           </div>
 
           {/* Grading Scale */}
-          <div className="border rounded p-4 md:col-span-2">
-            <h2 className="font-semibold mb-2">Grading Scale (JSON)</h2>
+          <div className="border dark:border-gray-700 rounded p-4 md:col-span-2 bg-white dark:bg-gray-800">
+            <h2 className="font-semibold mb-2 dark:text-white">Grading Scale (JSON)</h2>
             <textarea
               defaultValue={getValue('grading_scale') || '{"A":80,"B":70,"C":60,"D":50,"F":0}'}
               onBlur={e => updateSetting('grading_scale', e.target.value)}
-              className="border rounded px-3 py-2 w-full h-28"
+              className="border dark:border-gray-600 rounded px-3 py-2 w-full h-28 bg-white dark:bg-gray-700 dark:text-white"
               aria-label="Grading scale JSON"
             />
-            <p className="text-xs text-gray-500 mt-1">Example: {`{"A":80,"B":70,"C":60,"D":50,"F":0}`}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Example: {`{"A":80,"B":70,"C":60,"D":50,"F":0}`}</p>
           </div>
         </div>
       )}

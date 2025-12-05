@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 import { useTeacherSetup } from './hooks/useTeacherSetup';
+import { useTheme } from './hooks/useTheme';
 import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
 import { ErrorBoundary, KeyboardShortcutsHelp, OfflineRouteHandler } from './components';
 
@@ -29,6 +30,9 @@ import RequireRole from './middleware/RequireRole';
 
 const App: React.FC = () => {
   const { showModal, handleComplete, handleSkip } = useTeacherSetup();
+  
+  // Initialize theme
+  useTheme();
 
   return (
     <>

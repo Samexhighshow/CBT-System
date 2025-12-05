@@ -125,6 +125,9 @@ Route::middleware('auth:sanctum')->prefix('classes')->group(function () {
     Route::delete('/{id}', [\App\Http\Controllers\Api\ClassController::class, 'destroy']);
 });
 
+// Teachers
+Route::middleware('auth:sanctum')->get('/teachers', [\App\Http\Controllers\Api\UserController::class, 'getTeachers']);
+
 // Results
 Route::prefix('results')->group(function () {
     Route::get('/student/{studentId}', [ResultController::class, 'getStudentResults']);
