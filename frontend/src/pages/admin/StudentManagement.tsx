@@ -165,7 +165,7 @@ const StudentManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Student Management</h1>
@@ -190,7 +190,7 @@ const StudentManagement: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <Card className="bg-purple-50">
           <p className="text-sm text-gray-600">Total Students</p>
           <h3 className="text-2xl font-bold text-purple-600 mt-1">{loading ? '...' : stats.total}</h3>

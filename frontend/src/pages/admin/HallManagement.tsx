@@ -132,7 +132,7 @@ const HallManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-6 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold">Hall Management</h1>

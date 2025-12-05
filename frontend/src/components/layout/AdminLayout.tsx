@@ -69,7 +69,7 @@ const AdminLayout: React.FC = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col w-full">
       {/* Top Navigation Bar - Desktop */}
       <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full sticky top-0 z-40">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="w-full max-w-full px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Left Section: Logo + Desktop Nav */}
             <div className="flex items-center space-x-4">
@@ -240,7 +240,7 @@ const AdminLayout: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 w-full">
         <Outlet />
       </main>
 

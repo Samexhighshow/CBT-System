@@ -112,7 +112,7 @@ const AllocationGenerator: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Generate Seat Allocation</h1>
         <p className="text-gray-600">

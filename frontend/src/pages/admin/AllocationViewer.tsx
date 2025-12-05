@@ -157,7 +157,7 @@ const AllocationViewer: React.FC = () => {
   const halls = getUniqueHalls(allocations);
 
   return (
-    <div className="p-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-6">
         <div className="flex justify-between items-start">

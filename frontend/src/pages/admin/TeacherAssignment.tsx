@@ -39,22 +39,18 @@ const TeacherAssignment: React.FC = () => {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    if (examId) {
-      fetchData();
-    }
-  }, [examId]);
+    fetchData();
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
-      const [examRes, hallsRes, teachersRes] = await Promise.all([
-        api.get(`/exams/${examId}`),
+      const [hallsRes, teachersRes] = await Promise.all([
         api.get('/halls'),
         api.get('/teachers'),
       ]);
 
-      setExam(examRes.data);
       setHalls(hallsRes.data.data || hallsRes.data);
       setTeachers(teachersRes.data.data || teachersRes.data);
 
@@ -112,7 +108,6 @@ const TeacherAssignment: React.FC = () => {
     setSuccess('');
     try {
       await api.post(`/halls/${hallId}/assign-teachers`, {
-        exam_id: examId,
         teachers: assignments[hallId].filter((a) => a.teacher_id > 0),
       });
       setSuccess(`Teachers assigned to ${halls.find((h) => h.id === hallId)?.name} successfully`);
@@ -131,7 +126,6 @@ const TeacherAssignment: React.FC = () => {
       for (const hall of halls) {
         if (assignments[hall.id] && assignments[hall.id].length > 0) {
           await api.post(`/halls/${hall.id}/assign-teachers`, {
-            exam_id: examId,
             teachers: assignments[hall.id].filter((a) => a.teacher_id > 0),
           });
         }
@@ -163,14 +157,14 @@ const TeacherAssignment: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-8\">
       {/* Header */}
       <div className="mb-6 flex justify-between items-start">
         <div>
-          <h1 className="text-2xl font-bold">Teacher Assignment</h1>
-          <p className="text-gray-600">{exam?.title}</p>
+          <h1 className="text-2xl font-bold">Teacher Assignment to Halls</h1>
+          <p className="text-gray-600">Manage teacher assignments across exam halls</p>
           <p className="text-sm text-gray-500">
-            Assign invigilators to exam halls
+            Assign invigilators and staff to halls
           </p>
         </div>
         <Button onClick={saveAllAssignments} disabled={saving} className="flex items-center gap-2">

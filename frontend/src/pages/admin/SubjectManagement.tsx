@@ -143,7 +143,8 @@ const SubjectManagement: React.FC = () => {
     }
   };
   return (
-    <div className="space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-8">
+      <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Subjects, Classes & Departments</h1>
@@ -427,6 +428,7 @@ const SubjectManagement: React.FC = () => {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 };

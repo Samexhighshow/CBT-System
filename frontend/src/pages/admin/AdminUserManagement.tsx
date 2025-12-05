@@ -101,7 +101,8 @@ const AdminUserManagement: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-8">
+      <div className="space-y-6">
       {/* Header with Role Permissions Button */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Admin User Management</h2>
@@ -326,6 +327,7 @@ const AdminUserManagement: React.FC = () => {
           <strong>Note:</strong> Student accounts are managed separately through the Student Management section and student registration portal.
         </p>
       </div>
+    </div>
     </div>
   );
 };
