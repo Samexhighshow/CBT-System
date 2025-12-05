@@ -4,6 +4,7 @@ import { Card } from '../../components';
 import { api } from '../../services/api';
 import { showError } from '../../utils/alerts';
 import { useAuthStore } from '../../store/authStore';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 
 interface DashboardStats {
   total_students: number;
@@ -130,12 +131,12 @@ const AdminOverview: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-3">
       {/* Header */}
-      <div>
+      <div className="mb-1">
         <h1
           className={
-            `text-3xl font-bold ` +
+            `text-2xl font-bold ` +
             (user?.name?.toLowerCase() === 'maximus'
               ? 'text-blue-600'
               : user?.name?.toLowerCase() === 'mavis'
@@ -145,11 +146,11 @@ const AdminOverview: React.FC = () => {
         >
           {user?.name ?? 'Admin'}
         </h1>
-        <p className="text-gray-600 mt-2">Welcome back! Here's an overview of your system.</p>
+        <p className="text-gray-600 text-sm mt-1">Welcome back! Here's an overview of your system.</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Stats Grid - Full Width */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 w-full">
         <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
           <div className="flex items-center justify-between">
             <div>
@@ -213,10 +214,58 @@ const AdminOverview: React.FC = () => {
         </Card>
       </div>
 
+      {/* Charts Section - Full Width */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mt-2 w-full">
+        <Card>
+          <h3 className="text-lg font-semibold mb-4">Student Distribution</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={[
+                  { name: 'Active', value: stats.active_students },
+                  { name: 'Inactive', value: stats.total_students - stats.active_students }
+                ]}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                <Cell fill="#10b981" />
+                <Cell fill="#6b7280" />
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </Card>
+
+        <Card>
+          <h3 className="text-lg font-semibold mb-4">System Overview</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart
+              data={[
+                { name: 'Students', value: stats.total_students },
+                { name: 'Exams', value: stats.total_exams },
+                { name: 'Subjects', value: stats.total_subjects },
+                { name: 'Departments', value: stats.total_departments }
+              ]}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="value" fill="#3b82f6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
+
       {/* Modules Section (hidden on small screens) */}
-      <div className="mt-8 hidden md:block">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Management Modules</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="mt-4 hidden md:block">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Management Modules</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {modules.map((module) => (
             <Card
               key={module.path}
@@ -242,23 +291,23 @@ const AdminOverview: React.FC = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Quick Actions</h2>
+      <div className="mt-4">
+        <h2 className="text-xl font-bold text-gray-900 mb-3">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <button
-            onClick={() => navigate('/admin/exams/create')}
+            onClick={() => navigate('/admin/exams')}
             className="bg-white border-2 border-blue-500 text-blue-600 px-6 py-4 rounded-lg font-semibold hover:bg-blue-50 transition"
           >
             + Create New Exam
           </button>
           <button
-            onClick={() => navigate('/admin/questions/create')}
+            onClick={() => navigate('/admin/questions')}
             className="bg-white border-2 border-green-500 text-green-600 px-6 py-4 rounded-lg font-semibold hover:bg-green-50 transition"
           >
             + Add Questions
           </button>
           <button
-            onClick={() => navigate('/admin/students/register')}
+            onClick={() => navigate('/admin/students')}
             className="bg-white border-2 border-purple-500 text-purple-600 px-6 py-4 rounded-lg font-semibold hover:bg-purple-50 transition"
           >
             + Register Student

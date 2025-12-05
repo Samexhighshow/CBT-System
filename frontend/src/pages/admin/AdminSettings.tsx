@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
+import { useDarkMode } from '../../hooks/useDarkMode';
 import { showSuccess, showError } from '../../utils/alerts';
 
 interface Setting {
@@ -14,6 +15,7 @@ const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
   const [systemName, setSystemName] = useState('');
+  const { toggleDarkMode } = useDarkMode();
   const [emailSettings, setEmailSettings] = useState({
     smtp_host: '',
     smtp_port: '',
@@ -209,61 +211,16 @@ const AdminSettings: React.FC = () => {
             </div>
           </div>
 
-          {/* Email Settings */}
-          <div className="border rounded p-4 md:col-span-2">
-            <h2 className="font-semibold mb-3">Email Settings (SMTP)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm block mb-1">SMTP Host</label>
-                <input
-                  type="text"
-                  value={emailSettings.smtp_host}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_host: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="smtp.gmail.com"
-                  aria-label="SMTP host"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-1">SMTP Port</label>
-                <input
-                  type="number"
-                  value={emailSettings.smtp_port}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_port: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="587"
-                  aria-label="SMTP port"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-1">SMTP Username</label>
-                <input
-                  type="text"
-                  value={emailSettings.smtp_user}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_user: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="your-email@example.com"
-                  aria-label="SMTP username"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-1">From Email</label>
-                <input
-                  type="email"
-                  value={emailSettings.smtp_from}
-                  onChange={e => setEmailSettings({ ...emailSettings, smtp_from: e.target.value })}
-                  className="border rounded px-3 py-2 w-full"
-                  placeholder="noreply@example.com"
-                  aria-label="From email address"
-                />
-              </div>
-            </div>
-            <button
-              onClick={saveEmailSettings}
-              className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Save Email Settings
-            </button>
+          {/* Note: SMTP settings are configured in .env file */}
+          <div className="border rounded p-4 md:col-span-2 bg-blue-50 border-blue-200">
+            <h2 className="font-semibold mb-2 text-blue-900">Email Configuration</h2>
+            <p className="text-sm text-blue-800">SMTP settings are configured in the <code className="bg-blue-100 px-2 py-1 rounded">.env</code> file for security. Update them there and restart the application.</p>
+            <ul className="text-sm text-blue-800 mt-2 ml-4 list-disc">
+              <li>MAIL_HOST</li>
+              <li>MAIL_PORT</li>
+              <li>MAIL_USERNAME</li>
+              <li>MAIL_FROM_ADDRESS</li>
+            </ul>
           </div>
 
           {/* Security Settings */}
@@ -304,7 +261,10 @@ const AdminSettings: React.FC = () => {
             <label className="text-sm mr-2">Theme</label>
             <select
               defaultValue={getValue('theme') || 'auto'}
-              onChange={e => updateSetting('theme', e.target.value)}
+              onChange={e => {
+                updateSetting('theme', e.target.value);
+                toggleDarkMode(e.target.value as 'auto' | 'light' | 'dark');
+              }}
               className="border rounded px-2 py-1"
               aria-label="Theme selection"
             >

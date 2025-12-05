@@ -56,8 +56,16 @@ const Profile: React.FC<ProfileProps> = ({ asModal = false }) => {
       setProfile(response.data);
       setName(response.data.name);
       setEmail(response.data.email);
-      if (response.data.profile_picture) {
-        setPicturePreview(`${API_URL.replace('/api', '')}/storage/${response.data.profile_picture}`);
+      // Only set picturePreview if profile_picture exists and is not null/empty
+      if (response.data.profile_picture && response.data.profile_picture.trim() !== '') {
+        let pictureUrl = response.data.profile_picture;
+        // If it doesn't start with http, it's a relative path from storage
+        if (!pictureUrl.startsWith('http')) {
+          pictureUrl = `http://127.0.0.1:8000/storage/${pictureUrl}`;
+        }
+        setPicturePreview(pictureUrl);
+      } else {
+        setPicturePreview(''); // Clear preview if no picture
       }
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to load profile');
@@ -260,8 +268,8 @@ const Profile: React.FC<ProfileProps> = ({ asModal = false }) => {
   };
 
   return (
-    <div className={asModal ? "p-2" : "min-h-screen bg-gray-50 p-6"}>
-      <div className={asModal ? "max-w-4xl" : "max-w-4xl mx-auto"}>
+    <div className={asModal ? "p-2" : "w-full"}>
+      <div className={asModal ? "max-w-4xl" : "w-full"}>
         {!asModal && (
           <h1 className="text-3xl font-bold text-gray-900 mb-6">Profile Settings</h1>
         )}

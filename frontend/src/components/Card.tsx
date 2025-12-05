@@ -17,7 +17,7 @@ const Card: React.FC<CardProps> = ({
   clickable = false,
   onClick
 }) => {
-  const baseStyles = 'bg-white rounded-lg shadow-md p-6 transition-all duration-200';
+  const baseStyles = 'bg-white rounded-lg shadow-md p-3 transition-all duration-200';
   const hoverStyles = clickable ? 'hover:shadow-lg cursor-pointer' : '';
 
   return (

@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 import { useTeacherSetup } from './hooks/useTeacherSetup';
+import { useDarkMode } from './hooks/useDarkMode';
 import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
 import { ErrorBoundary, KeyboardShortcutsHelp, OfflineRouteHandler } from './components';
 
@@ -29,6 +30,8 @@ import RequireRole from './middleware/RequireRole';
 
 const App: React.FC = () => {
   const { showModal, handleComplete, handleSkip } = useTeacherSetup();
+  // Initialize dark mode
+  useDarkMode();
 
   return (
     <>
