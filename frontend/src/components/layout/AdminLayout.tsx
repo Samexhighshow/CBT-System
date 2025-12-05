@@ -41,16 +41,11 @@ const AdminLayout: React.FC = () => {
     { name: 'Students', path: '/admin/students', icon: 'bx-group' },
     { name: 'Subjects', path: '/admin/subjects', icon: 'bx-folder' },
     { name: 'Halls', path: '/admin/halls', icon: 'bx-building' },
+    { name: 'Allocations', path: '/admin/allocations', icon: 'bx-layout' },
+    { name: 'Teacher Assignment', path: '/admin/teachers/assign', icon: 'bx-user-check' },
     { name: 'Results', path: '/admin/results', icon: 'bx-bar-chart-alt-2' },
     { name: 'Users', path: '/admin/users', icon: 'bx-shield' },
     { name: 'Activity Logs', path: '/admin/activity-logs', icon: 'bx-history' },
-  ];
-
-  // Allocation system routes for dropdown
-  const allocationRoutes = [
-    { name: 'View Allocations', path: '/admin/allocations', icon: 'bx-layout' },
-    { name: 'Generate Allocation', path: '/admin/allocations/generate', icon: 'bx-plus-circle' },
-    { name: 'Teacher Assignment', path: '/admin/teachers/assign', icon: 'bx-user-check' },
   ];
 
   const isActivePath = (path: string) => {
@@ -62,80 +57,44 @@ const AdminLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col w-full">
-      {/* Top Navigation Bar - Enhanced */}
-      <nav className="bg-white shadow-md border-b border-gray-200 w-full sticky top-0 z-40">
+      {/* Top Navigation Bar - Desktop */}
+      <nav className="bg-white shadow-sm border-b w-full sticky top-0 z-40">
         <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-14">
+          <div className="flex justify-between items-center h-16">
             {/* Left Section: Logo + Desktop Nav */}
-            <div className="flex items-center gap-6">
+            <div className="flex items-center space-x-4">
               {/* Mobile Hamburger */}
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="md:hidden p-2 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                className="md:hidden p-2 rounded-md text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 aria-label="Toggle menu"
               >
                 <i className={`bx ${isSidebarOpen ? 'bx-x' : 'bx-menu'} text-2xl`}></i>
               </button>
 
-              {/* Logo */}
-              <div className="flex items-center gap-1">
-                <i className="bx bx-book text-lg text-blue-600"></i>
-                <h1 className="text-lg font-bold text-gray-900">CBT Admin</h1>
-              </div>
+              <h1 className="text-xl font-bold text-blue-600">CBT Admin</h1>
               
-              {/* Desktop Navigation Links - Horizontal Tab Style */}
-              <div className="hidden md:flex gap-0.5 ml-4">
+              {/* Desktop Navigation Links */}
+              <div className="hidden md:flex space-x-1">
                 {navLinks.map((link) => (
                   <button
                     key={link.path}
                     onClick={() => navigate(link.path)}
-                    className={`px-3 py-2 text-xs sm:text-sm font-medium rounded-t-lg transition flex items-center gap-1 whitespace-nowrap ${
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition flex items-center space-x-2 ${
                       isActivePath(link.path)
-                        ? 'bg-blue-100 text-blue-700 border-b-2 border-blue-600'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        ? 'bg-blue-50 text-blue-600'
+                        : 'text-gray-700 hover:bg-gray-100'
                     }`}
-                    title={link.name}
                   >
-                    <i className={`bx ${link.icon} text-base`}></i>
-                    <span className="hidden sm:inline">{link.name}</span>
+                    <i className={`bx ${link.icon}`}></i>
+                    <span>{link.name}</span>
                   </button>
                 ))}
-                
-                {/* Allocation System Dropdown - Desktop Only */}
-                <div className="relative group">
-                  <button
-                    className={`px-3 py-2 text-sm font-medium rounded-t-lg transition flex items-center gap-1 whitespace-nowrap ${
-                      allocationRoutes.some(r => isActivePath(r.path))
-                        ? 'bg-blue-100 text-blue-700 border-b-2 border-blue-600'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
-                    title="Allocation System"
-                  >
-                    <i className="bx bx-layer text-base"></i>
-                    <span className="hidden sm:inline">Allocation System</span>
-                  </button>
-                  <div className="absolute left-0 hidden group-hover:block bg-white shadow-lg rounded-b-lg border border-gray-200 z-50 w-56">
-                    {allocationRoutes.map((route) => (
-                      <button
-                        key={route.path}
-                        onClick={() => navigate(route.path)}
-                        className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 transition ${
-                          isActivePath(route.path)
-                            ? 'bg-blue-50 text-blue-700 font-semibold'
-                            : 'text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        <i className={`bx ${route.icon}`}></i>
-                        {route.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
 
-            {/* Right Section: Avatar Dropdown */}
-            <div className="flex items-center gap-4">
+            {/* Right Section: Avatar */}
+            <div className="flex items-center">
               <AvatarDropdown showSettings={isMainAdmin} />
             </div>
           </div>
@@ -207,13 +166,11 @@ const AdminLayout: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 w-full overflow-y-auto">
-        <div className="w-full max-w-full px-3 sm:px-4 md:px-6 lg:px-8 py-3 sm:py-4">
-          <Outlet />
-        </div>
+      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-8">
+        <Outlet />
       </main>
 
-      <div className="w-full border-t border-gray-200 bg-white">
+      <div className="mt-auto">
         <FooterMinimal />
       </div>
     </div>

@@ -39,32 +39,24 @@ const TeacherAssignment: React.FC = () => {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    // Load data regardless of examId - show all halls and let admin assign teachers
-    fetchData();
-  }, []);
+    if (examId) {
+      fetchData();
+    }
+  }, [examId]);
 
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
-      // Load halls and teachers
-      const [hallsRes, teachersRes] = await Promise.all([
+      const [examRes, hallsRes, teachersRes] = await Promise.all([
+        api.get(`/exams/${examId}`),
         api.get('/halls'),
         api.get('/teachers'),
       ]);
 
+      setExam(examRes.data);
       setHalls(hallsRes.data.data || hallsRes.data);
       setTeachers(teachersRes.data.data || teachersRes.data);
-      
-      // If examId is provided, load exam data
-      if (examId) {
-        try {
-          const examRes = await api.get(`/exams/${examId}`);
-          setExam(examRes.data);
-        } catch (err) {
-          console.warn('Failed to load exam data');
-        }
-      }
 
       // Initialize assignments from existing data
       const initialAssignments: any = {};

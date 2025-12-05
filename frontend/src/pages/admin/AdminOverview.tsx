@@ -131,12 +131,12 @@ const AdminOverview: React.FC = () => {
   ];
 
   return (
-    <div className="w-full space-y-3">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="mb-1">
+      <div>
         <h1
           className={
-            `text-2xl font-bold ` +
+            `text-3xl font-bold ` +
             (user?.name?.toLowerCase() === 'maximus'
               ? 'text-blue-600'
               : user?.name?.toLowerCase() === 'mavis'
@@ -146,11 +146,11 @@ const AdminOverview: React.FC = () => {
         >
           {user?.name ?? 'Admin'}
         </h1>
-        <p className="text-gray-600 text-sm mt-1">Welcome back! Here's an overview of your system.</p>
+        <p className="text-gray-600 mt-2">Welcome back! Here's an overview of your system.</p>
       </div>
 
-      {/* Stats Grid - Full Width */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 w-full">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
           <div className="flex items-center justify-between">
             <div>
@@ -214,8 +214,8 @@ const AdminOverview: React.FC = () => {
         </Card>
       </div>
 
-      {/* Charts Section - Full Width */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mt-2 w-full">
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
         <Card>
           <h3 className="text-lg font-semibold mb-4">Student Distribution</h3>
           <ResponsiveContainer width="100%" height={300}>
@@ -263,9 +263,9 @@ const AdminOverview: React.FC = () => {
       </div>
 
       {/* Modules Section (hidden on small screens) */}
-      <div className="mt-4 hidden md:block">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Management Modules</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="mt-8 hidden md:block">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">Management Modules</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {modules.map((module) => (
             <Card
               key={module.path}
@@ -291,8 +291,8 @@ const AdminOverview: React.FC = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="mt-4">
-        <h2 className="text-xl font-bold text-gray-900 mb-3">Quick Actions</h2>
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <button
             onClick={() => navigate('/admin/exams')}

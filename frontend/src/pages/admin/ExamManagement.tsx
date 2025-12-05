@@ -32,7 +32,6 @@ const ExamManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState<Exam[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [stats, setStats] = useState<ExamStats>({
     total: 0,
     active: 0,
@@ -115,31 +114,8 @@ const ExamManagement: React.FC = () => {
         await api.delete(`/exams/${id}`);
         showSuccess('Exam deleted successfully');
         loadExams();
-      } catch (error: any) {
+      } catch (error) {
         showError('Failed to delete exam');
-      }
-    }
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    setSelectedIds(checked ? exams.map(e => e.id) : []);
-  };
-
-  const handleSelectOne = (id: number, checked: boolean) => {
-    setSelectedIds(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
-  };
-
-  const handleBatchDelete = async () => {
-    if (selectedIds.length === 0) return;
-    const confirmed = await showDeleteConfirm(`Delete ${selectedIds.length} selected exams?`);
-    if (confirmed.isConfirmed) {
-      try {
-        await Promise.all(selectedIds.map(id => api.delete(`/exams/${id}`)));
-        showSuccess('Selected exams deleted');
-        setSelectedIds([]);
-        loadExams();
-      } catch (error: any) {
-        showError('Failed to delete selected exams');
       }
     }
   };
@@ -241,18 +217,11 @@ const ExamManagement: React.FC = () => {
       </Card>
 
       <Card>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">All Exams ({exams.filter(e => 
-            searchTerm === '' || 
-            e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            e.description.toLowerCase().includes(searchTerm.toLowerCase())
-          ).length})</h2>
-          {selectedIds.length > 0 && (
-            <Button variant="danger" onClick={handleBatchDelete}>
-              Delete Selected ({selectedIds.length})
-            </Button>
-          )}
-        </div>
+        <h2 className="text-xl font-semibold mb-4">All Exams ({exams.filter(e => 
+          searchTerm === '' || 
+          e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          e.description.toLowerCase().includes(searchTerm.toLowerCase())
+        ).length})</h2>
         {loading ? (
           <SkeletonList items={6} />
         ) : exams.filter(e => 
@@ -268,15 +237,8 @@ const ExamManagement: React.FC = () => {
               e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
               e.description.toLowerCase().includes(searchTerm.toLowerCase())
             ).map((exam) => (
-              <div key={exam.id} className="border rounded-lg p-4 hover:shadow-md transition flex gap-3">
-                <input 
-                  type="checkbox" 
-                  checked={selectedIds.includes(exam.id)}
-                  onChange={e => handleSelectOne(exam.id, e.target.checked)}
-                  className="mt-1"
-                  title="Select exam"
-                />
-                <div className="flex justify-between items-start flex-1">
+              <div key={exam.id} className="border rounded-lg p-4 hover:shadow-md transition">
+                <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <h3 className="font-semibold text-lg">{exam.title}</h3>
                     <p className="text-sm text-gray-600 mt-1">{exam.description}</p>
