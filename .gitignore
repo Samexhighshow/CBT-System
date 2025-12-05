@@ -37,12 +37,16 @@ Thumbs.db
 temp/
 tmp/
 *.tmp
+.cache/
+.cache
 
 # Frontend specific
 /frontend/build
 /frontend/.next
 /frontend/out
 /frontend/public/service-worker.js
+/frontend/.cache
+/frontend/node_modules/.cache
 
 # Backend specific
 /backend/uploads
