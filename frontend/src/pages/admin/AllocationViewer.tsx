@@ -128,7 +128,7 @@ const AllocationViewer: React.FC = () => {
   };
 
   const handleRegenerate = async () => {
-    if (!confirm('This will create a new allocation run. Continue?')) return;
+    if (!window.confirm('This will create a new allocation run. Continue?')) return;
 
     try {
       const response = await api.post(`/allocations/regenerate/${runId}`);

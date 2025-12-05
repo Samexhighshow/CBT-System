@@ -80,7 +80,7 @@ const AllocationHistory: React.FC = () => {
   };
 
   const regenerateAllocation = async (runId: number) => {
-    if (!confirm('This will create a new allocation run. Continue?')) return;
+    if (!window.confirm('This will create a new allocation run. Continue?')) return;
 
     try {
       const response = await api.post(`/allocations/regenerate/${runId}`);

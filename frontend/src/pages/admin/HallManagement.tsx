@@ -40,7 +40,7 @@ const HallManagement: React.FC = () => {
   };
   const handleBatchDeleteHalls = async () => {
     if (selectedHallIds.length === 0) return;
-    if (!confirm(`Delete ${selectedHallIds.length} selected halls?`)) return;
+    if (!window.confirm(`Delete ${selectedHallIds.length} selected halls?`)) return;
     try {
       await Promise.all(selectedHallIds.map(id => api.delete(`/halls/${id}`)));
       setSelectedHallIds([]);
@@ -102,7 +102,7 @@ const HallManagement: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this hall?')) return;
+    if (!window.confirm('Are you sure you want to delete this hall?')) return;
 
     try {
       await api.delete(`/halls/${id}`);
