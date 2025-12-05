@@ -23,15 +23,15 @@ const Alert: React.FC<AlertProps> = ({
   };
 
   const iconMap: Record<AlertType, string> = {
-    success: '✓',
-    error: '✕',
-    warning: '⚠',
-    info: 'ℹ'
+    success: 'bx-check-circle',
+    error: 'bx-error-circle',
+    warning: 'bx-error',
+    info: 'bx-info-circle'
   };
 
   return (
     <div className={`border rounded-lg p-4 flex gap-3 items-start ${typeStyles[type]}`}>
-      <span className="text-xl font-bold flex-shrink-0">{iconMap[type]}</span>
+      <i className={`bx ${iconMap[type]} text-xl font-bold flex-shrink-0`}></i>
       
       <div className="flex-1">
         {title && <h4 className="font-semibold">{title}</h4>}

@@ -35,7 +35,17 @@ const AdminLogin: React.FC = () => {
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, formData);
       const { token, user } = res.data;
       login(user, token);
-      navigate('/admin');
+      
+      // Check if user is a teacher (only teacher role, not admin)
+      const isOnlyTeacher = user.roles?.some((r: any) => r.name?.toLowerCase() === 'teacher') && 
+                            !user.roles?.some((r: any) => ['admin', 'main admin'].includes(r.name?.toLowerCase()));
+
+      // Teachers go to admin dashboard with limited access
+      if (isOnlyTeacher) {
+        navigate('/admin');
+      } else {
+        navigate('/admin');
+      }
     } catch (err: any) {
       const errorMessage = err?.response?.data?.message || 'Login failed. Please check your credentials.';
       setError(errorMessage);

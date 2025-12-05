@@ -57,7 +57,11 @@ const Profile: React.FC<ProfileProps> = ({ asModal = false }) => {
       setName(response.data.name);
       setEmail(response.data.email);
       if (response.data.profile_picture) {
-        setPicturePreview(`${API_URL.replace('/api', '')}/storage/${response.data.profile_picture}`);
+        // Check if it's already a full URL or a path
+        const pictureUrl = response.data.profile_picture.startsWith('http') 
+          ? response.data.profile_picture 
+          : `${API_URL.replace('/api', '')}/storage/${response.data.profile_picture}`;
+        setPicturePreview(pictureUrl);
       }
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to load profile');

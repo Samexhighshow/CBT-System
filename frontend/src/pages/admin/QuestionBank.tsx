@@ -51,6 +51,12 @@ const QuestionBank: React.FC = () => {
     marks: 1,
     subject: '',
     class_level: 'JSS1',
+    max_words: 100,
+    marking_rubric: '',
+    options: [
+      { option_text: '', is_correct: false },
+      { option_text: '', is_correct: false },
+    ],
   });
 
   useEffect(() => {
@@ -112,7 +118,19 @@ const QuestionBank: React.FC = () => {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ question_text: '', question_type: 'multiple_choice', marks: 1, subject: '', class_level: 'JSS1' });
+    setForm({ 
+      question_text: '', 
+      question_type: 'multiple_choice', 
+      marks: 1, 
+      subject: '', 
+      class_level: 'JSS1',
+      max_words: 100,
+      marking_rubric: '',
+      options: [
+        { option_text: '', is_correct: false },
+        { option_text: '', is_correct: false },
+      ],
+    });
     setShowCreateModal(true);
   };
 
@@ -132,6 +150,12 @@ const QuestionBank: React.FC = () => {
       marks: q.marks,
       subject: q.subject,
       class_level: q.class_level,
+      max_words: (q as any).max_words || 100,
+      marking_rubric: (q as any).marking_rubric || '',
+      options: (q as any).options || [
+        { option_text: '', is_correct: false },
+        { option_text: '', is_correct: false },
+      ],
     });
     setShowCreateModal(true);
   };
@@ -377,7 +401,8 @@ const QuestionBank: React.FC = () => {
                 <select className="mt-1 w-full border rounded px-3 py-2" value={form.question_type} onChange={e => setForm({ ...form, question_type: e.target.value })} aria-label="Question type">
                   <option value="multiple_choice">Multiple Choice</option>
                   <option value="true_false">True/False</option>
-                  <option value="essay">Essay</option>
+                  <option value="short_answer">Essay (Short Answer)</option>
+                  <option value="essay">Essay (Long Answer)</option>
                 </select>
               </div>
               <div>
@@ -385,6 +410,97 @@ const QuestionBank: React.FC = () => {
                 <input type="number" min={1} className="mt-1 w-full border rounded px-3 py-2" value={form.marks} onChange={e => setForm({ ...form, marks: Number(e.target.value) })} aria-label="Question marks" placeholder="Marks" />
               </div>
             </div>
+            
+            {/* Show max_words for essay questions */}
+            {(form.question_type === 'short_answer' || form.question_type === 'essay') && (
+              <div>
+                <label className="block text-sm font-medium">Maximum Words</label>
+                <input 
+                  type="number" 
+                  min={1} 
+                  className="mt-1 w-full border rounded px-3 py-2" 
+                  value={form.max_words} 
+                  onChange={e => setForm({ ...form, max_words: Number(e.target.value) })} 
+                  aria-label="Maximum words" 
+                  placeholder={form.question_type === 'short_answer' ? '50-100 words' : '200-500 words'} 
+                />
+              </div>
+            )}
+            
+            {/* Show marking rubric for long essays */}
+            {form.question_type === 'essay' && (
+              <div>
+                <label className="block text-sm font-medium">Marking Rubric (Optional)</label>
+                <textarea 
+                  className="mt-1 w-full border rounded px-3 py-2" 
+                  rows={3} 
+                  value={form.marking_rubric} 
+                  onChange={e => setForm({ ...form, marking_rubric: e.target.value })} 
+                  aria-label="Marking rubric" 
+                  placeholder="Enter marking criteria (e.g., Introduction: 2 marks, Body: 5 marks, Conclusion: 3 marks)" 
+                />
+              </div>
+            )}
+            
+            {/* Show options for multiple choice and true/false */}
+            {(form.question_type === 'multiple_choice' || form.question_type === 'true_false') && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Options</label>
+                {form.options.map((option, idx) => (
+                  <div key={idx} className="flex items-center gap-2 mb-2">
+                    <input 
+                      type="text" 
+                      className="flex-1 border rounded px-3 py-2" 
+                      value={option.option_text} 
+                      onChange={e => {
+                        const newOptions = [...form.options];
+                        newOptions[idx].option_text = e.target.value;
+                        setForm({ ...form, options: newOptions });
+                      }}
+                      placeholder={`Option ${idx + 1}`}
+                      aria-label={`Option ${idx + 1}`}
+                    />
+                    <label className="flex items-center gap-1">
+                      <input 
+                        type="checkbox" 
+                        checked={option.is_correct}
+                        onChange={e => {
+                          const newOptions = [...form.options];
+                          newOptions[idx].is_correct = e.target.checked;
+                          setForm({ ...form, options: newOptions });
+                        }}
+                        aria-label={`Mark option ${idx + 1} as correct`}
+                      />
+                      <span className="text-sm">Correct</span>
+                    </label>
+                    {form.options.length > 2 && (
+                      <button 
+                        onClick={() => {
+                          const newOptions = form.options.filter((_, i) => i !== idx);
+                          setForm({ ...form, options: newOptions });
+                        }}
+                        className="text-red-600 hover:text-red-800"
+                        aria-label={`Remove option ${idx + 1}`}
+                      >
+                        <i className='bx bx-trash'></i>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {form.question_type === 'multiple_choice' && form.options.length < 6 && (
+                  <button 
+                    onClick={() => setForm({ 
+                      ...form, 
+                      options: [...form.options, { option_text: '', is_correct: false }] 
+                    })}
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    <i className='bx bx-plus'></i> Add Option
+                  </button>
+                )}
+              </div>
+            )}
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium">Subject</label>

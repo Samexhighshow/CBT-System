@@ -73,7 +73,7 @@ class StudentController extends Controller
         }
 
         $validated = $request->validate([
-            'registration_number' => 'required|string|unique:students,registration_number',
+            'registration_number' => 'nullable|string|unique:students,registration_number',
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'other_names' => 'nullable|string|max:255',
@@ -86,6 +86,14 @@ class StudentController extends Controller
             'class_level' => 'required|in:JSS1,JSS2,JSS3,SS1,SS2,SS3',
             'address' => 'nullable|string',
         ]);
+
+        // Auto-generate registration number if not provided and auto-generation is enabled
+        if (empty($validated['registration_number'])) {
+            $autoGenerate = SystemSetting::get('registration_number_auto_generate', 'true');
+            if (filter_var($autoGenerate, FILTER_VALIDATE_BOOLEAN)) {
+                $validated['registration_number'] = \App\Services\RegistrationNumberService::generateRegistrationNumber();
+            }
+        }
 
         $validated['password'] = Hash::make($validated['password']);
         $student = Student::create($validated);

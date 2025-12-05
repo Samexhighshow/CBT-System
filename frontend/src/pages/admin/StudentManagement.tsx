@@ -135,8 +135,37 @@ const StudentManagement: React.FC = () => {
     showSuccess('Downloading student list...');
   };
 
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(students.map(s => s.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (id: number, checked: boolean) => {
+    setSelectedIds(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return;
+    const confirmed = await showDeleteConfirm(`Delete ${selectedIds.length} selected students?`);
+    if (confirmed.isConfirmed) {
+      try {
+        await Promise.all(selectedIds.map(id => api.delete(`/students/${id}`)));
+        showSuccess('Selected students deleted');
+        setSelectedIds([]);
+        loadStudents();
+      } catch (error) {
+        showError('Failed to delete selected students');
+      }
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="p-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Student Management</h1>
@@ -213,28 +242,22 @@ const StudentManagement: React.FC = () => {
       </Card>
 
       <Card>
-        <h2 className="text-xl font-semibold mb-4">Student List ({students.filter(s => 
-          searchTerm === '' || 
-          s.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.registration_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.email.toLowerCase().includes(searchTerm.toLowerCase())
-        ).length})</h2>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-xl font-semibold">Student List ({students.length})</h2>
+          <Button variant="danger" disabled={selectedIds.length === 0} onClick={handleBatchDelete}>
+            Delete Selected ({selectedIds.length})
+          </Button>
+        </div>
         {loading ? (
           <p className="text-gray-500">Loading students...</p>
-        ) : students.filter(s => 
-          searchTerm === '' || 
-          s.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.registration_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.email.toLowerCase().includes(searchTerm.toLowerCase())
-        ).length === 0 ? (
+        ) : students.length === 0 ? (
           <p className="text-gray-500">{searchTerm ? 'No students match your search.' : 'No students registered yet.'}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-2 py-3"><input type="checkbox" title="Select all students" checked={selectedIds.length === students.length && students.length > 0} onChange={e => handleSelectAll(e.target.checked)} /></th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reg. Number</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
@@ -251,6 +274,7 @@ const StudentManagement: React.FC = () => {
                   s.email.toLowerCase().includes(searchTerm.toLowerCase())
                 ).map((student) => (
                   <tr key={student.id}>
+                    <td className="px-2 py-4"><input type="checkbox" title="Select student" checked={selectedIds.includes(student.id)} onChange={e => handleSelectOne(student.id, e.target.checked)} /></td>
                     <td className="px-6 py-4 text-sm text-gray-900">{student.first_name} {student.last_name}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{student.registration_number}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{student.class_level}</td>

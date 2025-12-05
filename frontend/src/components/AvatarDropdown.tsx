@@ -49,17 +49,17 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center space-x-2 focus:outline-none"
       >
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold shadow-lg hover:shadow-xl transition-shadow">
-          {user?.profile_picture ? (
-            <img
-              src={user.profile_picture}
-              alt={user.name}
-              className="w-full h-full rounded-full object-cover"
-            />
-          ) : (
+        {user?.profile_picture ? (
+          <img
+            src={user.profile_picture}
+            alt={user.name}
+            className="w-10 h-10 rounded-full object-cover shadow-lg hover:shadow-xl transition-shadow"
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold shadow-lg hover:shadow-xl transition-shadow">
             <span className="text-sm">{getInitials(user?.name || 'U')}</span>
-          )}
-        </div>
+          </div>
+        )}
         <svg
           className={`w-4 h-4 text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none"

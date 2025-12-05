@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+/* eslint-disable react/forbid-dom-props */
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Timer } from '../components';
 import { api } from '../services/api';
@@ -40,7 +41,7 @@ const OfflineExamPortal: React.FC = () => {
   const examIdNum = parseInt(examId || '0');
   
   // Offline exam hook
-  const { isOnline, examData, pendingSync, loadExamData, storeExam, saveAnswer } = useOfflineExam(examIdNum);
+  const { isOnline, pendingSync, loadExamData, storeExam, saveAnswer } = useOfflineExam(examIdNum);
   
   // Cheating detection
   const {
