@@ -38,9 +38,19 @@ class QuestionController extends Controller
             $query->where('question_text', 'like', "%{$search}%");
         }
 
-        $questions = $query->orderBy('created_at', 'desc')->get();
+        // Pagination
+        $perPage = $request->input('limit', 15);
+        $questions = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        return response()->json($questions);
+        return response()->json([
+            'data' => $questions->items(),
+            'current_page' => $questions->currentPage(),
+            'last_page' => $questions->lastPage(),
+            'per_page' => $questions->perPage(),
+            'total' => $questions->total(),
+            'next_page' => $questions->currentPage() < $questions->lastPage() ? $questions->currentPage() + 1 : null,
+            'prev_page' => $questions->currentPage() > 1 ? $questions->currentPage() - 1 : null,
+        ]);
     }
 
     /**

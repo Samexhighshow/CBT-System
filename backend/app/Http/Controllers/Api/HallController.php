@@ -25,13 +25,20 @@ class HallController extends Controller
             $query->where('name', 'like', '%' . $request->search . '%');
         }
 
+        $perPage = $request->input('limit', 15);
         $halls = $query->withCount('allocations')
             ->orderBy('name')
-            ->get();
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'halls' => $halls,
+            'data' => $halls->items(),
+            'current_page' => $halls->currentPage(),
+            'last_page' => $halls->lastPage(),
+            'per_page' => $halls->perPage(),
+            'total' => $halls->total(),
+            'next_page' => $halls->currentPage() < $halls->lastPage() ? $halls->currentPage() + 1 : null,
+            'prev_page' => $halls->currentPage() > 1 ? $halls->currentPage() - 1 : null,
         ]);
     }
 

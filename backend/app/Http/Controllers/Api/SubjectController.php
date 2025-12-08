@@ -8,11 +8,38 @@ use Illuminate\Http\Request;
 
 class SubjectController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         // Align with current model: no singular department relation, uses pivot or JSON configuration
-        $subjects = Subject::orderBy('name')->get();
-        return response()->json($subjects);
+        $query = Subject::query();
+
+        // Search filter
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('code', 'like', "%{$search}%");
+            });
+        }
+
+        // Department filter
+        if ($request->has('department_id')) {
+            $query->where('department_id', $request->department_id);
+        }
+
+        // Pagination
+        $perPage = $request->input('limit', 15);
+        $subjects = $query->orderBy('name')->paginate($perPage);
+
+        return response()->json([
+            'data' => $subjects->items(),
+            'current_page' => $subjects->currentPage(),
+            'last_page' => $subjects->lastPage(),
+            'per_page' => $subjects->perPage(),
+            'total' => $subjects->total(),
+            'next_page' => $subjects->currentPage() < $subjects->lastPage() ? $subjects->currentPage() + 1 : null,
+            'prev_page' => $subjects->currentPage() > 1 ? $subjects->currentPage() - 1 : null,
+        ]);
     }
 
     public function show($id)

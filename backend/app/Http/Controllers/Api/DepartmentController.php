@@ -8,11 +8,33 @@ use Illuminate\Http\Request;
 
 class DepartmentController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         // Return basic departments without counting relations
-        $departments = Department::orderBy('name')->get();
-        return response()->json($departments);
+        $query = Department::query();
+
+        // Search filter
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('code', 'like', "%{$search}%");
+            });
+        }
+
+        // Pagination
+        $perPage = $request->input('limit', 15);
+        $departments = $query->orderBy('name')->paginate($perPage);
+
+        return response()->json([
+            'data' => $departments->items(),
+            'current_page' => $departments->currentPage(),
+            'last_page' => $departments->lastPage(),
+            'per_page' => $departments->perPage(),
+            'total' => $departments->total(),
+            'next_page' => $departments->currentPage() < $departments->lastPage() ? $departments->currentPage() + 1 : null,
+            'prev_page' => $departments->currentPage() > 1 ? $departments->currentPage() - 1 : null,
+        ]);
     }
 
     public function show($id)

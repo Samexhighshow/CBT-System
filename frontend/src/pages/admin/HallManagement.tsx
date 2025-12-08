@@ -59,7 +59,7 @@ const HallManagement: React.FC = () => {
     setLoading(true);
     try {
       const response = await api.get('/halls');
-      setHalls(response.data.halls);
+      setHalls(response.data.data || response.data.halls || response.data);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load halls');
     } finally {

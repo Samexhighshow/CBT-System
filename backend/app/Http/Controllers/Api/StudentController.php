@@ -44,9 +44,19 @@ class StudentController extends Controller
             $query->where('status', $request->status);
         }
 
-            $students = $query->orderBy('created_at', 'desc')->get();
+        // Pagination
+        $perPage = $request->input('limit', 15);
+        $students = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        return response()->json($students);
+        return response()->json([
+            'data' => $students->items(),
+            'current_page' => $students->currentPage(),
+            'last_page' => $students->lastPage(),
+            'per_page' => $students->perPage(),
+            'total' => $students->total(),
+            'next_page' => $students->currentPage() < $students->lastPage() ? $students->currentPage() + 1 : null,
+            'prev_page' => $students->currentPage() > 1 ? $students->currentPage() - 1 : null,
+        ]);
     }
 
     /**

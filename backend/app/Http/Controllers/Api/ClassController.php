@@ -38,9 +38,19 @@ class ClassController extends Controller
             $query->where('is_active', true);
         }
 
-        $classes = $query->orderBy('name', 'asc')->get();
+        // Pagination
+        $perPage = $request->input('limit', 15);
+        $classes = $query->orderBy('name', 'asc')->paginate($perPage);
 
-        return response()->json($classes);
+        return response()->json([
+            'data' => $classes->items(),
+            'current_page' => $classes->currentPage(),
+            'last_page' => $classes->lastPage(),
+            'per_page' => $classes->perPage(),
+            'total' => $classes->total(),
+            'next_page' => $classes->currentPage() < $classes->lastPage() ? $classes->currentPage() + 1 : null,
+            'prev_page' => $classes->currentPage() > 1 ? $classes->currentPage() - 1 : null,
+        ]);
     }
 
     /**

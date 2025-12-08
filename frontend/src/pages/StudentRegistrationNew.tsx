@@ -101,7 +101,7 @@ const StudentRegistrationForm: React.FC = () => {
     try {
       setLoadingClasses(true);
       const response = await axios.get(`${API_URL}/classes`);
-      setClasses(response.data);
+      setClasses(response.data.data || response.data);
       setError('');
     } catch (err: any) {
       const errorMsg = err.response?.data?.message || 'Failed to load classes';
@@ -116,7 +116,7 @@ const StudentRegistrationForm: React.FC = () => {
     try {
       setLoadingDepartments(true);
       const response = await axios.get(`${API_URL}/departments`);
-      setDepartments(response.data);
+      setDepartments(response.data.data || response.data);
     } catch (err: any) {
       console.error('Fetch departments error:', err);
       setDepartments([]);
