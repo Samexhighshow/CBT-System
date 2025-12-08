@@ -14,7 +14,7 @@ class ClassController extends Controller
      */
     public function index(Request $request)
     {
-        $query = SchoolClass::with('department');
+        $query = SchoolClass::query();
 
         // Search filter
         if ($request->has('search')) {
@@ -33,6 +33,9 @@ class ClassController extends Controller
         // Active status filter
         if ($request->has('is_active')) {
             $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
+        } else {
+            // By default, show only active classes
+            $query->where('is_active', true);
         }
 
         $classes = $query->orderBy('name', 'asc')->get();

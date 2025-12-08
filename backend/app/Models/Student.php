@@ -11,7 +11,30 @@ class Student extends Model
 {
     protected $table = 'students';
     protected $fillable = [
-        'student_id', 'first_name', 'last_name', 'email', 'phone', 'class_level', 'department', 'trade_subjects', 'is_active', 'department_id', 'password', 'registration_number', 'other_names', 'phone_number', 'date_of_birth', 'gender', 'address', 'status'
+        'student_id',
+        'registration_number',
+        'first_name',
+        'last_name',
+        'other_names',
+        'email',
+        'password',
+        'phone',
+        'phone_number',
+        'date_of_birth',
+        'gender',
+        'address',
+        'class_id',
+        'class_level',
+        'department_id',
+        'department',
+        'trade_subjects',
+        'is_active',
+        'status',
+        'guardian_first_name',
+        'guardian_last_name',
+        'guardian_relationship',
+        'guardian_phone',
+        'guardian_gender',
     ];
 
     protected $casts = [
