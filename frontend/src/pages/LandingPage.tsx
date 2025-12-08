@@ -2,6 +2,21 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 
 const LandingPage: React.FC = () => {
+  // Debug: Log when landing page renders
+  React.useEffect(() => {
+    console.log('=== LANDING PAGE LOADED ===');
+    console.log('Current path:', window.location.pathname);
+    console.log('Auth token:', localStorage.getItem('auth_token') ? 'EXISTS' : 'NONE');
+    console.log('User data:', localStorage.getItem('user') ? 'EXISTS' : 'NONE');
+  }, []);
+
+  const clearAllData = () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    alert('All cached data cleared! You can now login fresh.');
+    window.location.reload();
+  };
+
   return (
     <div className="flex flex-col min-h-screen w-full bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Navigation */}
@@ -15,6 +30,13 @@ const LandingPage: React.FC = () => {
               <span className="ml-2 text-2xl font-bold text-gray-900">CBT System</span>
             </div>
             <div className="flex items-center space-x-4">
+              <button
+                onClick={clearAllData}
+                className="text-gray-500 hover:text-red-600 px-3 py-2 rounded-md text-xs font-medium transition"
+                title="Clear cached data if you're experiencing login issues"
+              >
+                Clear Cache
+              </button>
               <Link to="/login" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition">
                 Student Login
               </Link>

@@ -98,8 +98,12 @@ class StudentController extends Controller
         $validated['password'] = Hash::make($validated['password']);
         $student = Student::create($validated);
 
+        // Send registration email with registration number
+        // TODO: Implement email notification with Mailable
+
         return response()->json([
             'message' => 'Student registered successfully',
+            'registration_number' => $student->registration_number,
             'student' => $student->load('department')
         ], 201);
     }

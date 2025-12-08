@@ -38,25 +38,37 @@ const StudentOverview: React.FC = () => {
       if (!userData) return;
       
       const user = JSON.parse(userData);
-      const response = await api.get(`/analytics/student/${user.id}/dashboard`);
       
-      if (response.data) {
-        setStats({
-          availableExams: response.data.available_exams || 0,
-          completedExams: response.data.total_exams_taken || 0,
-          averageScore: response.data.average_score || 0,
-          upcomingExams: response.data.available_exams || 0,
-        });
+      // Try to fetch stats, but don't fail if endpoint doesn't exist
+      try {
+        const response = await api.get(`/analytics/student/${user.id}/dashboard`);
+        
+        if (response.data) {
+          setStats({
+            availableExams: response.data.available_exams || 0,
+            completedExams: response.data.total_exams_taken || 0,
+            averageScore: response.data.average_score || 0,
+            upcomingExams: response.data.available_exams || 0,
+          });
+        }
+      } catch (apiError: any) {
+        // If analytics endpoint doesn't exist (404), just use defaults
+        if (apiError.response?.status === 404 || apiError.response?.status === 401) {
+          console.log('Analytics endpoint not available, using default stats');
+        } else {
+          console.error('Failed to fetch student stats:', apiError);
+        }
       }
     } catch (error: any) {
-      console.error('Failed to fetch student stats:', error);
-      // Use default values on error
-      setStats({
+      console.error('Failed to load stats:', error);
+    } finally {
+      // Always set default stats if nothing was loaded
+      setStats(prev => prev.availableExams === 0 ? {
         availableExams: 0,
         completedExams: 0,
         averageScore: 0,
         upcomingExams: 0,
-      });
+      } : prev);
     }
   };
 

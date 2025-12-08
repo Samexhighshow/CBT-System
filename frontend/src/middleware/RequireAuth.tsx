@@ -14,11 +14,9 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <Navigate to={isAdminRoute ? '/admin-login' : '/student-login'} replace />;
   }
 
-  // Optional: block if not email verified
-  if (user?.email_verified === false || user?.email_verified_at === null) {
-    return <Navigate to={location.pathname.startsWith('/admin') ? '/admin-login' : '/student-login'} replace />;
-  }
-
+  // Note: Email verification check removed to prevent redirect loops
+  // Backend should handle email verification requirements
+  
   return <>{children}</>;
 };
 

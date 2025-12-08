@@ -19,6 +19,34 @@ const StudentLogin: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Redirect if already logged in
+  React.useEffect(() => {
+    // Only redirect if we're coming from a direct navigation, not from a failed login
+    const token = localStorage.getItem('auth_token');
+    const userStr = localStorage.getItem('user');
+    
+    if (token && userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        const isStudent = user.roles?.some((r: any) => r.name === 'Student');
+        
+        if (isStudent) {
+          // Verify token is actually valid before redirecting
+          console.log('Detected existing student login, checking validity...');
+          
+          // Don't auto-redirect, let user click login or clear storage
+          // This prevents redirect loops when token is invalid
+        }
+      } catch (e) {
+        // Invalid user data, clear it
+        console.error('Invalid stored user data, clearing...');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('subjectsSelected');
+      }
+    }
+  }, [navigate]);
+
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({

@@ -8,7 +8,7 @@ import { ErrorBoundary, KeyboardShortcutsHelp, OfflineRouteHandler } from './com
 
 // Pages
 import LandingPage from './pages/LandingPage';
-import StudentRegistration from './pages/StudentRegistration';
+import StudentRegistrationSteps from './pages/StudentRegistrationSteps';
 import StudentLogin from './pages/StudentLogin';
 import StudentDashboard from './pages/StudentDashboard';
 import ExamPortal from './pages/ExamPortal';
@@ -52,7 +52,7 @@ const App: React.FC = () => {
             <Routes>
           {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />
-        <Route path="/register" element={<StudentRegistration />} />
+        <Route path="/register" element={<StudentRegistrationSteps />} />
         <Route path="/login" element={<StudentLogin />} />
         <Route path="/student-login" element={<StudentLogin />} />
         <Route path="/admin-login" element={<AdminLogin />} />

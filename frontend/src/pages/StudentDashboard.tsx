@@ -16,7 +16,7 @@ const StudentDashboard: React.FC = () => {
 
   useEffect(() => {
     if (!user) {
-      navigate('/login');
+      navigate('/student-login');
       return;
     }
   }, [navigate, user]);
@@ -33,7 +33,7 @@ const StudentDashboard: React.FC = () => {
               <h1 className="text-xl font-bold text-blue-600">CBT Portal</h1>
               <div className="hidden md:flex space-x-1">
                 <button
-                  onClick={() => navigate('/dashboard')}
+                  onClick={() => navigate('/student')}
                   className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition"
                 >
                   Dashboard
@@ -71,7 +71,7 @@ const StudentDashboard: React.FC = () => {
           <Route index element={<StudentOverview />} />
           <Route path="exams" element={<AvailableExams />} />
           <Route path="results" element={<MyResults />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/student" replace />} />
         </Routes>
       </main>
       <div className="mt-auto">

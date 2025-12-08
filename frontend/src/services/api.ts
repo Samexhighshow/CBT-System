@@ -34,10 +34,27 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Unauthorized - clear auth and redirect to login
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      const currentPath = window.location.pathname;
+      const requestUrl = error.config?.url || '';
+      
+      // Only trigger logout/redirect if this is an auth-related 401
+      // Ignore 401s from analytics, optional features, etc.
+      const criticalAuthRoutes = ['/auth/me', '/auth/verify', '/profile'];
+      const isCriticalAuthFailure = criticalAuthRoutes.some(route => requestUrl.includes(route));
+      
+      // Don't redirect if we're already on a public route
+      const publicRoutes = ['/login', '/student-login', '/admin-login', '/register', '/', '/forgot-password', '/reset-password'];
+      const isPublicRoute = publicRoutes.includes(currentPath);
+      
+      if (isCriticalAuthFailure && !isPublicRoute) {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('subjectsSelected');
+        
+        // Redirect based on current route
+        const isAdminRoute = currentPath.startsWith('/admin');
+        window.location.href = isAdminRoute ? '/admin-login' : '/student-login';
+      }
     }
     return Promise.reject(error);
   }
