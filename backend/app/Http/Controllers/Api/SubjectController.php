@@ -51,17 +51,42 @@ class SubjectController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:subjects,name',
+            'name' => 'required|string|max:255',
             'code' => 'required|string|max:20|unique:subjects,code',
             'description' => 'nullable|string',
-            'department_id' => 'required|exists:departments,id',
+            'class_id' => 'required|exists:school_classes,id',
+            'department_id' => 'nullable|exists:departments,id',
+            'subject_type' => 'required|in:core,elective',
+            'is_compulsory' => 'boolean',
         ]);
+
+        // Check if class requires department (SSS classes)
+        $class = \App\Models\SchoolClass::find($validated['class_id']);
+        if ($class && $class->isSSSClass() && !$request->department_id) {
+            return response()->json([
+                'message' => 'Department is required for SSS classes',
+                'errors' => ['department_id' => ['Department is required for SSS classes']]
+            ], 422);
+        }
+
+        // Check for duplicate subject in same class/department
+        $exists = Subject::where('name', $validated['name'])
+            ->where('class_id', $validated['class_id'])
+            ->where('department_id', $validated['department_id'])
+            ->exists();
+
+        if ($exists) {
+            return response()->json([
+                'message' => 'This subject already exists for this class/department combination',
+                'errors' => ['name' => ['Subject already exists for this class/department']]
+            ], 422);
+        }
 
         $subject = Subject::create($validated);
 
         return response()->json([
             'message' => 'Subject created successfully',
-            'subject' => $subject->load('department')
+            'subject' => $subject->load(['schoolClass', 'department'])
         ], 201);
     }
 

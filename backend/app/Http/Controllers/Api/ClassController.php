@@ -61,12 +61,21 @@ class ClassController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50|unique:school_classes,code',
-            'department_id' => 'required|exists:departments,id',
+            'department_id' => 'nullable|exists:departments,id',
             'description' => 'nullable|string',
             'capacity' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'metadata' => 'nullable|array',
         ]);
+
+        // Check if this is an SSS class and validate department requirement
+        $isSSS = str_contains(strtoupper($validated['name']), 'SSS');
+        if ($isSSS && !$request->department_id) {
+            return response()->json([
+                'message' => 'Department is required for SSS classes',
+                'errors' => ['department_id' => ['Department is required for SSS classes']]
+            ], 422);
+        }
 
         $class = SchoolClass::create($validated);
 

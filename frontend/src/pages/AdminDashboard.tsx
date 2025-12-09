@@ -5,7 +5,7 @@ import AdminOverview from './admin/AdminOverview';
 import QuestionBank from './admin/QuestionBank';
 import ExamManagement from './admin/ExamManagement';
 import StudentManagement from './admin/StudentManagement';
-import SubjectManagement from './admin/SubjectManagement';
+import SubjectManagement from './admin/SubjectManagementNew';
 import ResultsAnalytics from './admin/ResultsAnalytics';
 import AdminUserManagement from './admin/AdminUserManagement';
 import ActivityLogs from './admin/ActivityLogs';

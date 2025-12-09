@@ -3,17 +3,31 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Department extends Model
 {
     protected $table = 'departments';
     protected $fillable = [
-        'name', 'code', 'description', 'class_level', 'is_active'
+        'name', 
+        'code', 
+        'description', 
+        'class_level', 
+        'is_active'
     ];
 
     protected $casts = [
         'is_active' => 'boolean'
     ];
+
+    /**
+     * Get classes in this department
+     */
+    public function classes(): HasMany
+    {
+        return $this->hasMany(SchoolClass::class);
+    }
 
 
     public function subjects()
