@@ -14,8 +14,6 @@ const OFFLINE_ENABLED_ROUTES = [
 const ONLINE_ONLY_ROUTES = [
   '/admin',
   '/register',
-  '/login',
-  '/admin-login',
 ];
 
 /**
@@ -43,10 +41,12 @@ const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children
         currentPath.startsWith(route)
       );
       
-      // If on online-only route while offline, redirect to student dashboard
+      // If on online-only route while offline AND user is logged in, redirect to student dashboard
       if (isOnlineOnlyRoute) {
         const user = localStorage.getItem('user');
-        if (user) {
+        const token = localStorage.getItem('auth_token');
+        if (user && token) {
+          console.log('Offline: Redirecting from online-only route to student dashboard');
           navigate('/student/exams', { replace: true });
         }
       }

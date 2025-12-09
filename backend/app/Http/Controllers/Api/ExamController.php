@@ -33,10 +33,19 @@ class ExamController extends Controller
             $query->where('department', $request->department);
         }
 
-        // Frontend expects a plain array (not paginator)
-        $exams = $query->orderBy('created_at', 'desc')->get();
+        // Pagination
+        $perPage = $request->input('limit', 15);
+        $exams = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        return response()->json($exams);
+        return response()->json([
+            'data' => $exams->items(),
+            'current_page' => $exams->currentPage(),
+            'last_page' => $exams->lastPage(),
+            'per_page' => $exams->perPage(),
+            'total' => $exams->total(),
+            'next_page' => $exams->currentPage() < $exams->lastPage() ? $exams->currentPage() + 1 : null,
+            'prev_page' => $exams->currentPage() > 1 ? $exams->currentPage() - 1 : null,
+        ]);
     }
 
     /**

@@ -14,50 +14,86 @@ class ResultController extends Controller
     /**
      * Get results for a specific student
      */
-    public function getStudentResults($studentId)
+    public function getStudentResults(Request $request, $studentId)
     {
         $student = Student::findOrFail($studentId);
         
-        $results = ExamAttempt::with(['exam.subject'])
+        $query = ExamAttempt::with(['exam.subject'])
             ->where('student_id', $studentId)
             ->where('status', 'completed')
-            ->orderBy('completed_at', 'desc')
-            ->get()
-            ->map(function($attempt) {
-                return [
-                    'id' => $attempt->id,
-                    'exam_title' => $attempt->exam->title,
-                    'subject' => $attempt->exam->subject->name,
-                    'score' => $attempt->score,
-                    'total_marks' => $attempt->exam->total_marks,
-                    'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
-                    'passing_marks' => $attempt->exam->passing_marks,
-                    'passed' => $attempt->score >= $attempt->exam->passing_marks,
-                    'started_at' => $attempt->started_at,
-                    'completed_at' => $attempt->completed_at,
-                    'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
-                ];
-            });
+            ->orderBy('completed_at', 'desc');
 
-        return response()->json($results);
+        $perPage = $request->input('limit', 15);
+        $attempts = $query->paginate($perPage);
+
+        $results = $attempts->getCollection()->map(function($attempt) {
+            return [
+                'id' => $attempt->id,
+                'exam_title' => $attempt->exam->title,
+                'subject' => $attempt->exam->subject->name,
+                'score' => $attempt->score,
+                'total_marks' => $attempt->exam->total_marks,
+                'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
+                'passing_marks' => $attempt->exam->passing_marks,
+                'passed' => $attempt->score >= $attempt->exam->passing_marks,
+                'started_at' => $attempt->started_at,
+                'completed_at' => $attempt->completed_at,
+                'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
+            ];
+        });
+
+        return response()->json([
+            'data' => $results,
+            'current_page' => $attempts->currentPage(),
+            'last_page' => $attempts->lastPage(),
+            'per_page' => $attempts->perPage(),
+            'total' => $attempts->total(),
+            'next_page' => $attempts->currentPage() < $attempts->lastPage() ? $attempts->currentPage() + 1 : null,
+            'prev_page' => $attempts->currentPage() > 1 ? $attempts->currentPage() - 1 : null,
+        ]);
     }
 
     /**
      * Get results for a specific exam
      */
-    public function getExamResults($examId)
+    public function getExamResults(Request $request, $examId)
     {
         $exam = Exam::findOrFail($examId);
         
-        $results = ExamAttempt::with(['student.department'])
+        $query = ExamAttempt::with(['student.department'])
             ->where('exam_id', $examId)
             ->where('status', 'completed')
-            ->orderBy('score', 'desc')
-            ->get()
-            ->map(function($attempt) use ($exam) {
-                return [
-                    'id' => $attempt->id,
-                    'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
+            ->orderBy('score', 'desc');
+
+        $perPage = $request->input('limit', 15);
+        $attempts = $query->paginate($perPage);
+
+        $results = $attempts->getCollection()->map(function($attempt) use ($exam) {
+            return [
+                'id' => $attempt->id,
+                'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
+                'registration_number' => $attempt->student->registration_number,
+                'department' => $attempt->student->department->name ?? 'N/A',
+                'class_level' => $attempt->student->class_level,
+                'score' => $attempt->score,
+                'total_marks' => $exam->total_marks,
+                'percentage' => round(($attempt->score / $exam->total_marks) * 100, 2),
+                'passed' => $attempt->score >= $exam->passing_marks,
+                'completed_at' => $attempt->completed_at,
+                'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
+            ];
+        });
+
+        return response()->json([
+            'data' => $results,
+            'current_page' => $attempts->currentPage(),
+            'last_page' => $attempts->lastPage(),
+            'per_page' => $attempts->perPage(),
+            'total' => $attempts->total(),
+            'next_page' => $attempts->currentPage() < $attempts->lastPage() ? $attempts->currentPage() + 1 : null,
+            'prev_page' => $attempts->currentPage() > 1 ? $attempts->currentPage() - 1 : null,
+        ]);
+    }
                     'registration_number' => $attempt->student->registration_number,
                     'department' => $attempt->student->department->name ?? 'N/A',
                     'class_level' => $attempt->student->class_level,

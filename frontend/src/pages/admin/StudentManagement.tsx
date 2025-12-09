@@ -56,7 +56,7 @@ const StudentManagement: React.FC = () => {
     try {
       const response = await api.get('/departments');
       if (response.data) {
-        setDepartments(response.data);
+        setDepartments(response.data.data || response.data);
       }
     } catch (error) {
       console.error('Failed to load departments:', error);
@@ -69,8 +69,9 @@ const StudentManagement: React.FC = () => {
       setLoading(true);
       const response = await api.get('/students');
       if (response.data) {
-        setStudents(response.data);
-        calculateStats(response.data);
+        const students = response.data.data || response.data;
+        setStudents(students);
+        calculateStats(students);
       }
     } catch (error: any) {
       console.error('Failed to fetch students:', error);

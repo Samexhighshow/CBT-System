@@ -43,4 +43,32 @@ class SchoolClass extends Model
     {
         return $this->hasMany(Student::class, 'class_id');
     }
+
+    /**
+     * Get subjects for this class
+     */
+    public function subjects(): HasMany
+    {
+        return $this->hasMany(Subject::class, 'class_id');
+    }
+
+    /**
+     * Check if this is an SSS class
+     */
+    public function isSSSClass(): bool
+    {
+        return str_contains(strtoupper($this->name), 'SSS');
+    }
+
+    /**
+     * Get class level (e.g., SSS 1, JSS 2, Primary 4)
+     */
+    public function getClassLevel(): string
+    {
+        // Extract level from class name (e.g., "SSS 1" from "SSS 1A")
+        if (preg_match('/(Primary|JSS|SSS)\s*\d+/i', $this->name, $matches)) {
+            return $matches[0];
+        }
+        return $this->name;
+    }
 }

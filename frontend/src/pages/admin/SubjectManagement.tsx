@@ -43,7 +43,7 @@ const SubjectManagement: React.FC = () => {
   const [selectedClassIds, setSelectedClassIds] = useState<number[]>([]);
 
   const handleSelectAllSubjects = (checked: boolean) => {
-    setSelectedSubjectIds(checked ? subjects.map((s: Subject) => s.id) : []);
+    setSelectedSubjectIds(checked && Array.isArray(subjects) ? subjects.map((s: Subject) => s.id) : []);
   };
   const handleSelectOneSubject = (id: number, checked: boolean) => {
     setSelectedSubjectIds(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
@@ -64,7 +64,7 @@ const SubjectManagement: React.FC = () => {
   };
 
   const handleSelectAllClasses = (checked: boolean) => {
-    setSelectedClassIds(checked ? classes.map((c: SchoolClass) => c.id) : []);
+    setSelectedClassIds(checked && Array.isArray(classes) ? classes.map((c: SchoolClass) => c.id) : []);
   };
   const handleSelectOneClass = (id: number, checked: boolean) => {
     setSelectedClassIds(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
@@ -97,8 +97,12 @@ const SubjectManagement: React.FC = () => {
         api.get('/subjects'),
         api.get('/departments'),
       ]);
-      setSubjects(subjectsRes.data || []);
-      setDepartments(deptRes.data || []);
+      const subjectsData = subjectsRes.data.data || subjectsRes.data || [];
+      const deptData = deptRes.data.data || deptRes.data || [];
+      
+      // Ensure we have arrays
+      setSubjects(Array.isArray(subjectsData) ? subjectsData : []);
+      setDepartments(Array.isArray(deptData) ? deptData : []);
     } catch (error: any) {
       console.error('Failed to fetch data:', error);
       setSubjects([]);
@@ -111,7 +115,8 @@ const SubjectManagement: React.FC = () => {
   const loadClasses = async () => {
     try {
       const res = await api.get('/classes');
-      setClasses(res.data || []);
+      const classesData = res.data.data || res.data || [];
+      setClasses(Array.isArray(classesData) ? classesData : []);
     } catch (error) {
       setClasses([]);
     }
@@ -190,7 +195,7 @@ const SubjectManagement: React.FC = () => {
                         <thead className="bg-gray-50">
                           <tr>
                             <th className="px-2 py-3">
-                              <input type="checkbox" checked={selectedClassIds.length === classes.length && classes.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllClasses(e.target.checked)} title="Select all classes" />
+                              <input type="checkbox" checked={Array.isArray(classes) && selectedClassIds.length === classes.length && classes.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllClasses(e.target.checked)} title="Select all classes" />
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
@@ -200,14 +205,14 @@ const SubjectManagement: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                          {classes.map((cls) => (
+                          {Array.isArray(classes) && classes.map((cls) => (
                             <tr key={cls.id}>
                               <td className="px-2 py-4">
                                 <input type="checkbox" checked={selectedClassIds.includes(cls.id)} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectOneClass(cls.id, e.target.checked)} title={`Select class ${cls.name}`} />
                               </td>
                               <td className="px-6 py-4 text-sm font-semibold">{cls.name}</td>
                               <td className="px-6 py-4 text-sm">{cls.code}</td>
-                              <td className="px-6 py-4 text-sm">{departments.find(d => d.id === cls.department_id)?.name || 'N/A'}</td>
+                              <td className="px-6 py-4 text-sm">{Array.isArray(departments) && departments.find(d => d.id === cls.department_id)?.name || 'N/A'}</td>
                               <td className="px-6 py-4 text-sm">{cls.capacity}</td>
                               <td className="px-6 py-4 text-sm">
                                 <span className={`px-2 py-1 rounded text-xs ${cls.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{cls.is_active ? 'Active' : 'Inactive'}</span>
@@ -242,7 +247,7 @@ const SubjectManagement: React.FC = () => {
                       <label className="block text-sm font-medium">Department</label>
                       <select className="mt-1 w-full border rounded px-3 py-2" value={classForm.department_id} onChange={e => setClassForm({...classForm, department_id: Number(e.target.value)})} aria-label="Department">
                         <option value={0}>Select department</option>
-                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        {Array.isArray(departments) && departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                       </select>
                     </div>
                     <div>
@@ -274,12 +279,12 @@ const SubjectManagement: React.FC = () => {
                 </div>
               </div>
         <Card>
-          <h2 className="text-xl font-semibold mb-4">Departments ({departments.length})</h2>
+          <h2 className="text-xl font-semibold mb-4">Departments ({Array.isArray(departments) ? departments.length : 0})</h2>
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <i className='bx bx-loader-alt bx-spin text-3xl text-gray-400'></i>
             </div>
-          ) : departments.length === 0 ? (
+          ) : !Array.isArray(departments) || departments.length === 0 ? (
             <div className="text-center py-8">
               <i className='bx bx-folder-open text-5xl text-gray-300 mb-3'></i>
               <p className="text-gray-500">No departments available</p>
@@ -324,7 +329,7 @@ const SubjectManagement: React.FC = () => {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-2 py-3">
-                      <input type="checkbox" checked={selectedSubjectIds.length === subjects.length && subjects.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllSubjects(e.target.checked)} title="Select all subjects" />
+                      <input type="checkbox" checked={Array.isArray(subjects) && selectedSubjectIds.length === subjects.length && subjects.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllSubjects(e.target.checked)} title="Select all subjects" />
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
@@ -332,7 +337,7 @@ const SubjectManagement: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {subjects.map((subject) => (
+                  {Array.isArray(subjects) && subjects.map((subject) => (
                     <tr key={subject.id}>
                       <td className="px-2 py-4">
                         <input type="checkbox" checked={selectedSubjectIds.includes(subject.id)} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectOneSubject(subject.id, e.target.checked)} title={`Select subject ${subject.name}`} />

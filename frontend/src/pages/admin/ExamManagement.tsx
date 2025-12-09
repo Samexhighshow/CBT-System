@@ -63,7 +63,7 @@ const ExamManagement: React.FC = () => {
     try {
       const response = await api.get('/subjects');
       if (response.data) {
-        setSubjects(response.data);
+        setSubjects(response.data.data || response.data);
       }
     } catch (error) {
       console.error('Failed to load subjects:', error);
@@ -76,8 +76,9 @@ const ExamManagement: React.FC = () => {
       setLoading(true);
       const response = await api.get('/exams');
       if (response.data) {
-        setExams(response.data);
-        calculateStats(response.data);
+        const exams = response.data.data || response.data;
+        setExams(exams);
+        calculateStats(exams);
       }
     } catch (error: any) {
       console.error('Failed to fetch exams:', error);

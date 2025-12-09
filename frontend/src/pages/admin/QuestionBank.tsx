@@ -70,8 +70,9 @@ const QuestionBank: React.FC = () => {
       setLoading(true);
       const response = await api.get('/questions');
       if (response.data) {
-        setQuestions(response.data);
-        calculateStats(response.data);
+        const questions = response.data.data || response.data;
+        setQuestions(questions);
+        calculateStats(questions);
       }
     } catch (error: any) {
       console.error('Failed to fetch questions:', error);

@@ -16,7 +16,19 @@ class UserController extends Controller
         if ($request->get('only_applicants')) {
             $query->whereDoesntHave('roles');
         }
-        return response()->json($query->orderBy('id','desc')->paginate(20));
+
+        $perPage = $request->input('limit', 15);
+        $users = $query->orderBy('id','desc')->paginate($perPage);
+
+        return response()->json([
+            'data' => $users->items(),
+            'current_page' => $users->currentPage(),
+            'last_page' => $users->lastPage(),
+            'per_page' => $users->perPage(),
+            'total' => $users->total(),
+            'next_page' => $users->currentPage() < $users->lastPage() ? $users->currentPage() + 1 : null,
+            'prev_page' => $users->currentPage() > 1 ? $users->currentPage() - 1 : null,
+        ]);
     }
 
     public function store(Request $request)

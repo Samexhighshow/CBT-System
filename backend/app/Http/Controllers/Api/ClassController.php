@@ -14,7 +14,7 @@ class ClassController extends Controller
      */
     public function index(Request $request)
     {
-        $query = SchoolClass::with('department');
+        $query = SchoolClass::query();
 
         // Search filter
         if ($request->has('search')) {
@@ -33,11 +33,24 @@ class ClassController extends Controller
         // Active status filter
         if ($request->has('is_active')) {
             $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
+        } else {
+            // By default, show only active classes
+            $query->where('is_active', true);
         }
 
-        $classes = $query->orderBy('name', 'asc')->get();
+        // Pagination
+        $perPage = $request->input('limit', 15);
+        $classes = $query->orderBy('name', 'asc')->paginate($perPage);
 
-        return response()->json($classes);
+        return response()->json([
+            'data' => $classes->items(),
+            'current_page' => $classes->currentPage(),
+            'last_page' => $classes->lastPage(),
+            'per_page' => $classes->perPage(),
+            'total' => $classes->total(),
+            'next_page' => $classes->currentPage() < $classes->lastPage() ? $classes->currentPage() + 1 : null,
+            'prev_page' => $classes->currentPage() > 1 ? $classes->currentPage() - 1 : null,
+        ]);
     }
 
     /**
@@ -48,12 +61,21 @@ class ClassController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50|unique:school_classes,code',
-            'department_id' => 'required|exists:departments,id',
+            'department_id' => 'nullable|exists:departments,id',
             'description' => 'nullable|string',
             'capacity' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'metadata' => 'nullable|array',
         ]);
+
+        // Check if this is an SSS class and validate department requirement
+        $isSSS = str_contains(strtoupper($validated['name']), 'SSS');
+        if ($isSSS && !$request->department_id) {
+            return response()->json([
+                'message' => 'Department is required for SSS classes',
+                'errors' => ['department_id' => ['Department is required for SSS classes']]
+            ], 422);
+        }
 
         $class = SchoolClass::create($validated);
 

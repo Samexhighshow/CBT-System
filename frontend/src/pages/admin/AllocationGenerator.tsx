@@ -46,7 +46,7 @@ const AllocationGenerator: React.FC = () => {
   const fetchExams = async () => {
     try {
       const response = await api.get('/exams');
-      setExams(response.data.exams || []);
+      setExams(response.data.data || response.data.exams || response.data || []);
     } catch (err) {
       console.error('Failed to fetch exams:', err);
     }
