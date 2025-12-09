@@ -51,3 +51,4 @@ tmp/
 # Backend specific
 /backend/uploads
 /backend/dist
+/backend/storage/framework/cache
