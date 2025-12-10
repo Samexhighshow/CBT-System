@@ -59,7 +59,7 @@ class ClassController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => 'required|string|max:255|unique:school_classes,name',
             'code' => 'required|string|max:50|unique:school_classes,code',
             'department_id' => 'nullable|exists:departments,id',
             'description' => 'nullable|string',
@@ -105,7 +105,7 @@ class ClassController extends Controller
         $class = SchoolClass::findOrFail($id);
 
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
+            'name' => ['sometimes', 'string', 'max:255', Rule::unique('school_classes')->ignore($class->id)],
             'code' => ['sometimes', 'string', 'max:50', Rule::unique('school_classes')->ignore($class->id)],
             'department_id' => 'sometimes|exists:departments,id',
             'description' => 'nullable|string',
