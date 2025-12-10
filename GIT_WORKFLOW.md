@@ -29,6 +29,253 @@
 
 ---
 
+## 🔄 **Advanced Workflow - Multi-Branch Collaboration**
+
+### **Scenario: Pull from Collaborator + Push Your Changes + Merge Both to Main**
+
+#### **Step 1️⃣: Check Out Your Branch**
+```bash
+# Switch to your team lead branch
+git checkout teamlead-dev
+
+# Make sure it's up to date with main
+git pull origin main
+```
+
+#### **Step 2️⃣: Pull Changes from Your Collaborator's Branch**
+```bash
+# Fetch all remote branches (updates your local copy of remote branches)
+git fetch origin
+
+# Check what branches are available
+git branch -a
+
+# You'll see:
+# * teamlead-dev
+#   remotes/origin/main
+#   remotes/origin/mavis-dev
+#   remotes/origin/john-dev
+#   etc.
+
+# Now merge your collaborator's branch INTO your branch
+# (This brings their code into your workspace to test together)
+git merge origin/mavis-dev
+
+# If there are conflicts:
+# 1. VS Code will show conflict markers
+# 2. Manually resolve the conflicts
+# 3. Accept their changes, your changes, or both
+# 4. Then:
+git add .
+git commit -m "merge: integrate mavis-dev changes into teamlead-dev"
+```
+
+#### **Step 3️⃣: Make Your Own Changes (if needed)**
+```bash
+# Edit your files
+# ... code changes ...
+
+# Stage and commit
+git add .
+git commit -m "feat: add your feature improvements"
+
+# Or modify their code if you found issues
+git add .
+git commit -m "fix: resolve issues in merged code from mavis-dev"
+```
+
+#### **Step 4️⃣: Push Your Branch to Remote**
+```bash
+# Push your teamlead-dev branch with all the merged code
+git push origin teamlead-dev
+```
+
+#### **Step 5️⃣: Now You Have Options**
+
+**Option A: Merge teamlead-dev to main (after testing)**
+```bash
+# Create a Pull Request on GitHub
+# Base: main ← Compare: teamlead-dev
+# This PR will include both your code AND mavis-dev's code
+
+# Or merge directly if you prefer:
+git checkout main
+git pull origin main
+git merge teamlead-dev
+git push origin main
+```
+
+**Option B: Create a Clean Pull Request for the Collaborator's Code**
+```bash
+# If you want to keep the original PR from mavis-dev clean
+# Go to GitHub and merge their original PR: mavis-dev → main
+
+# This keeps each developer's work traceable in git history
+```
+
+---
+
+### **Real-World Example Workflow**
+
+```bash
+# ============================================
+# 1. You start your day
+# ============================================
+git checkout teamlead-dev
+git pull origin main
+# You now have latest code from main
+
+# ============================================
+# 2. Collaborator (Mavis) finishes her feature
+# She pushes: mavis-dev → origin/mavis-dev
+# ============================================
+
+# ============================================
+# 3. You want to test her code with yours
+# ============================================
+git fetch origin                    # Get latest from remote
+git merge origin/mavis-dev          # Merge her code into your branch
+# Now you have both your code + her code in one branch
+
+# ============================================
+# 4. Test together (run the app, check for bugs)
+# ============================================
+# npm start  (in another terminal)
+# Test...
+
+# ============================================
+# 5. You fix issues in the merged code
+# ============================================
+git add .
+git commit -m "fix: resolve issues in merged mavis-dev code"
+
+# ============================================
+# 6. Push your branch with everything
+# ============================================
+git push origin teamlead-dev
+
+# ============================================
+# 7. Now merge to main (two ways)
+# ============================================
+
+# WAY 1: Create a single PR with everything
+# GitHub → New PR → Base: main ← Compare: teamlead-dev
+# This includes your code + mavis's code + your fixes
+# Click Merge
+
+# WAY 2: Keep each person's work separate
+# Let mavis create her own PR: mavis-dev → main
+# You create your PR: teamlead-dev → main
+# You merge both PRs to main separately
+# This keeps git history cleaner per developer
+```
+
+---
+
+### **Multiple Collaborators - Merge Several Branches**
+
+```bash
+# If you want to integrate code from MULTIPLE team members:
+
+git checkout teamlead-dev
+git pull origin main
+
+# Pull from first collaborator
+git merge origin/mavis-dev
+# Fix any conflicts
+git add .
+git commit -m "merge: integrate mavis-dev"
+
+# Pull from second collaborator
+git merge origin/john-dev
+# Fix any conflicts
+git add .
+git commit -m "merge: integrate john-dev"
+
+# Pull from third collaborator
+git merge origin/sarah-dev
+# Fix any conflicts
+git add .
+git commit -m "merge: integrate sarah-dev"
+
+# Now your branch has code from everyone
+# Test everything together
+git push origin teamlead-dev
+
+# Create one big PR to main or several individual PRs
+```
+
+---
+
+### **Keep Collaborator's Branch Updated Too**
+
+If your collaborator's branch gets outdated, help them sync:
+
+```bash
+# As team lead, you can update their branch
+git checkout mavis-dev              # Switch to their branch
+git pull origin main                # Get latest main
+git push origin mavis-dev           # Push updated branch
+
+# Or tell them to do:
+git checkout mavis-dev
+git pull origin main
+git push origin mavis-dev
+```
+
+---
+
+### **Compare Branches Before Merging**
+
+Before merging, see what's different:
+
+```bash
+# See differences between your branch and main
+git diff main..teamlead-dev
+
+# See differences between your branch and collaborator's
+git diff teamlead-dev..origin/mavis-dev
+
+# See which commits are different
+git log main..teamlead-dev          # Commits in teamlead-dev not in main
+git log teamlead-dev..main          # Commits in main not in teamlead-dev
+
+# Visual comparison on GitHub
+# Go to GitHub → Compare tab
+# Select two branches: main...teamlead-dev
+```
+
+---
+
+### **Handling Merge Conflicts in Detail**
+
+When you `git merge origin/mavis-dev` and there are conflicts:
+
+```bash
+# 1. Git will tell you which files have conflicts
+#    VS Code will show:
+#    <<<<<<< HEAD (your changes)
+#    your code here
+#    =======
+#    their code here
+#    >>>>>>> origin/mavis-dev
+
+# 2. For each conflict, you choose:
+#    - Accept Current Change (keep yours)
+#    - Accept Incoming Change (keep theirs)
+#    - Accept Both Changes (keep both)
+#    - Resolve Manually (edit the file)
+
+# 3. After resolving all conflicts:
+git add .
+git commit -m "merge: resolve conflicts between teamlead-dev and mavis-dev"
+
+# 4. Continue with your work
+git push origin teamlead-dev
+```
+
+---
+
 ## 📋 Workflow for YOU (Team Lead)
 
 ### 1️⃣ Starting Your Work
@@ -216,6 +463,90 @@ git reset --hard HEAD~1
 
 # Undo a pushed commit (create new commit)
 git revert commit-hash
+```
+
+---
+
+## 🎯 Quick Reference - Team Lead Multi-Branch Operations
+
+### **Scenario 1: Pull from Collaborator + Your Changes**
+```bash
+# Your branch has your work
+git checkout teamlead-dev
+
+# Get their latest code into your branch
+git fetch origin
+git merge origin/mavis-dev
+
+# Fix any conflicts if needed
+# ... resolve conflicts ...
+git add .
+git commit -m "merge: integrate mavis-dev"
+
+# Add your own changes on top
+git add .
+git commit -m "feat: your improvements"
+
+# Push everything to your branch
+git push origin teamlead-dev
+
+# Merge to main when ready
+git checkout main
+git pull origin main
+git merge teamlead-dev
+git push origin main
+```
+
+### **Scenario 2: Test Multiple Collaborators' Code Together**
+```bash
+git checkout teamlead-dev
+git pull origin main
+
+# Pull from multiple team members
+git merge origin/mavis-dev
+# ... resolve conflicts ...
+git add . && git commit -m "merge: mavis-dev"
+
+git merge origin/john-dev
+# ... resolve conflicts ...
+git add . && git commit -m "merge: john-dev"
+
+git merge origin/sarah-dev
+# ... resolve conflicts ...
+git add . && git commit -m "merge: sarah-dev"
+
+# Test everything together
+# npm start
+
+# If everything works:
+git push origin teamlead-dev
+
+# Then merge to main
+```
+
+### **Scenario 3: Compare Branches Before Merging**
+```bash
+# See what's different
+git diff main..teamlead-dev
+
+# See specific commits
+git log main..teamlead-dev
+
+# Visual on GitHub
+# Compare tab → main...teamlead-dev
+```
+
+### **Scenario 4: Help Team Member Sync with Main**
+```bash
+# If their branch is outdated:
+git checkout mavis-dev
+git pull origin main
+git push origin mavis-dev
+
+# Tell them to do the same:
+# git checkout mavis-dev
+# git pull origin main
+# git push origin mavis-dev
 ```
 
 ---
