@@ -154,16 +154,6 @@ class StudentController extends Controller
         return 'JSS1'; // Default
     }
 
-        // Send registration email with registration number
-        // TODO: Implement email notification with Mailable
-
-        return response()->json([
-            'message' => 'Student registered successfully',
-            'registration_number' => $student->registration_number,
-            'student' => $student->load('department')
-        ], 201);
-    }
-
     /**
      * Update the specified student
      */

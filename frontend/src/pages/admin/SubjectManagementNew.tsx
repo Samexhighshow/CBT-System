@@ -14,7 +14,6 @@ interface Department {
 interface SchoolClass {
   id: number;
   name: string;
-  code: string;
   department_id: number | null;
   description: string;
   capacity: number;
@@ -63,7 +62,6 @@ const SubjectManagementNew: React.FC = () => {
   
   const [classForm, setClassForm] = useState({
     name: '',
-    code: '',
     department_id: '',
     description: '',
     capacity: 30,
@@ -82,6 +80,21 @@ const SubjectManagementNew: React.FC = () => {
 
   const [selectedClassForSubject, setSelectedClassForSubject] = useState<SchoolClass | null>(null);
   const [availableDepartments, setAvailableDepartments] = useState<Department[]>([]);
+  
+  // Selection states for bulk operations
+  const [selectedDepts, setSelectedDepts] = useState<number[]>([]);
+  const [selectedClasses, setSelectedClasses] = useState<number[]>([]);
+  const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
+  
+  // Edit states
+  const [editingDept, setEditingDept] = useState<Department | null>(null);
+  const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  
+  // Upload states
+  const [uploadModal, setUploadModal] = useState<'departments' | 'classes' | 'subjects' | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     loadAllData();
@@ -203,13 +216,19 @@ const SubjectManagementNew: React.FC = () => {
     }
 
     try {
-      await api.post('/departments', deptForm);
-      showSuccess('Department created successfully');
+      if (editingDept) {
+        await api.put(`/departments/${editingDept.id}`, deptForm);
+        showSuccess('Department updated successfully');
+      } else {
+        await api.post('/departments', deptForm);
+        showSuccess('Department created successfully');
+      }
       setShowDeptModal(false);
+      setEditingDept(null);
       setDeptForm({ name: '', code: '', description: '', class_level: 'SSS' });
       loadAllData();
     } catch (error: any) {
-      showError(error.response?.data?.message || 'Failed to create department');
+      showError(error.response?.data?.message || 'Failed to save department');
     }
   };
 
@@ -230,7 +249,7 @@ const SubjectManagementNew: React.FC = () => {
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!classForm.name || !classForm.code) {
+    if (!classForm.name) {
       showError('Please fill in all required fields');
       return;
     }
@@ -246,13 +265,17 @@ const SubjectManagementNew: React.FC = () => {
         ...classForm,
         department_id: classForm.department_id || null
       };
-      
-      await api.post('/classes', payload);
-      showSuccess('Class created successfully');
+      if (editingClass) {
+        await api.put(`/classes/${editingClass.id}`, payload);
+        showSuccess('Class updated successfully');
+      } else {
+        await api.post('/classes', payload);
+        showSuccess('Class created successfully');
+      }
       setShowClassModal(false);
+      setEditingClass(null);
       setClassForm({
         name: '',
-        code: '',
         department_id: '',
         description: '',
         capacity: 30,
@@ -299,9 +322,15 @@ const SubjectManagementNew: React.FC = () => {
         is_compulsory: subjectForm.subject_type === 'core'
       };
       
-      await api.post('/subjects', payload);
-      showSuccess('Subject created successfully');
+      if (editingSubject) {
+        await api.put(`/subjects/${editingSubject.id}`, payload);
+        showSuccess('Subject updated successfully');
+      } else {
+        await api.post('/subjects', payload);
+        showSuccess('Subject created successfully');
+      }
       setShowSubjectModal(false);
+      setEditingSubject(null);
       setSubjectForm({
         name: '',
         code: '',
@@ -328,6 +357,326 @@ const SubjectManagementNew: React.FC = () => {
         showError('Failed to delete subject');
       }
     }
+  };
+
+  // Bulk Delete Handlers
+  const handleBulkDeleteDepts = async () => {
+    if (selectedDepts.length === 0) {
+      showError('No departments selected');
+      return;
+    }
+    const confirmed = await showDeleteConfirm(`Delete ${selectedDepts.length} department(s)?`);
+    if (confirmed.isConfirmed) {
+      try {
+        await api.post('/departments/bulk-delete', { ids: selectedDepts });
+        showSuccess(`${selectedDepts.length} department(s) deleted successfully`);
+        setSelectedDepts([]);
+        loadAllData();
+      } catch (error: any) {
+        showError(error.response?.data?.message || 'Failed to delete departments');
+      }
+    }
+  };
+
+  const handleBulkDeleteClasses = async () => {
+    if (selectedClasses.length === 0) {
+      showError('No classes selected');
+      return;
+    }
+    const confirmed = await showDeleteConfirm(`Delete ${selectedClasses.length} class(es)?`);
+    if (confirmed.isConfirmed) {
+      try {
+        await api.post('/classes/bulk-delete', { ids: selectedClasses });
+        showSuccess(`${selectedClasses.length} class(es) deleted successfully`);
+        setSelectedClasses([]);
+        loadAllData();
+      } catch (error: any) {
+        showError(error.response?.data?.message || 'Failed to delete classes');
+      }
+    }
+  };
+
+  const handleBulkDeleteSubjects = async () => {
+    if (selectedSubjects.length === 0) {
+      showError('No subjects selected');
+      return;
+    }
+    const confirmed = await showDeleteConfirm(`Delete ${selectedSubjects.length} subject(s)?`);
+    if (confirmed.isConfirmed) {
+      try {
+        await api.post('/subjects/bulk-delete', { ids: selectedSubjects });
+        showSuccess(`${selectedSubjects.length} subject(s) deleted successfully`);
+        setSelectedSubjects([]);
+        loadAllData();
+      } catch (error: any) {
+        showError(error.response?.data?.message || 'Failed to delete subjects');
+      }
+    }
+  };
+
+  // Edit Handlers
+  const handleEditDept = (dept: Department) => {
+    setEditingDept(dept);
+    setDeptForm({
+      name: dept.name,
+      code: dept.code,
+      description: dept.description,
+      class_level: dept.class_level
+    });
+    setShowDeptModal(true);
+  };
+
+  const handleEditClass = (cls: SchoolClass) => {
+    setEditingClass(cls);
+    setClassForm({
+      name: cls.name,
+      department_id: cls.department_id?.toString() || '',
+      description: cls.description,
+      capacity: cls.capacity,
+      is_active: cls.is_active
+    });
+    setShowClassModal(true);
+  };
+
+  const handleEditSubject = (subject: Subject) => {
+    setEditingSubject(subject);
+    setSubjectForm({
+      name: subject.name,
+      code: subject.code,
+      description: subject.description,
+      class_id: subject.class_id?.toString() || '',
+      department_id: subject.department_id?.toString() || '',
+      subject_type: subject.subject_type,
+      is_compulsory: subject.is_compulsory
+    });
+    setShowSubjectModal(true);
+  };
+
+  // Update handlers for edit mode
+  const handleUpdateDept = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDept) return;
+
+    if (!deptForm.name || !deptForm.code) {
+      showError('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      await api.put(`/departments/${editingDept.id}`, deptForm);
+      showSuccess('Department updated successfully');
+      setShowDeptModal(false);
+      setEditingDept(null);
+      setDeptForm({ name: '', code: '', description: '', class_level: 'SSS' });
+      loadAllData();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to update department');
+    }
+  };
+
+  const handleUpdateClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClass) return;
+
+    if (!classForm.name) {
+      showError('Please fill in all required fields');
+      return;
+    }
+
+    if (isSSClass(classForm.name) && !classForm.department_id) {
+      showError('Department is required for SSS classes');
+      return;
+    }
+
+    try {
+      const payload = {
+        ...classForm,
+        department_id: classForm.department_id || null
+      };
+      await api.put(`/classes/${editingClass.id}`, payload);
+      showSuccess('Class updated successfully');
+      setShowClassModal(false);
+      setEditingClass(null);
+      setClassForm({ name: '', department_id: '', description: '', capacity: 30, is_active: true });
+      loadAllData();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to update class');
+    }
+  };
+
+  const handleUpdateSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSubject) return;
+
+    if (!subjectForm.name || !subjectForm.code || !subjectForm.class_id) {
+      showError('Please fill in all required fields');
+      return;
+    }
+
+    if (selectedClassForSubject && isSSClass(selectedClassForSubject.name) && !subjectForm.department_id) {
+      showError('Department is required for SSS class subjects');
+      return;
+    }
+
+    try {
+      const payload = {
+        ...subjectForm,
+        department_id: subjectForm.department_id || null,
+        is_compulsory: subjectForm.subject_type === 'core'
+      };
+      await api.put(`/subjects/${editingSubject.id}`, payload);
+      showSuccess('Subject updated successfully');
+      setShowSubjectModal(false);
+      setEditingSubject(null);
+      setSubjectForm({ name: '', code: '', description: '', class_id: '', department_id: '', subject_type: 'core', is_compulsory: true });
+      loadAllData();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to update subject');
+    }
+  };
+
+  // Close modal handlers
+  const closeModals = () => {
+    setShowDeptModal(false);
+    setShowClassModal(false);
+    setShowSubjectModal(false);
+    setEditingDept(null);
+    setEditingClass(null);
+    setEditingSubject(null);
+  };
+
+  // Select All handlers
+  const handleSelectAllDepts = () => {
+    if (selectedDepts.length === departments.length) {
+      setSelectedDepts([]);
+    } else {
+      setSelectedDepts(departments.map(d => d.id));
+    }
+  };
+
+  const handleSelectAllClasses = () => {
+    if (selectedClasses.length === classes.length) {
+      setSelectedClasses([]);
+    } else {
+      setSelectedClasses(classes.map(c => c.id));
+    }
+  };
+
+  const handleSelectAllSubjects = () => {
+    if (selectedSubjects.length === subjects.length) {
+      setSelectedSubjects([]);
+    } else {
+      setSelectedSubjects(subjects.map(s => s.id));
+    }
+  };
+
+  // Export handlers
+  const exportToCSV = (data: any[], filename: string) => {
+    if (data.length === 0) {
+      showError('No data to export');
+      return;
+    }
+
+    const headers = Object.keys(data[0]);
+    const csv = [
+      headers.join(','),
+      ...data.map(row =>
+        headers.map(header => {
+          const value = row[header];
+          if (typeof value === 'string' && value.includes(',')) {
+            return `"${value}"`;
+          }
+          return value || '';
+        }).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    showSuccess('Exported successfully');
+  };
+
+  const handleExportDepts = () => {
+    exportToCSV(selectedDepts.length > 0 ? departments.filter(d => selectedDepts.includes(d.id)) : departments, 'departments');
+  };
+
+  const handleExportClasses = () => {
+    exportToCSV(selectedClasses.length > 0 ? classes.filter(c => selectedClasses.includes(c.id)) : classes, 'classes');
+  };
+
+  const handleExportSubjects = () => {
+    exportToCSV(selectedSubjects.length > 0 ? subjects.filter(s => selectedSubjects.includes(s.id)) : subjects, 'subjects');
+  };
+
+  // Bulk upload handler
+  const handleBulkUpload = async (type: 'departments' | 'classes' | 'subjects') => {
+    if (!uploadFile) {
+      showError('Please select a file');
+      return;
+    }
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', uploadFile);
+
+    try {
+      const endpoint = type === 'departments' ? '/departments/bulk-upload' :
+                      type === 'classes' ? '/classes/bulk-upload' :
+                      '/subjects/bulk-upload';
+      
+      const response = await api.post(endpoint, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
+      showSuccess(`${response.data.inserted || 0} items imported successfully`);
+      setUploadModal(null);
+      setUploadFile(null);
+      loadAllData();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Upload failed. Please check your CSV format');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDownloadSampleCSV = (type: 'departments' | 'classes' | 'subjects') => {
+    let csvContent = '';
+    let filename = '';
+    
+    if (type === 'departments') {
+      csvContent = 'name,code,description,class_level,is_active\n' +
+                   'Science,SCI,Science Department,SSS,1\n' +
+                   'Art & Humanity,ART,Arts Department,SSS,1';
+      filename = 'departments-sample-template.csv';
+    } else if (type === 'classes') {
+      csvContent = 'name,department_id,description,capacity,is_active\n' +
+                   'SSS 1,1,Senior Secondary School 1,30,1\n' +
+                   'SSS 2,1,Senior Secondary School 2,30,1';
+      filename = 'classes-sample-template.csv';
+    } else if (type === 'subjects') {
+      csvContent = 'name,code,class_id,subject_type,department_id,description\n' +
+                   'Mathematics,MATH101,1,core,1,Core Mathematics\n' +
+                   'English Language,ENG101,1,core,1,Compulsory English';
+      filename = 'subjects-sample-template.csv';
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (loading) {
@@ -378,49 +727,155 @@ const SubjectManagementNew: React.FC = () => {
 
         {/* Departments Tab */}
         {activeTab === 'departments' && (
-          <div className="bg-white rounded-lg shadow-md p-3">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-3">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">Departments</h2>
-                <p className="text-xs text-gray-600">Required for SSS classes • {departments.length} total</p>
-              </div>
-              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 w-full md:w-auto">
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setDeptPage(1);
-                  }}
-                  className="px-2 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value={10}>10 per page</option>
-                  <option value={15}>15 per page</option>
-                  <option value={25}>25 per page</option>
-                  <option value={50}>50 per page</option>
-                </select>
-                <button
-                  onClick={() => setShowDeptModal(true)}
-                  className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-3 py-1.5 rounded-md hover:shadow-md transition-all duration-200 flex items-center gap-1.5 text-xs md:text-sm"
-                >
-                  <i className='bx bx-plus-circle text-base'></i>
-                  <span className="hidden md:inline">Add Department</span>
-                  <span className="md:hidden">Add</span>
-                </button>
+          <div>
+            {/* Header Section */}
+            <div className="mb-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Departments</h2>
+                  <p className="text-sm text-gray-600">
+                    Required for SSS classes • {departments.length} total
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select
+                    value="departments"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="departments">Select Department</option>
+                  </select>
+                  <button
+                    onClick={() => handleExportDepts()}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                  >
+                    <i className='bx bx-download'></i>
+                    Export CSV
+                  </button>
+                </div>
               </div>
             </div>
 
-            {departments.length === 0 ? (
-              <div className="text-center py-8">
-                <i className='bx bx-building text-5xl text-gray-300 mb-3'></i>
-                <p className="text-gray-500">No departments yet</p>
-                <p className="text-gray-400 text-xs mt-1">Create a department to get started</p>
+            {/* Action Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {/* Upload CSV Card */}
+              <div 
+                onClick={() => setUploadModal('departments')}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-gray-400">
+                    <i className='bx bx-file'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Upload CSV File</h3>
+                <p className="text-sm text-gray-600">Bulk upload departments from CSV</p>
               </div>
-            ) : (
-              <>
+
+              {/* Upload Excel Card */}
+              <div 
+                onClick={() => handleDownloadSampleCSV('departments')}
+                className="border-2 border-dashed border-green-500 rounded-lg p-8 text-center cursor-pointer hover:border-green-600 hover:bg-green-50 transition-all duration-200"
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-green-500">
+                    <i className='bx bx-download'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Download Sample CSV</h3>
+                <p className="text-sm text-gray-600">Download CSV format template</p>
+              </div>
+
+              {/* Manual Entry Card */}
+              <div 
+                onClick={() => setShowDeptModal(true)}
+                className="border-2 border-dashed border-purple-500 rounded-lg p-8 text-center cursor-pointer hover:border-purple-600 hover:bg-purple-50 transition-all duration-200"
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-purple-500">
+                    <i className='bx bx-edit'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Manual Entry</h3>
+                <p className="text-sm text-gray-600">Add departments one by one</p>
+              </div>
+            </div>
+
+            {/* Departments List Section */}
+            {departments.length > 0 && (
+              <div className="bg-white rounded-lg shadow-md p-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Your Departments</h3>
+                    <p className="text-xs text-gray-600">{departments.length} total departments</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setDeptPage(1);
+                      }}
+                      className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={15}>15 per page</option>
+                      <option value={25}>25 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Selection Bar */}
+                <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedDepts.length > 0 && selectedDepts.length === departments.length}
+                        onChange={handleSelectAllDepts}
+                        className="w-5 h-5 cursor-pointer"
+                        title="Select all departments"
+                      />
+                      <span className="text-sm font-semibold text-blue-800">
+                        {selectedDepts.length > 0 ? `${selectedDepts.length} of ${departments.length} selected` : 'Select All'}
+                      </span>
+                    </div>
+                    {selectedDepts.length > 0 && (
+                      <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                        <button
+                          onClick={handleExportDepts}
+                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <i className='bx bx-download text-sm'></i>Export
+                        </button>
+                        <button
+                          onClick={handleBulkDeleteDepts}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <i className='bx bx-trash text-sm'></i>Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Departments Grid */}
                 <div className="grid gap-3">
                   {getPaginatedData(departments, deptPage).map((dept) => (
-                    <div key={dept.id} className="border border-gray-200 rounded-md p-3 hover:shadow-sm transition-shadow">
-                      <div className="flex justify-between items-start">
+                    <div key={dept.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedDepts.includes(dept.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
+                      <div className="flex justify-between items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedDepts.includes(dept.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDepts([...selectedDepts, dept.id]);
+                            } else {
+                              setSelectedDepts(selectedDepts.filter(id => id !== dept.id));
+                            }
+                          }}
+                          className="mt-1 w-4 h-4 cursor-pointer"
+                        />
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="text-base font-semibold text-gray-800">{dept.name}</h3>
@@ -438,144 +893,268 @@ const SubjectManagementNew: React.FC = () => {
                             <p className="text-xs text-gray-500 mt-1">{dept.description}</p>
                           )}
                         </div>
-                        <button
-                          onClick={() => handleDeleteDepartment(dept.id)}
-                          className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
-                        >
-                        <i className='bx bx-trash text-lg'></i>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => handleEditDept(dept)}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <i className='bx bx-edit text-lg'></i>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDepartment(dept.id)}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <i className='bx bx-trash text-lg'></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pagination for Departments */}
+                {getTotalPages(departments.length) > 1 && (
+                  <div className="mt-4 flex items-center justify-between border-t pt-3">
+                    <div className="text-xs text-gray-600">
+                      Showing {((deptPage - 1) * itemsPerPage) + 1} to {Math.min(deptPage * itemsPerPage, departments.length)} of {departments.length}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handlePageChange(deptPage - 1, setDeptPage, getTotalPages(departments.length))}
+                        disabled={deptPage === 1}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                      >
+                        <i className='bx bx-chevron-left'></i>
+                      </button>
+                      {getPageNumbers(deptPage, getTotalPages(departments.length)).map((page, idx) => (
+                        page === '...' ? (
+                          <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                        ) : (
+                          <button
+                            key={page}
+                            onClick={() => setDeptPage(page as number)}
+                            className={`px-3 py-1 border rounded-md text-xs ${
+                              page === deptPage
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        )
+                      ))}
+                      <button
+                        onClick={() => handlePageChange(deptPage + 1, setDeptPage, getTotalPages(departments.length))}
+                        disabled={deptPage === getTotalPages(departments.length)}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                      >
+                        <i className='bx bx-chevron-right'></i>
                       </button>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
-
-              {/* Pagination for Departments */}
-              {getTotalPages(departments.length) > 1 && (
-                <div className="mt-4 flex items-center justify-between border-t pt-3">
-                  <div className="text-xs text-gray-600">
-                    Showing {((deptPage - 1) * itemsPerPage) + 1} to {Math.min(deptPage * itemsPerPage, departments.length)} of {departments.length}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handlePageChange(deptPage - 1, setDeptPage, getTotalPages(departments.length))}
-                      disabled={deptPage === 1}
-                      className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                    >
-                      <i className='bx bx-chevron-left'></i>
-                    </button>
-                    {getPageNumbers(deptPage, getTotalPages(departments.length)).map((page, idx) => (
-                      page === '...' ? (
-                        <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
-                      ) : (
-                        <button
-                          key={page}
-                          onClick={() => setDeptPage(page as number)}
-                          className={`px-3 py-1 border rounded-md text-xs ${
-                            page === deptPage
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      )
-                    ))}
-                    <button
-                      onClick={() => handlePageChange(deptPage + 1, setDeptPage, getTotalPages(departments.length))}
-                      disabled={deptPage === getTotalPages(departments.length)}
-                      className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                    >
-                      <i className='bx bx-chevron-right'></i>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
             )}
           </div>
         )}
 
         {/* Classes Tab */}
         {activeTab === 'classes' && (
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">Classes</h2>
-                <p className="text-xs text-gray-600">
-                  {departments.length === 0 
-                    ? '⚠️ Create departments first for SSS classes' 
-                    : `SSS classes must be linked to a department • ${classes.length} total`
-                  }
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setClassPage(1);
-                  }}
-                  className="px-2 py-1 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value={10}>10 per page</option>
-                  <option value={15}>15 per page</option>
-                  <option value={25}>25 per page</option>
-                  <option value={50}>50 per page</option>
-                </select>
-                <button
-                  onClick={() => setShowClassModal(true)}
-                  className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-2 rounded-md hover:shadow-md transition-all duration-200 flex items-center gap-1.5 text-sm"
-                >
-                  <i className='bx bx-plus-circle text-lg'></i>
-                  Add Class
-                </button>
+          <div>
+            {/* Header Section */}
+            <div className="mb-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Classes</h2>
+                  <p className="text-sm text-gray-600">
+                    {departments.length === 0 
+                      ? '⚠️ Create departments first for SSS classes' 
+                      : `SSS classes must be linked to a department • ${classes.length} total`
+                    }
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select
+                    value="classes"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="classes">Select Class</option>
+                  </select>
+                  <button
+                    onClick={() => handleExportClasses()}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                  >
+                    <i className='bx bx-download'></i>
+                    Export CSV
+                  </button>
+                </div>
               </div>
             </div>
 
-            {classes.length === 0 ? (
-              <div className="text-center py-8">
-                <i className='bx bx-group text-5xl text-gray-300 mb-3'></i>
-                <p className="text-gray-500">No classes yet</p>
-                <p className="text-gray-400 text-xs mt-1">Create a class to get started</p>
+            {/* Action Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {/* Upload CSV Card */}
+              <div 
+                onClick={() => setUploadModal('classes')}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-gray-400">
+                    <i className='bx bx-file'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Upload CSV File</h3>
+                <p className="text-sm text-gray-600">Bulk upload classes from CSV</p>
               </div>
-            ) : (
-              <>
+
+              {/* Upload Excel Card */}
+              <div 
+                onClick={() => handleDownloadSampleCSV('classes')}
+                className="border-2 border-dashed border-green-500 rounded-lg p-8 text-center cursor-pointer hover:border-green-600 hover:bg-green-50 transition-all duration-200"
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-green-500">
+                    <i className='bx bx-download'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Download Sample CSV</h3>
+                <p className="text-sm text-gray-600">Download CSV format template</p>
+              </div>
+
+              {/* Manual Entry Card */}
+              <div 
+                onClick={() => setShowClassModal(true)}
+                className="border-2 border-dashed border-purple-500 rounded-lg p-8 text-center cursor-pointer hover:border-purple-600 hover:bg-purple-50 transition-all duration-200"
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-purple-500">
+                    <i className='bx bx-edit'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Manual Entry</h3>
+                <p className="text-sm text-gray-600">Add classes one by one</p>
+              </div>
+            </div>
+
+            {/* Classes List Section */}
+            {classes.length > 0 && (
+              <div className="bg-white rounded-lg shadow-md p-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Your Classes</h3>
+                    <p className="text-xs text-gray-600">{classes.length} total classes</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setClassPage(1);
+                      }}
+                      className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={15}>15 per page</option>
+                      <option value={25}>25 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Selection Bar */}
+                <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedClasses.length > 0 && selectedClasses.length === classes.length}
+                        onChange={handleSelectAllClasses}
+                        className="w-5 h-5 cursor-pointer"
+                        title="Select all classes"
+                      />
+                      <span className="text-sm font-semibold text-blue-800">
+                        {selectedClasses.length > 0 ? `${selectedClasses.length} of ${classes.length} selected` : 'Select All'}
+                      </span>
+                    </div>
+                    {selectedClasses.length > 0 && (
+                      <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                        <button
+                          onClick={handleExportClasses}
+                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <i className='bx bx-download text-sm'></i>Export
+                        </button>
+                        <button
+                          onClick={handleBulkDeleteClasses}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <i className='bx bx-trash text-sm'></i>Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Classes Grid */}
                 <div className="grid gap-3">
                   {getPaginatedData(classes, classPage).map((cls) => (
-                    <div key={cls.id} className="border border-gray-200 rounded-md p-3 hover:shadow-sm transition-shadow">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-base font-semibold text-gray-800">{cls.name}</h3>
-                          {isSSClass(cls.name) && (
-                            <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
-                              SSS
+                    <div key={cls.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedClasses.includes(cls.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
+                      <div className="flex justify-between items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedClasses.includes(cls.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedClasses([...selectedClasses, cls.id]);
+                            } else {
+                              setSelectedClasses(selectedClasses.filter(id => id !== cls.id));
+                            }
+                          }}
+                          className="mt-1 w-4 h-4 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-base font-semibold text-gray-800">{cls.name}</h3>
+                            {isSSClass(cls.name) && (
+                              <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+                                SSS
+                              </span>
+                            )}
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              cls.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {cls.is_active ? 'Active' : 'Inactive'}
                             </span>
+                          </div>
+                          {cls.department_id && (
+                            <p className="text-xs text-gray-600">
+                              Dept: {departments.find(d => d.id === cls.department_id)?.name || 'N/A'}
+                            </p>
                           )}
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            cls.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {cls.is_active ? 'Active' : 'Inactive'}
-                          </span>
+                          <p className="text-xs text-gray-600">Capacity: {cls.capacity}</p>
                         </div>
-                        <p className="text-xs text-gray-600">Code: {cls.code}</p>
-                        {cls.department_id && (
-                          <p className="text-xs text-gray-600">
-                            Dept: {departments.find(d => d.id === cls.department_id)?.name || 'N/A'}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-600">Capacity: {cls.capacity}</p>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => handleEditClass(cls)}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <i className='bx bx-edit text-lg'></i>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClass(cls.id)}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <i className='bx bx-trash text-lg'></i>
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteClass(cls.id)}
-                        className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
-                      >
-                        <i className='bx bx-trash text-lg'></i>
-                      </button>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
 
               {/* Pagination for Classes */}
               {getTotalPages(classes.length) > 1 && (
@@ -617,136 +1196,260 @@ const SubjectManagementNew: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              )}
-            </>
+                )}
+              </div>
             )}
           </div>
         )}
 
         {/* Subjects Tab */}
         {activeTab === 'subjects' && (
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">Subjects</h2>
-                <p className="text-xs text-gray-600">
-                  {classes.length === 0 
-                    ? '⚠️ Create classes first' 
-                    : `Core subjects are compulsory, electives are optional • ${subjects.length} total`
-                  }
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    setItemsPerPage(Number(e.target.value));
-                    setSubjectPage(1);
-                  }}
-                  className="px-2 py-1 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value={10}>10 per page</option>
-                  <option value={15}>15 per page</option>
-                  <option value={25}>25 per page</option>
-                  <option value={50}>50 per page</option>
-                </select>
-                <button
-                  onClick={() => setShowSubjectModal(true)}
-                  disabled={classes.length === 0}
-                  className="bg-gradient-to-r from-purple-500 to-pink-600 text-white px-4 py-2 rounded-md hover:shadow-md transition-all duration-200 flex items-center gap-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <i className='bx bx-plus-circle text-lg'></i>
-                  Add Subject
-                </button>
+          <div>
+            {/* Header Section */}
+            <div className="mb-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Upload Questions</h2>
+                  <p className="text-sm text-gray-600">
+                    {classes.length === 0 
+                      ? '⚠️ Create classes first' 
+                      : `Add subjects to your curriculum • ${subjects.length} total`
+                    }
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select
+                    value="subjects"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="subjects">Select CBT Subject</option>
+                  </select>
+                  <button
+                    onClick={() => handleExportSubjects()}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                  >
+                    <i className='bx bx-download'></i>
+                    Export CSV
+                  </button>
+                </div>
               </div>
             </div>
 
-            {subjects.length === 0 ? (
-              <div className="text-center py-8">
-                <i className='bx bx-book text-5xl text-gray-300 mb-3'></i>
-                <p className="text-gray-500">No subjects yet</p>
-                <p className="text-gray-400 text-xs mt-1">Create a subject to get started</p>
+            {/* Action Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {/* Upload CSV Card */}
+              <div 
+                onClick={() => setUploadModal('subjects')}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-gray-400">
+                    <i className='bx bx-file'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Upload CSV File</h3>
+                <p className="text-sm text-gray-600">Bulk upload subjects from CSV</p>
               </div>
-            ) : (
-              <>
+
+              {/* Add Manual Card */}
+              <div 
+                onClick={() => classes.length > 0 && handleDownloadSampleCSV('subjects')}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
+                  classes.length === 0 
+                    ? 'border-gray-300 bg-gray-50 cursor-not-allowed opacity-50'
+                    : 'border-green-500 hover:border-green-600 hover:bg-green-50 cursor-pointer'
+                }`}
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-green-500">
+                    <i className='bx bx-download'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Download Sample CSV</h3>
+                <p className="text-sm text-gray-600">Download CSV format template</p>
+              </div>
+
+              {/* Manual Entry Card */}
+              <div 
+                onClick={() => classes.length > 0 && setShowSubjectModal(true)}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
+                  classes.length === 0 
+                    ? 'border-gray-300 bg-gray-50 cursor-not-allowed opacity-50'
+                    : 'border-purple-500 hover:border-purple-600 hover:bg-purple-50 cursor-pointer'
+                }`}
+              >
+                <div className="flex justify-center mb-4">
+                  <div className="text-5xl text-purple-500">
+                    <i className='bx bx-edit'></i>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Manual Entry</h3>
+                <p className="text-sm text-gray-600">Add subjects one by one</p>
+              </div>
+            </div>
+
+            {/* Subjects List Section */}
+            {subjects.length > 0 && (
+              <div className="bg-white rounded-lg shadow-md p-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Your Subjects</h3>
+                    <p className="text-xs text-gray-600">{subjects.length} total subjects</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setSubjectPage(1);
+                      }}
+                      className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={15}>15 per page</option>
+                      <option value={25}>25 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Selection Bar */}
+                {subjects.length > 0 && (
+                  <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedSubjects.length > 0 && selectedSubjects.length === subjects.length}
+                          onChange={handleSelectAllSubjects}
+                          className="w-5 h-5 cursor-pointer"
+                          title="Select all subjects"
+                        />
+                        <span className="text-sm font-semibold text-blue-800">
+                          {selectedSubjects.length > 0 ? `${selectedSubjects.length} of ${subjects.length} selected` : 'Select All'}
+                        </span>
+                      </div>
+                      {selectedSubjects.length > 0 && (
+                        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                          <button
+                            onClick={handleExportSubjects}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                          >
+                            <i className='bx bx-download text-sm'></i>Export
+                          </button>
+                          <button
+                            onClick={handleBulkDeleteSubjects}
+                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                          >
+                            <i className='bx bx-trash text-sm'></i>Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Subjects Grid */}
                 <div className="grid gap-3">
                   {getPaginatedData(subjects, subjectPage).map((subject) => (
-                    <div key={subject.id} className="border border-gray-200 rounded-md p-3 hover:shadow-sm transition-shadow">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-base font-semibold text-gray-800">{subject.name}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            subject.subject_type === 'core' 
-                              ? 'bg-orange-100 text-orange-800' 
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {subject.subject_type === 'core' ? 'Core' : 'Elective'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-600">Code: {subject.code}</p>
-                        <p className="text-xs text-gray-600">
-                          Class: {classes.find(c => c.id === subject.class_id)?.name || 'N/A'}
-                        </p>
-                        {subject.department_id && (
+                    <div key={subject.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedSubjects.includes(subject.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
+                      <div className="flex justify-between items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedSubjects.includes(subject.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedSubjects([...selectedSubjects, subject.id]);
+                            } else {
+                              setSelectedSubjects(selectedSubjects.filter(id => id !== subject.id));
+                            }
+                          }}
+                          className="mt-1 w-4 h-4 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-base font-semibold text-gray-800">{subject.name}</h3>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              subject.subject_type === 'core' 
+                                ? 'bg-orange-100 text-orange-800' 
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {subject.subject_type === 'core' ? 'Core' : 'Elective'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600">Code: {subject.code}</p>
                           <p className="text-xs text-gray-600">
-                            Dept: {departments.find(d => d.id === subject.department_id)?.name || 'N/A'}
+                            Class: {classes.find(c => c.id === subject.class_id)?.name || 'N/A'}
                           </p>
-                        )}
+                          {subject.department_id && (
+                            <p className="text-xs text-gray-600">
+                              Dept: {departments.find(d => d.id === subject.department_id)?.name || 'N/A'}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => handleEditSubject(subject)}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
+                            title="Edit"
+                          >
+                            <i className='bx bx-edit text-lg'></i>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSubject(subject.id)}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <i className='bx bx-trash text-lg'></i>
+                          </button>
+                        </div>
                       </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pagination */}
+                {getTotalPages(subjects.length) > 1 && (
+                  <div className="mt-4 flex items-center justify-between border-t pt-3">
+                    <div className="text-xs text-gray-600">
+                      Showing {((subjectPage - 1) * itemsPerPage) + 1} to {Math.min(subjectPage * itemsPerPage, subjects.length)} of {subjects.length}
+                    </div>
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => handleDeleteSubject(subject.id)}
-                        className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
+                        onClick={() => handlePageChange(subjectPage - 1, setSubjectPage, getTotalPages(subjects.length))}
+                        disabled={subjectPage === 1}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                       >
-                        <i className='bx bx-trash text-lg'></i>
+                        <i className='bx bx-chevron-left'></i>
+                      </button>
+                      {getPageNumbers(subjectPage, getTotalPages(subjects.length)).map((page, idx) => (
+                        page === '...' ? (
+                          <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                        ) : (
+                          <button
+                            key={page}
+                            onClick={() => setSubjectPage(page as number)}
+                            className={`px-3 py-1 border rounded-md text-xs ${
+                              page === subjectPage
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        )
+                      ))}
+                      <button
+                        onClick={() => handlePageChange(subjectPage + 1, setSubjectPage, getTotalPages(subjects.length))}
+                        disabled={subjectPage === getTotalPages(subjects.length)}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                      >
+                        <i className='bx bx-chevron-right'></i>
                       </button>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
-
-              {/* Pagination for Subjects */}
-              {getTotalPages(subjects.length) > 1 && (
-                <div className="mt-4 flex items-center justify-between border-t pt-3">
-                  <div className="text-xs text-gray-600">
-                    Showing {((subjectPage - 1) * itemsPerPage) + 1} to {Math.min(subjectPage * itemsPerPage, subjects.length)} of {subjects.length}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handlePageChange(subjectPage - 1, setSubjectPage, getTotalPages(subjects.length))}
-                      disabled={subjectPage === 1}
-                      className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                    >
-                      <i className='bx bx-chevron-left'></i>
-                    </button>
-                    {getPageNumbers(subjectPage, getTotalPages(subjects.length)).map((page, idx) => (
-                      page === '...' ? (
-                        <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
-                      ) : (
-                        <button
-                          key={page}
-                          onClick={() => setSubjectPage(page as number)}
-                          className={`px-3 py-1 border rounded-md text-xs ${
-                            page === subjectPage
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      )
-                    ))}
-                    <button
-                      onClick={() => handlePageChange(subjectPage + 1, setSubjectPage, getTotalPages(subjects.length))}
-                      disabled={subjectPage === getTotalPages(subjects.length)}
-                      className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                    >
-                      <i className='bx bx-chevron-right'></i>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
             )}
           </div>
         )}
@@ -756,9 +1459,14 @@ const SubjectManagementNew: React.FC = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-800">Create Department</h3>
+                <h3 className="text-lg font-bold text-gray-800">
+                  {editingDept ? 'Edit Department' : 'Create Department'}
+                </h3>
                 <button
-                  onClick={() => setShowDeptModal(false)}
+                  onClick={() => {
+                    setShowDeptModal(false);
+                    setEditingDept(null);
+                  }}
                   className="text-gray-400 hover:text-gray-600 text-xl"
                 >
                   <i className='bx bx-x'></i>
@@ -847,9 +1555,14 @@ const SubjectManagementNew: React.FC = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-800">Create Class</h3>
+                <h3 className="text-lg font-bold text-gray-800">
+                  {editingClass ? 'Edit Class' : 'Create Class'}
+                </h3>
                 <button
-                  onClick={() => setShowClassModal(false)}
+                  onClick={() => {
+                    setShowClassModal(false);
+                    setEditingClass(null);
+                  }}
                   className="text-gray-400 hover:text-gray-600 text-xl"
                 >
                   <i className='bx bx-x'></i>
@@ -874,20 +1587,6 @@ const SubjectManagementNew: React.FC = () => {
                       <i className='bx bx-info-circle'></i> This is an SSS class - department is required
                     </p>
                   )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Class Code *
-                  </label>
-                  <input
-                    type="text"
-                    value={classForm.code}
-                    onChange={(e) => setClassForm({ ...classForm, code: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                    placeholder="e.g., SSS1, JSS2, PRI4"
-                    required
-                  />
                 </div>
 
                 {isSSClass(classForm.name) && (
@@ -958,9 +1657,14 @@ const SubjectManagementNew: React.FC = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-800">Create Subject</h3>
+                <h3 className="text-lg font-bold text-gray-800">
+                  {editingSubject ? 'Edit Subject' : 'Create Subject'}
+                </h3>
                 <button
-                  onClick={() => setShowSubjectModal(false)}
+                  onClick={() => {
+                    setShowSubjectModal(false);
+                    setEditingSubject(null);
+                  }}
                   className="text-gray-400 hover:text-gray-600 text-xl"
                 >
                   <i className='bx bx-x'></i>
@@ -1017,7 +1721,7 @@ const SubjectManagementNew: React.FC = () => {
                       <option value="">Select Class</option>
                       {classes.map((cls) => (
                         <option key={cls.id} value={cls.id}>
-                          {cls.name} ({cls.code})
+                          {cls.name}
                         </option>
                       ))}
                     </select>
@@ -1121,6 +1825,111 @@ const SubjectManagementNew: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+        {/* Bulk Upload Modal */}
+        {uploadModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-800">
+                  Bulk Upload {uploadModal === 'departments' ? 'Departments' : uploadModal === 'classes' ? 'Classes' : 'Subjects'}
+                </h3>
+                <button
+                  onClick={() => {
+                    setUploadModal(null);
+                    setUploadFile(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-xl"
+                >
+                  <i className='bx bx-x'></i>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Upload a CSV file with the following columns:
+                  </p>
+                  {uploadModal === 'departments' && (
+                    <ul className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 space-y-1 mb-3">
+                      <li>• <strong>name</strong> (required)</li>
+                      <li>• code (required)</li>
+                      <li>• description (optional)</li>
+                      <li>• class_level (optional, default: SSS)</li>
+                      <li>• is_active (optional, default: 1)</li>
+                    </ul>
+                  )}
+                  {uploadModal === 'classes' && (
+                    <ul className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 space-y-1 mb-3">
+                      <li>• <strong>name</strong> (required)</li>
+                      <li>• department_id (required)</li>
+                      <li>• description (optional)</li>
+                      <li>• capacity (optional, default: 30)</li>
+                      <li>• is_active (optional, default: 1)</li>
+                    </ul>
+                  )}
+                  {uploadModal === 'subjects' && (
+                    <ul className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 space-y-1 mb-3">
+                      <li>• <strong>name</strong> (required)</li>
+                      <li>• code (required)</li>
+                      <li>• class_id (required)</li>
+                      <li>• subject_type (required: core/elective)</li>
+                      <li>• department_id (optional)</li>
+                      <li>• description (optional)</li>
+                    </ul>
+                  )}
+                </div>
+
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                    id="csv-upload"
+                  />
+                  <label htmlFor="csv-upload" className="cursor-pointer">
+                    <i className='bx bx-cloud-upload text-4xl text-gray-400 mb-2'></i>
+                    <p className="text-sm font-medium text-gray-700">
+                      {uploadFile ? uploadFile.name : 'Click to upload CSV'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">or drag and drop</p>
+                  </label>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadModal(null);
+                      setUploadFile(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => uploadModal && handleBulkUpload(uploadModal)}
+                    disabled={!uploadFile || uploading}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-md hover:shadow-md font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                  >
+                    {uploading ? (
+                      <>
+                        <i className='bx bx-loader-alt bx-spin'></i>
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <i className='bx bx-upload'></i>
+                        Upload
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

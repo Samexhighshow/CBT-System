@@ -120,6 +120,24 @@ class SubjectController extends Controller
     }
 
     /**
+     * Bulk delete subjects.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'required|exists:subjects,id',
+        ]);
+
+        $deletedCount = Subject::whereIn('id', $validated['ids'])->delete();
+
+        return response()->json([
+            'message' => 'Subjects deleted successfully',
+            'deleted_count' => $deletedCount
+        ]);
+    }
+
+    /**
      * Get subjects for a student based on class level and department
      */
     public function getSubjectsForStudent(Request $request)
