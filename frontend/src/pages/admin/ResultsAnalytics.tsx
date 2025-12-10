@@ -98,37 +98,39 @@ const ResultsAnalytics: React.FC = () => {
   };
   
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
-      <div className="flex justify-between items-start">
+    <div className="app-shell section-shell">
+      <div className="space-y-4">
+      <div className="flex flex-col md:flex-row justify-between items-start gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Results & Analytics</h1>
-          <p className="text-gray-600 mt-2">View exam results and performance metrics</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Results & Analytics</h1>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">View exam results and performance metrics</p>
         </div>
         {subjectId && (
-          <div className="flex gap-2">
-            <Button onClick={() => downloadPdf(Number(subjectId))} variant="secondary" className="flex items-center gap-2">
-              <i className='bx bx-download'></i>
-              <span>Download PDF</span>
+          <div className="flex flex-col md:flex-row gap-2">
+            <Button onClick={() => downloadPdf(Number(subjectId))} variant="secondary" className="flex items-center gap-2 text-xs md:text-sm py-1.5 px-2">
+              <i className='bx bx-download text-sm'></i>
+              <span className="hidden md:inline">Download PDF</span>
+              <span className="md:hidden">PDF</span>
             </Button>
-            <Button onClick={() => downloadExcel(Number(subjectId))} variant="secondary" className="flex items-center gap-2">
-              <i className='bx bx-spreadsheet'></i>
-              <span>Download Excel</span>
+            <Button onClick={() => downloadExcel(Number(subjectId))} variant="secondary" className="flex items-center gap-2 text-xs md:text-sm py-1.5 px-2">
+              <i className='bx bx-spreadsheet text-sm'></i>
+              <span className="hidden md:inline">Download Excel</span>
+              <span className="md:hidden">Excel</span>
             </Button>
           </div>
         )}
       </div>
 
-      <Card>
-        <div className="flex items-center gap-3 flex-wrap">
+      <Card className="panel-compact">
+        <div className="flex flex-col gap-2 flex-wrap">
           <input
-            className="border p-2 rounded"
+            className="border p-1.5 rounded text-sm"
             placeholder="Student Name"
             value={studentName}
             onChange={(e) => setStudentName(e.target.value)}
           />
           <select
-            className="border p-2 rounded"
+            className="border p-1.5 rounded text-sm"
             value={classLevel}
             onChange={(e) => setClassLevel(e.target.value)}
             aria-label="Class level filter"
@@ -142,7 +144,7 @@ const ResultsAnalytics: React.FC = () => {
             <option value="SSS3">SSS3</option>
           </select>
           <select
-            className="border p-2 rounded"
+            className="border p-1.5 rounded text-sm"
             value={subjectId}
             onChange={(e) => setSubjectId(e.target.value)}
             aria-label="Subject filter"
@@ -152,7 +154,7 @@ const ResultsAnalytics: React.FC = () => {
               <option key={s.id} value={s.id}>{s.subject_name} ({s.class_level})</option>
             ))}
           </select>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={loadAnalytics}>
+          <button className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm" onClick={loadAnalytics}>
             Refresh Analytics
           </button>
         </div>

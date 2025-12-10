@@ -132,17 +132,18 @@ const HallManagement: React.FC = () => {
   };
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-6 flex justify-between items-center">
+    <div className="app-shell section-shell">
+      <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Hall Management</h1>
-          <p className="text-gray-600">Configure exam halls and seating capacity</p>
+          <h1 className="text-2xl md:text-3xl font-bold">Hall Management</h1>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">Configure exam halls and seating capacity</p>
         </div>
         <Button
           onClick={() => {
             resetForm();
             setShowModal(true);
           }}
+          className="text-xs md:text-sm py-1.5 px-3"
         >
           + Add Hall
         </Button>
@@ -152,51 +153,51 @@ const HallManagement: React.FC = () => {
       {success && <Alert type="success" message={success} onClose={() => setSuccess('')} />}
 
       {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Total Halls</div>
-          <div className="text-2xl font-bold">{halls.length}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 mb-4">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Total Halls</div>
+          <div className="text-lg md:text-xl font-bold">{halls.length}</div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Active Halls</div>
-          <div className="text-2xl font-bold text-green-600">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Active Halls</div>
+          <div className="text-lg md:text-xl font-bold text-green-600">
             {halls.filter(h => h.is_active).length}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Total Capacity</div>
-          <div className="text-2xl font-bold text-blue-600">{getTotalCapacity()}</div>
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Total Capacity</div>
+          <div className="text-lg md:text-xl font-bold text-blue-600">{getTotalCapacity()}</div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Avg. Capacity</div>
-          <div className="text-2xl font-bold">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Avg. Capacity</div>
+          <div className="text-lg md:text-xl font-bold">
             {halls.length > 0 ? Math.round(getTotalCapacity() / halls.filter(h => h.is_active).length) : 0}
           </div>
         </Card>
       </div>
 
       {/* Halls List */}
-      <Card>
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xl font-semibold">Halls ({halls.length})</h2>
-          <Button variant="danger" disabled={selectedHallIds.length === 0} onClick={handleBatchDeleteHalls}>
+      <Card className="panel-compact">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-2">
+          <h2 className="text-lg md:text-xl font-semibold">Halls ({halls.length})</h2>
+          <Button variant="danger" disabled={selectedHallIds.length === 0} onClick={handleBatchDeleteHalls} className="text-xs py-1 px-2">
             Delete Selected ({selectedHallIds.length})
           </Button>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-2 py-3">
+                <th className="px-2 py-2">
                   <input type="checkbox" checked={selectedHallIds.length === halls.length && halls.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllHalls(e.target.checked)} title="Select all halls" />
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grid</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Capacity</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Teachers</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Allocations</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grid</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Capacity</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Teachers</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Allocations</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">

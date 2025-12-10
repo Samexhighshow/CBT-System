@@ -157,18 +157,18 @@ const TeacherAssignment: React.FC = () => {
   }
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8\">
+    <div className="app-shell section-shell">
       {/* Header */}
-      <div className="mb-6 flex justify-between items-start">
+      <div className="mb-4 flex flex-col md:flex-row justify-between items-start gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Teacher Assignment to Halls</h1>
-          <p className="text-gray-600">Manage teacher assignments across exam halls</p>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-2xl md:text-3xl font-bold">Teacher Assignment to Halls</h1>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">Manage teacher assignments across exam halls</p>
+          <p className="text-xs text-gray-500 mt-0.5">
             Assign invigilators and staff to halls
           </p>
         </div>
-        <Button onClick={saveAllAssignments} disabled={saving} className="flex items-center gap-2">
-          {saving ? 'Saving...' : <><i className='bx bx-save'></i> Save All Assignments</>}
+        <Button onClick={saveAllAssignments} disabled={saving} className="flex items-center gap-1.5 text-xs md:text-sm py-1.5 px-3">
+          {saving ? 'Saving...' : <><i className='bx bx-save text-sm'></i> <span className="hidden md:inline">Save All Assignments</span><span className="md:hidden">Save</span></>}
         </Button>
       </div>
 
@@ -176,48 +176,48 @@ const TeacherAssignment: React.FC = () => {
       {success && <Alert type="success" message={success} onClose={() => setSuccess('')} />}
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Total Halls</div>
-          <div className="text-2xl font-bold">{halls.length}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 mb-4">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Total Halls</div>
+          <div className="text-lg md:text-xl font-bold">{halls.length}</div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Teachers Needed</div>
-          <div className="text-2xl font-bold text-blue-600">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Teachers Needed</div>
+          <div className="text-lg md:text-xl font-bold text-blue-600">
             {halls.reduce((sum, h) => sum + h.teachers_needed, 0)}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Teachers Assigned</div>
-          <div className="text-2xl font-bold text-green-600">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Teachers Assigned</div>
+          <div className="text-lg md:text-xl font-bold text-green-600">
             {Object.values(assignments).reduce(
               (sum, arr) => sum + arr.filter((a) => a.teacher_id > 0).length,
               0
             )}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Available Teachers</div>
-          <div className="text-2xl font-bold">{teachers.length}</div>
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Available Teachers</div>
+          <div className="text-lg md:text-xl font-bold">{teachers.length}</div>
         </Card>
       </div>
 
       {/* Hall Assignment Cards */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {halls.map((hall) => {
           const status = getAssignmentStatus(hall);
           return (
-            <Card key={hall.id} className="p-6">
-              <div className="flex justify-between items-start mb-4">
+            <Card key={hall.id} className="panel-compact">
+              <div className="flex flex-col md:flex-row justify-between items-start gap-2 mb-3">
                 <div>
-                  <h3 className="text-lg font-bold">{hall.name}</h3>
-                  <p className="text-sm text-gray-600">
+                  <h3 className="text-base md:text-lg font-bold">{hall.name}</h3>
+                  <p className="text-xs md:text-sm text-gray-600 mt-0.5">
                     Capacity: {hall.rows} × {hall.columns} = {hall.rows * hall.columns} seats | 
                     Teachers Needed: {hall.teachers_needed}
                   </p>
                 </div>
                 <div className="text-right">
-                  <div className={`font-medium ${status.color}`}>{status.text}</div>
+                  <div className={`font-medium text-sm ${status.color}`}>{status.text}</div>
                   <div className="flex space-x-2 mt-2">
                     <Button
                       size="sm"

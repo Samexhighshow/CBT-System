@@ -120,49 +120,49 @@ const ActivityLogs: React.FC = () => {
   };
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="app-shell section-shell">
+      <div className="space-y-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Activity Logs</h1>
-          <p className="text-gray-600 mt-1">Monitor system activities and user actions</p>
+          <h1 className="text-2xl md:text-3xl font-bold">Activity Logs</h1>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">Monitor system activities and user actions</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={loadLogs} variant="secondary">
-            <i className='bx bx-refresh'></i>
-            <span className="ml-2">Refresh</span>
+        <div className="flex flex-col md:flex-row gap-2">
+          <Button onClick={loadLogs} variant="secondary" className="text-xs md:text-sm py-1.5 px-2">
+            <i className='bx bx-refresh text-sm'></i>
+            <span className="ml-1.5 hidden md:inline">Refresh</span>
           </Button>
-          <Button onClick={handleCleanup} variant="secondary">
-            <i className='bx bx-trash'></i>
-            <span className="ml-2">Cleanup Old Logs</span>
+          <Button onClick={handleCleanup} variant="secondary" className="text-xs md:text-sm py-1.5 px-2">
+            <i className='bx bx-trash text-sm'></i>
+            <span className="ml-1.5 hidden md:inline">Cleanup Old Logs</span>
           </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-blue-50">
-            <p className="text-sm text-gray-600">Total Activities</p>
-            <h3 className="text-2xl font-bold text-blue-600 mt-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
+          <Card className="bg-blue-50 panel-compact">
+            <p className="text-xs md:text-sm text-gray-600">Total Activities</p>
+            <h3 className="text-lg md:text-xl font-bold text-blue-600 mt-1">
               {stats.total_activities.toLocaleString()}
             </h3>
           </Card>
-          <Card className="bg-green-50">
-            <p className="text-sm text-gray-600">Today's Activities</p>
-            <h3 className="text-2xl font-bold text-green-600 mt-1">
+          <Card className="bg-green-50 panel-compact">
+            <p className="text-xs md:text-sm text-gray-600">Today's Activities</p>
+            <h3 className="text-lg md:text-xl font-bold text-green-600 mt-1">
               {stats.today_activities.toLocaleString()}
             </h3>
           </Card>
-          <Card className="bg-purple-50">
-            <p className="text-sm text-gray-600">Top Event</p>
-            <h3 className="text-lg font-bold text-purple-600 mt-1">
+          <Card className="bg-purple-50 panel-compact">
+            <p className="text-xs md:text-sm text-gray-600">Top Event</p>
+            <h3 className="text-sm md:text-base font-bold text-purple-600 mt-1">
               {stats.top_events[0]?.event || 'N/A'}
             </h3>
           </Card>
-          <Card className="bg-orange-50">
-            <p className="text-sm text-gray-600">Most Active User</p>
-            <h3 className="text-sm font-bold text-orange-600 mt-1">
+          <Card className="bg-orange-50 panel-compact">
+            <p className="text-xs md:text-sm text-gray-600">Most Active User</p>
+            <h3 className="text-xs md:text-sm font-bold text-orange-600 mt-1">
               {stats.top_users[0]?.causer?.name || 'N/A'}
             </h3>
           </Card>

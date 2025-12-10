@@ -112,10 +112,10 @@ const AllocationGenerator: React.FC = () => {
   };
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Generate Seat Allocation</h1>
-        <p className="text-gray-600">
+    <div className="app-shell section-shell">
+      <div className="mb-4">
+        <h1 className="text-2xl md:text-3xl font-bold">Generate Seat Allocation</h1>
+        <p className="text-xs md:text-sm text-gray-600 mt-1">
           Automatically assign students to exam halls with intelligent seating
         </p>
       </div>
@@ -125,23 +125,23 @@ const AllocationGenerator: React.FC = () => {
 
       {/* Capacity Check */}
       {capacity && (
-        <Card className="p-4 mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="panel-compact mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
             <div>
-              <div className="text-sm text-gray-600">Active Halls</div>
-              <div className="text-xl font-bold">{capacity.active_halls}</div>
+              <div className="text-xs md:text-sm text-gray-600">Active Halls</div>
+              <div className="text-lg md:text-xl font-bold">{capacity.active_halls}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Total Capacity</div>
-              <div className="text-xl font-bold text-green-600">{capacity.total_capacity}</div>
+              <div className="text-xs md:text-sm text-gray-600">Total Capacity</div>
+              <div className="text-lg md:text-xl font-bold text-green-600">{capacity.total_capacity}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Avg. Capacity</div>
-              <div className="text-xl font-bold">{Math.round(capacity.average_capacity || 0)}</div>
+              <div className="text-xs md:text-sm text-gray-600">Avg. Capacity</div>
+              <div className="text-lg md:text-xl font-bold">{Math.round(capacity.average_capacity || 0)}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Status</div>
-              <div className="text-sm">
+              <div className="text-xs md:text-sm text-gray-600">Status</div>
+              <div className="text-xs md:text-sm">
                 {capacity.total_capacity > 0 ? (
                   <span className="text-green-600 font-medium">✓ Ready</span>
                 ) : (
@@ -154,15 +154,15 @@ const AllocationGenerator: React.FC = () => {
       )}
 
       {/* Main Form */}
-      <Card className="p-6">
-        <div className="space-y-6">
+      <Card className="panel-compact">
+        <div className="space-y-4">
           {/* Exam Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1.5">
               Select Exam *
             </label>
             <select
-              className="w-full border border-gray-300 rounded-md px-3 py-2"
+              className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm"
               value={formData.exam_id}
               onChange={(e) => handleExamSelect(parseInt(e.target.value))}
               disabled={generating}

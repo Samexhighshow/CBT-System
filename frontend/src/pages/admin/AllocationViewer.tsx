@@ -157,25 +157,25 @@ const AllocationViewer: React.FC = () => {
   const halls = getUniqueHalls(allocations);
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
+    <div className="app-shell section-shell">
       {/* Header */}
-      <div className="mb-6">
-        <div className="flex justify-between items-start">
+      <div className="mb-4">
+        <div className="flex flex-col md:flex-row justify-between items-start gap-3">
           <div>
-            <h1 className="text-2xl font-bold">Seat Allocation Viewer</h1>
-            <p className="text-gray-600">{run.exam.title}</p>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-2xl md:text-3xl font-bold">Seat Allocation Viewer</h1>
+            <p className="text-xs md:text-sm text-gray-600">{run.exam.title}</p>
+            <p className="text-xs text-gray-500 mt-1">
               Generated: {new Date(run.created_at).toLocaleString()} | Mode: {run.mode}
             </p>
           </div>
-          <div className="space-x-2">
-            <Button variant="secondary" onClick={exportPDF}>
+          <div className="flex flex-col md:flex-row gap-1.5">
+            <Button variant="secondary" onClick={exportPDF} className="text-xs md:text-sm py-1.5 px-2">
               📄 Export PDF
             </Button>
-            <Button variant="secondary" onClick={exportExcel}>
+            <Button variant="secondary" onClick={exportExcel} className="text-xs md:text-sm py-1.5 px-2">
               📊 Export Excel
             </Button>
-            <Button onClick={handleRegenerate}>🔄 Regenerate</Button>
+            <Button onClick={handleRegenerate} className="text-xs md:text-sm py-1.5 px-2">🔄 Regenerate</Button>
           </div>
         </div>
       </div>
@@ -183,37 +183,37 @@ const AllocationViewer: React.FC = () => {
       {error && <Alert type="error" message={error} onClose={() => setError('')} />}
 
       {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Total Students</div>
-          <div className="text-2xl font-bold">{run.metadata?.total_students || 0}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-4">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Total Students</div>
+          <div className="text-lg md:text-xl font-bold">{run.metadata?.total_students || 0}</div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Halls Used</div>
-          <div className="text-2xl font-bold text-blue-600">{halls.length}</div>
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Halls Used</div>
+          <div className="text-lg md:text-xl font-bold text-blue-600">{halls.length}</div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Conflicts</div>
-          <div className={`text-2xl font-bold ${conflicts.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Conflicts</div>
+          <div className={`text-lg md:text-xl font-bold ${conflicts.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
             {run.metadata?.total_conflicts || 0}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Unresolved</div>
-          <div className="text-2xl font-bold text-orange-600">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Unresolved</div>
+          <div className="text-lg md:text-xl font-bold text-orange-600">
             {conflicts.filter((c) => !c.resolved).length}
           </div>
         </Card>
-        <Card className="p-4">
-          <div className="text-sm text-gray-600">Seat Numbering</div>
-          <div className="text-sm font-medium">
+        <Card className="panel-compact">
+          <div className="text-xs md:text-sm text-gray-600">Seat Numbering</div>
+          <div className="text-xs md:text-sm font-medium">
             {run.seat_numbering === 'row_major' ? 'Row Major' : 'Column Major'}
           </div>
         </Card>
       </div>
 
       {/* Hall Tabs */}
-      <div className="mb-4 flex space-x-2 overflow-x-auto">
+      <div className="mb-3 flex space-x-1.5 overflow-x-auto">
         {halls.map((hall) => (
           <button
             key={hall.id}

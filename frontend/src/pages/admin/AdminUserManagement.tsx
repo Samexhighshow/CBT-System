@@ -101,14 +101,14 @@ const AdminUserManagement: React.FC = () => {
   };
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
+    <div className="app-shell section-shell">
+      <div className="space-y-4">
       {/* Header with Role Permissions Button */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Admin User Management</h2>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+        <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Admin User Management</h2>
         <button
           onClick={() => setShowRoleDetails(!showRoleDetails)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs md:text-sm"
         >
           {showRoleDetails ? 'Hide' : 'View'} Role Permissions
         </button>
@@ -116,51 +116,51 @@ const AdminUserManagement: React.FC = () => {
 
       {/* Role Permissions Card */}
       {showRoleDetails && (
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Role Module Access</h2>
+        <Card className="panel-compact">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 mb-3">
+            <h2 className="text-lg md:text-xl font-semibold">Role Module Access</h2>
             <button
               onClick={() => setEditMode(!editMode)}
-              className="px-3 py-2 text-sm border rounded hover:bg-gray-50"
+              className="px-2 py-1.5 text-xs md:text-sm border rounded hover:bg-gray-50"
             >
               {editMode ? 'Done' : 'Edit Role Permissions'}
             </button>
           </div>
-          <p className="text-sm text-gray-600 mb-4">
+          <p className="text-xs md:text-sm text-gray-600 mb-3">
             This table shows which modules each role can access in the system.
           </p>
           <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-200">
+            <table className="min-w-full border border-gray-200 text-sm">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="p-3 border-b text-left font-semibold text-sm">Role</th>
-                  <th className="p-3 border-b text-left font-semibold text-sm">Accessible Modules</th>
+                  <th className="p-2 border-b text-left font-semibold text-xs">Role</th>
+                  <th className="p-2 border-b text-left font-semibold text-xs">Accessible Modules</th>
                 </tr>
               </thead>
               <tbody>
                 {Object.entries(roleModulesState).map(([role, modules]) => (
                   <tr key={role} className="hover:bg-gray-50">
-                    <td className="p-3 border-b">
-                      <span className="font-medium text-blue-600">{role}</span>
+                    <td className="p-2 border-b">
+                      <span className="font-medium text-blue-600 text-xs md:text-sm">{role}</span>
                     </td>
-                    <td className="p-3 border-b">
+                    <td className="p-2 border-b">
                       {!editMode ? (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1">
                           {modules.map(module => (
                             <span
                               key={module}
-                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium"
+                              className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium"
                             >
                               {module}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
                           {availableModules.map(m => {
                             const checked = modules.includes(m);
                             return (
-                              <label key={m} className="flex items-center gap-2 text-xs border rounded px-2 py-1">
+                              <label key={m} className="flex items-center gap-1 text-xs border rounded px-1.5 py-1">
                                 <input
                                   type="checkbox"
                                   checked={checked}
@@ -179,7 +179,7 @@ const AdminUserManagement: React.FC = () => {
                                   }}
                                   aria-label={`Allow ${role} to access ${m}`}
                                 />
-                                {m}
+                                <span>{m}</span>
                               </label>
                             );
                           })}
@@ -192,9 +192,9 @@ const AdminUserManagement: React.FC = () => {
             </table>
           </div>
           {editMode && (
-            <div className="mt-4 flex justify-end">
+            <div className="mt-3 flex justify-end">
               <button
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs md:text-sm"
                 onClick={async () => {
                   try {
                     await api.post('/admin/roles/modules', roleModulesState);

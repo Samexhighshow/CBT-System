@@ -124,20 +124,20 @@ const AllocationHistory: React.FC = () => {
   }
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
+    <div className="app-shell section-shell">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Allocation History</h1>
-        <p className="text-gray-600">View past seat allocation runs</p>
+      <div className="mb-4">
+        <h1 className="text-2xl md:text-3xl font-bold">Allocation History</h1>
+        <p className="text-xs md:text-sm text-gray-600 mt-1">View past seat allocation runs</p>
       </div>
 
       {error && <Alert type="error" message={error} onClose={() => setError('')} />}
 
       {/* Exam Selector */}
-      <Card className="p-4 mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Select Exam</label>
+      <Card className="panel-compact mb-4">
+        <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1.5">Select Exam</label>
         <select
-          className="w-full md:w-96 border border-gray-300 rounded-md px-3 py-2"
+          className="w-full md:w-96 border border-gray-300 rounded-md px-2 py-1.5 text-sm"
           value={selectedExam || ''}
           onChange={(e) => setSelectedExam(parseInt(e.target.value))}
           title="Select exam to view allocation history"
@@ -155,26 +155,26 @@ const AllocationHistory: React.FC = () => {
         <>
           {/* Summary Stats */}
           {allocations.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <Card className="p-4">
-                <div className="text-sm text-gray-600">Total Runs</div>
-                <div className="text-2xl font-bold">{allocations.length}</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 mb-4">
+              <Card className="panel-compact">
+                <div className="text-xs md:text-sm text-gray-600">Total Runs</div>
+                <div className="text-lg md:text-xl font-bold">{allocations.length}</div>
               </Card>
-              <Card className="p-4">
-                <div className="text-sm text-gray-600">Latest Run</div>
-                <div className="text-sm font-medium">
+              <Card className="panel-compact">
+                <div className="text-xs md:text-sm text-gray-600">Latest Run</div>
+                <div className="text-xs md:text-sm font-medium">
                   {formatDate(allocations[0]?.created_at || '')}
                 </div>
               </Card>
-              <Card className="p-4">
-                <div className="text-sm text-gray-600">Completed Runs</div>
-                <div className="text-2xl font-bold text-green-600">
+              <Card className="panel-compact">
+                <div className="text-xs md:text-sm text-gray-600">Completed Runs</div>
+                <div className="text-lg md:text-xl font-bold text-green-600">
                   {allocations.filter((a) => a.completed_at).length}
                 </div>
               </Card>
-              <Card className="p-4">
-                <div className="text-sm text-gray-600">Success Rate</div>
-                <div className="text-2xl font-bold text-blue-600">
+              <Card className="panel-compact">
+                <div className="text-xs md:text-sm text-gray-600">Success Rate</div>
+                <div className="text-lg md:text-xl font-bold text-blue-600">
                   {allocations.length > 0
                     ? Math.round(
                         (allocations.filter(
