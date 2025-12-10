@@ -296,40 +296,37 @@ const StudentRegistrationForm: React.FC = () => {
   // Success Screen
   if (showSuccess && registrationNumber) {
     return (
-      <div className="min-h-screen w-full bg-gradient-to-br from-green-50 via-white to-blue-50 flex items-center justify-center py-12 px-4">
-        <Card className="w-full max-w-md shadow-2xl">
+      <div className="min-h-screen w-full bg-gradient-to-br from-green-50 via-white to-blue-50 flex items-center justify-center py-3 px-3">
+        <Card className="w-full max-w-sm shadow-lg p-3">
           <div className="text-center">
-            <div className="mb-6">
-              <div className="mx-auto w-20 h-20 bg-green-100 rounded-full flex items-center justify-center shadow-lg">
-                <i className='bx bx-check text-5xl text-green-600'></i>
+            <div className="mb-2">
+              <div className="mx-auto w-11 h-11 bg-green-100 rounded-full flex items-center justify-center shadow">
+                <i className='bx bx-check text-xl text-green-600'></i>
               </div>
             </div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-3">Registration Successful!</h1>
-            <p className="text-gray-600 mb-8 text-lg">Your student account has been created successfully.</p>
+            <h1 className="text-lg md:text-xl font-bold text-gray-900 mb-1">Registration Successful!</h1>
+            <p className="text-gray-600 mb-2.5 text-xs">Your account has been created successfully.</p>
 
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl p-6 mb-8">
-              <p className="text-sm text-gray-700 mb-2 font-medium">Your Student Registration Number:</p>
-              <p className="text-3xl font-bold text-blue-600 mb-4 select-all tracking-wider">{registrationNumber}</p>
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded p-2.5 mb-2.5">
+              <p className="text-xs text-gray-700 mb-0.5 font-medium">Your Registration Number:</p>
+              <p className="text-lg md:text-xl font-bold text-blue-600 mb-1.5 select-all tracking-wide">{registrationNumber}</p>
               <p className="text-xs text-gray-600">
-                <i className='bx bx-envelope'></i> This registration number has been sent to: <strong>{email}</strong>
+                <i className='bx bx-envelope text-xs'></i> Sent to: <strong>{email}</strong>
               </p>
             </div>
 
-            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl p-4 mb-8">
-              <p className="text-sm text-yellow-800 font-medium mb-2">
-                <i className='bx bx-key'></i> <strong>To login:</strong>
-              </p>
-              <p className="text-sm text-yellow-700">
-                Use your <strong>Registration Number</strong> and <strong>Password</strong>
+            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded p-2 mb-2.5">
+              <p className="text-xs text-yellow-800 font-medium">
+                <i className='bx bx-key text-xs'></i> Use your <strong>Registration Number</strong> and <strong>Password</strong> to login
               </p>
             </div>
 
-            <Button onClick={handleLoginRedirect} fullWidth className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 rounded-lg transition-all duration-300 shadow-lg">
+            <Button onClick={handleLoginRedirect} fullWidth className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-1.5 rounded text-xs transition-all duration-300 shadow">
               Proceed to Login
             </Button>
 
-            <p className="mt-6 text-xs text-gray-500">
-              <i className='bx bx-save'></i> Please save your registration number for future reference.
+            <p className="mt-2.5 text-xs text-gray-500">
+              <i className='bx bx-save text-xs'></i> Save your registration number for future reference
             </p>
           </div>
         </Card>
@@ -338,60 +335,62 @@ const StudentRegistrationForm: React.FC = () => {
   }
 
   const renderProgressSteps = () => (
-    <div className="mb-10">
-      <div className="flex items-center justify-between mb-6">
-        {[1, 2, 3].map((step) => (
-          <div key={step} className="flex items-center flex-1">
-            <div className={`flex items-center justify-center w-12 h-12 rounded-full font-bold text-sm transition-all duration-300 ${
-              currentStep >= step
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg scale-110'
-                : 'bg-gray-200 text-gray-500'
-            }`}>
-              {currentStep > step ? <i className='bx bx-check'></i> : step}
+    <div className="mb-3">
+      {/* Step Circles with Lines */}
+      <div className="relative flex items-center justify-center mb-2">
+        <div className="absolute inset-x-0 top-1/2 h-px bg-gray-200 -translate-y-1/2"></div>
+        <div className="relative flex justify-between w-full max-w-xs mx-auto px-4">
+          {[
+            { num: 1, label: 'Student', icon: 'bx-user' },
+            { num: 2, label: 'Guardian', icon: 'bx-group' },
+            { num: 3, label: 'Security', icon: 'bx-shield-alt' }
+          ].map((step) => (
+            <div key={step.num} className="flex flex-col items-center">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs transition-all duration-300 ${
+                currentStep >= step.num
+                  ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md ring-4 ring-blue-100'
+                  : 'bg-white text-gray-400 border-2 border-gray-200'
+              }`}>
+                {currentStep > step.num ? (
+                  <i className='bx bx-check text-base'></i>
+                ) : (
+                  step.num
+                )}
+              </div>
+              <div className={`mt-1.5 text-center transition-colors duration-300 ${
+                currentStep === step.num ? 'text-blue-600' : 'text-gray-500'
+              }`}>
+                <i className={`bx ${step.icon} text-sm block mb-0.5`}></i>
+                <span className="text-xs font-medium">{step.label}</span>
+              </div>
             </div>
-            {step < 3 && (
-              <div className={`flex-1 h-1.5 mx-3 transition-all duration-300 ${
-                currentStep > step ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gray-200'
-              }`} />
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="flex justify-between text-xs font-semibold text-gray-700">
-        <span className={`transition-colors duration-300 ${currentStep === 1 ? 'text-blue-600' : 'text-gray-600'}`}>
-          <i className='bx bx-user'></i> Student Profile
-        </span>
-        <span className={`transition-colors duration-300 ${currentStep === 2 ? 'text-blue-600' : 'text-gray-600'}`}>
-          <i className='bx bx-group'></i> Guardian Info
-        </span>
-        <span className={`transition-colors duration-300 ${currentStep === 3 ? 'text-blue-600' : 'text-gray-600'}`}>
-          <i className='bx bx-shield-alt'></i> Security
-        </span>
+          ))}
+        </div>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-12 px-4 sm:px-6">
-      <div className="max-w-3xl mx-auto">
+    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-3 px-3">
+      <div className="max-w-xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-10">
-          <div className="inline-block mb-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
-              <i className='bx bx-book-open text-white text-3xl'></i>
+        <div className="text-center mb-3">
+          <div className="inline-block mb-1">
+            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center shadow">
+              <i className='bx bx-book-open text-white text-base'></i>
             </div>
           </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-2">Student Registration</h1>
-          <p className="text-gray-600 text-lg">Complete all steps to create your account</p>
+          <h1 className="text-lg md:text-xl font-bold text-gray-900">Student Registration</h1>
+          <p className="text-gray-600 text-xs mt-0.5">Complete all steps to create your account</p>
         </div>
 
         {/* Main Card */}
-        <Card className="shadow-2xl border-0">
+        <Card className="shadow-lg border-0 p-2.5 md:p-3">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
+            <div className="mb-2.5 p-2 bg-red-50 border-l-4 border-red-500 rounded">
               <div className="flex items-center">
-                <i className='bx bx-error-circle text-red-500 text-2xl mr-3'></i>
-                <span className="text-red-700 font-medium">{error}</span>
+                <i className='bx bx-error-circle text-red-500 text-base mr-1.5'></i>
+                <span className="text-red-700 text-xs font-medium">{error}</span>
               </div>
             </div>
           )}
@@ -400,23 +399,23 @@ const StudentRegistrationForm: React.FC = () => {
 
           {/* Step 1: Student Profile */}
           {currentStep === 1 && (
-            <div className="space-y-8">
+            <div className="space-y-2.5">
               {/* Section Header */}
-              <div className="pb-6 border-b-2 border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                  <i className='bx bx-user-circle text-blue-600 text-3xl mr-3'></i>
+              <div className="pb-2 border-b border-gray-200">
+                <h2 className="text-sm md:text-base font-bold text-gray-900 flex items-center">
+                  <i className='bx bx-user-circle text-blue-600 text-base mr-1'></i>
                   Student Profile
                 </h2>
-                <p className="text-gray-600 mt-2">Enter your basic information</p>
+                <p className="text-gray-600 mt-0.5 text-xs">Enter your basic information</p>
               </div>
 
               {/* Name Section */}
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-                  <i className='bx bx-id-card text-blue-600 mr-2'></i>
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-2.5 rounded border border-blue-100">
+                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
+                  <i className='bx bx-id-card text-blue-600 mr-1 text-sm'></i>
                   Full Name
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   <Input
                     label="First Name"
                     type="text"
@@ -450,9 +449,9 @@ const StudentRegistrationForm: React.FC = () => {
               </div>
 
               {/* Contact Information */}
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border border-green-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-                  <i className='bx bx-envelope text-green-600 mr-2'></i>
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-2.5 rounded border border-green-100">
+                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
+                  <i className='bx bx-envelope text-green-600 mr-1 text-sm'></i>
                   Contact Information
                 </h3>
                 <Input
@@ -470,12 +469,12 @@ const StudentRegistrationForm: React.FC = () => {
               </div>
 
               {/* Personal Details */}
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-                  <i className='bx bx-calendar text-purple-600 mr-2'></i>
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-2.5 rounded border border-purple-100">
+                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
+                  <i className='bx bx-calendar text-purple-600 mr-1 text-sm'></i>
                   Personal Details
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Input
                     label="Date of Birth"
                     type="date"
@@ -485,14 +484,14 @@ const StudentRegistrationForm: React.FC = () => {
                     required
                     fullWidth
                   />
-                  <div className="flex flex-col gap-2 w-full">
-                    <label className="text-sm font-semibold text-gray-700">Gender *</label>
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-xs font-semibold text-gray-700">Gender *</label>
                     <select
                       name="gender"
                       value={step1Data.gender}
                       onChange={handleStep1Change}
                       required
-                      className="px-4 py-3 border-2 border-gray-300 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent hover:border-purple-300"
+                      className="px-2 py-1.5 border-2 border-gray-300 rounded text-xs transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent hover:border-purple-300"
                     >
                       <option value="">Select Gender</option>
                       <option value="male">Male</option>
@@ -504,16 +503,16 @@ const StudentRegistrationForm: React.FC = () => {
               </div>
 
               {/* Academic Information */}
-              <div className="bg-gradient-to-br from-orange-50 to-yellow-50 p-6 rounded-xl border border-orange-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-                  <i className='bx bx-book text-orange-600 mr-2'></i>
+              <div className="bg-gradient-to-br from-orange-50 to-yellow-50 p-2.5 rounded border border-orange-100">
+                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
+                  <i className='bx bx-book text-orange-600 mr-1 text-sm'></i>
                   Academic Information
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="flex flex-col gap-2 w-full">
-                    <label className="text-sm font-semibold text-gray-700">Class Level *</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-xs font-semibold text-gray-700">Class Level *</label>
                     {loadingClasses ? (
-                      <div className="text-sm text-blue-600 py-3">
+                      <div className="text-xs text-blue-600 py-1.5">
                         <i className='bx bx-loader-alt animate-spin mr-2'></i>
                         Loading classes...
                       </div>
@@ -574,20 +573,20 @@ const StudentRegistrationForm: React.FC = () => {
               </div>
 
               {/* Navigation Buttons */}
-              <div className="flex justify-end gap-4 pt-8 border-t border-gray-200">
+              <div className="flex justify-end gap-2 pt-2.5 border-t border-gray-200">
                 <Link to="/student-login">
-                  <Button variant="outline" className="px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
-                    <i className='bx bx-left-arrow-alt mr-2'></i>
+                  <Button variant="outline" className="px-3 py-1.5 rounded text-xs font-semibold hover:bg-gray-100 transition-colors">
+                    <i className='bx bx-left-arrow-alt mr-1 text-sm'></i>
                     Cancel
                   </Button>
                 </Link>
                 <Button 
                   onClick={handleNextStep} 
                   disabled={loadingClasses}
-                  className="px-8 py-3 rounded-lg font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white disabled:opacity-50 transition-all"
+                  className="px-3 py-1.5 rounded text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white disabled:opacity-50 transition-all"
                 >
                   Next
-                  <i className='bx bx-right-arrow-alt ml-2'></i>
+                  <i className='bx bx-right-arrow-alt ml-1 text-sm'></i>
                 </Button>
               </div>
             </div>
@@ -595,23 +594,23 @@ const StudentRegistrationForm: React.FC = () => {
 
           {/* Step 2: Guardian Profile */}
           {currentStep === 2 && (
-            <div className="space-y-8">
+            <div className="space-y-2.5">
               {/* Section Header */}
-              <div className="pb-6 border-b-2 border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                  <i className='bx bx-group text-green-600 text-3xl mr-3'></i>
+              <div className="pb-2 border-b border-gray-200">
+                <h2 className="text-sm md:text-base font-bold text-gray-900 flex items-center">
+                  <i className='bx bx-group text-green-600 text-base mr-1'></i>
                   Guardian Profile
                 </h2>
-                <p className="text-gray-600 mt-2">Tell us about your guardian/parent</p>
+                <p className="text-gray-600 mt-0.5 text-xs">Tell us about your guardian/parent</p>
               </div>
 
               {/* Guardian Name Section */}
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border border-green-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-                  <i className='bx bx-id-card text-green-600 mr-2'></i>
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-2.5 rounded border border-green-100">
+                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
+                  <i className='bx bx-id-card text-green-600 mr-1 text-sm'></i>
                   Guardian Name
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Input
                     label="Guardian First Name"
                     type="text"
@@ -636,12 +635,12 @@ const StudentRegistrationForm: React.FC = () => {
               </div>
 
               {/* Guardian Details Section */}
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-                  <i className='bx bx-info-circle text-blue-600 mr-2'></i>
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-2.5 rounded border border-blue-100">
+                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
+                  <i className='bx bx-info-circle text-blue-600 mr-1 text-sm'></i>
                   Guardian Details
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Input
                     label="Relationship"
                     type="text"
@@ -664,15 +663,15 @@ const StudentRegistrationForm: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
-                  <div className="flex flex-col gap-2 w-full">
-                    <label className="text-sm font-semibold text-gray-700">Guardian Gender *</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-xs font-semibold text-gray-700">Guardian Gender *</label>
                     <select
                       name="guardian_gender"
                       value={step2Data.guardian_gender}
                       onChange={handleStep2Change}
                       required
-                      className="px-4 py-3 border-2 border-gray-300 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:border-blue-300"
+                      className="px-2 py-1.5 border-2 border-gray-300 rounded text-xs transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:border-blue-300"
                     >
                       <option value="">Select Gender</option>
                       <option value="male">Male</option>
@@ -694,21 +693,21 @@ const StudentRegistrationForm: React.FC = () => {
               </div>
 
               {/* Navigation Buttons */}
-              <div className="flex justify-between gap-4 pt-8 border-t border-gray-200">
+              <div className="flex justify-between gap-2 pt-2.5 border-t border-gray-200">
                 <Button 
                   onClick={handlePrevStep}
                   variant="outline"
-                  className="px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+                  className="px-3 py-1.5 rounded text-xs font-semibold hover:bg-gray-100 transition-colors"
                 >
-                  <i className='bx bx-left-arrow-alt mr-2'></i>
+                  <i className='bx bx-left-arrow-alt mr-1 text-sm'></i>
                   Back
                 </Button>
                 <Button 
                   onClick={handleNextStep}
-                  className="px-8 py-3 rounded-lg font-semibold bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white transition-all"
+                  className="px-3 py-1.5 rounded text-xs font-semibold bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white transition-all"
                 >
                   Next
-                  <i className='bx bx-right-arrow-alt ml-2'></i>
+                  <i className='bx bx-right-arrow-alt ml-1 text-sm'></i>
                 </Button>
               </div>
             </div>
@@ -716,23 +715,23 @@ const StudentRegistrationForm: React.FC = () => {
 
           {/* Step 3: Security Setup */}
           {currentStep === 3 && (
-            <div className="space-y-8">
+            <div className="space-y-2.5">
               {/* Section Header */}
-              <div className="pb-6 border-b-2 border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                  <i className='bx bx-shield-alt text-purple-600 text-3xl mr-3'></i>
+              <div className="pb-2 border-b border-gray-200">
+                <h2 className="text-sm md:text-base font-bold text-gray-900 flex items-center">
+                  <i className='bx bx-shield-alt text-purple-600 text-base mr-1'></i>
                   Security Setup
                 </h2>
-                <p className="text-gray-600 mt-2">Create a strong password for your account</p>
+                <p className="text-gray-600 mt-0.5 text-xs">Create a strong password for your account</p>
               </div>
 
               {/* Password Section */}
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-6 flex items-center">
-                  <i className='bx bx-lock-alt text-purple-600 mr-2'></i>
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-2.5 rounded border border-purple-100">
+                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
+                  <i className='bx bx-lock-alt text-purple-600 mr-1 text-sm'></i>
                   Create Password
                 </h3>
-                <div className="space-y-5">
+                <div className="space-y-2">
                   <Input
                     label="Password"
                     type="password"
@@ -755,11 +754,11 @@ const StudentRegistrationForm: React.FC = () => {
                   />
 
                   {/* Password Requirements */}
-                  <div className="bg-white rounded-lg p-4 border border-gray-200">
-                    <p className="text-sm font-semibold text-gray-700 mb-3">Password Requirements:</p>
-                    <ul className="space-y-2 text-sm text-gray-600">
+                  <div className="bg-white rounded p-2 border border-gray-200">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">Password Requirements:</p>
+                    <ul className="space-y-0.5 text-xs text-gray-600">
                       <li className={step3Data.password.length >= 8 ? 'text-green-600' : 'text-gray-600'}>
-                        <i className={`bx ${step3Data.password.length >= 8 ? 'bx-check-circle' : 'bx-circle'} mr-2`}></i>
+                        <i className={`bx ${step3Data.password.length >= 8 ? 'bx-check-circle' : 'bx-circle'} mr-1`}></i>
                         At least 8 characters long
                       </li>
                     </ul>
@@ -768,29 +767,29 @@ const StudentRegistrationForm: React.FC = () => {
               </div>
 
               {/* Navigation Buttons */}
-              <div className="flex justify-between gap-4 pt-8 border-t border-gray-200">
+              <div className="flex justify-between gap-2 pt-2.5 border-t border-gray-200">
                 <Button 
                   onClick={handlePrevStep}
                   variant="outline"
-                  className="px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+                  className="px-3 py-1.5 rounded text-xs font-semibold hover:bg-gray-100 transition-colors"
                 >
-                  <i className='bx bx-left-arrow-alt mr-2'></i>
+                  <i className='bx bx-left-arrow-alt mr-1 text-sm'></i>
                   Back
                 </Button>
                 <Button 
                   onClick={handleFinalSubmit}
                   disabled={loading}
-                  className="px-8 py-3 rounded-lg font-semibold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white disabled:opacity-50 transition-all"
+                  className="px-3 py-1.5 rounded text-xs font-semibold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white disabled:opacity-50 transition-all"
                 >
                   {loading ? (
                     <>
-                      <i className='bx bx-loader-alt animate-spin mr-2'></i>
-                      Creating Account...
+                      <i className='bx bx-loader-alt animate-spin mr-1 text-sm'></i>
+                      Creating...
                     </>
                   ) : (
                     <>
-                      Complete Registration
-                      <i className='bx bx-right-arrow-alt ml-2'></i>
+                      Complete
+                      <i className='bx bx-right-arrow-alt ml-1 text-sm'></i>
                     </>
                   )}
                 </Button>

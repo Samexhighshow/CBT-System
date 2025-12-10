@@ -131,12 +131,12 @@ const AdminOverview: React.FC = () => {
   ];
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="app-shell section-shell">
       {/* Header */}
-      <div>
+      <div className="mb-5">
         <h1
           className={
-            `text-3xl font-bold ` +
+            `text-2xl md:text-3xl font-bold mb-1 ` +
             (user?.name?.toLowerCase() === 'maximus'
               ? 'text-blue-600'
               : user?.name?.toLowerCase() === 'mavis'
@@ -146,79 +146,79 @@ const AdminOverview: React.FC = () => {
         >
           {user?.name ?? 'Admin'}
         </h1>
-        <p className="text-gray-600 mt-2">Welcome back! Here's an overview of your system.</p>
+        <p className="text-sm md:text-base text-gray-600">Welcome back! Overview of your system.</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white panel-compact">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-blue-100 text-sm">Total Students</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.total_students}</h3>
-              <p className="text-blue-100 text-xs mt-1">{stats.active_students} active</p>
+              <p className="text-blue-100 text-xs md:text-sm">Total Students</p>
+              <h3 className="text-2xl md:text-3xl font-bold mt-1">{stats.total_students}</h3>
+              <p className="text-blue-100 text-xs mt-0.5">{stats.active_students} active</p>
             </div>
-            <i className='bx bx-group text-6xl opacity-80'></i>
+            <i className='bx bx-group text-4xl md:text-5xl opacity-80'></i>
           </div>
         </Card>
 
-        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white panel-compact">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-green-100 text-sm">Total Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.total_exams}</h3>
-              <p className="text-green-100 text-xs mt-1">{stats.published_exams} published</p>
+              <p className="text-green-100 text-xs md:text-sm">Total Exams</p>
+              <h3 className="text-2xl md:text-3xl font-bold mt-1">{stats.total_exams}</h3>
+              <p className="text-green-100 text-xs mt-0.5">{stats.published_exams} published</p>
             </div>
-            <i className='bx bx-book-content text-6xl opacity-80'></i>
+            <i className='bx bx-book-content text-4xl md:text-5xl opacity-80'></i>
           </div>
         </Card>
 
-        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white panel-compact">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-purple-100 text-sm">Total Attempts</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.total_attempts}</h3>
+              <p className="text-purple-100 text-xs md:text-sm">Total Attempts</p>
+              <h3 className="text-2xl md:text-3xl font-bold mt-1">{stats.total_attempts}</h3>
             </div>
-            <i className='bx bx-edit-alt text-6xl opacity-80'></i>
+            <i className='bx bx-edit-alt text-4xl md:text-5xl opacity-80'></i>
           </div>
         </Card>
 
-        <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
+        <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white panel-compact">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-orange-100 text-sm">Subjects</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.total_subjects}</h3>
+              <p className="text-orange-100 text-xs md:text-sm">Subjects</p>
+              <h3 className="text-2xl md:text-3xl font-bold mt-1">{stats.total_subjects}</h3>
             </div>
-            <i className='bx bx-book text-6xl opacity-80'></i>
+            <i className='bx bx-book text-4xl md:text-5xl opacity-80'></i>
           </div>
         </Card>
 
-        <Card className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white">
+        <Card className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white panel-compact">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-indigo-100 text-sm">Departments</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.total_departments}</h3>
+              <p className="text-indigo-100 text-xs md:text-sm">Departments</p>
+              <h3 className="text-2xl md:text-3xl font-bold mt-1">{stats.total_departments}</h3>
             </div>
-            <i className='bx bx-bar-chart-alt-2 text-6xl opacity-80'></i>
+            <i className='bx bx-bar-chart-alt-2 text-4xl md:text-5xl opacity-80'></i>
           </div>
         </Card>
 
-        <Card className="bg-gradient-to-br from-pink-500 to-pink-600 text-white">
+        <Card className="bg-gradient-to-br from-pink-500 to-pink-600 text-white panel-compact">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-pink-100 text-sm">Ongoing Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.ongoing_exams}</h3>
+              <p className="text-pink-100 text-xs md:text-sm">Ongoing Exams</p>
+              <h3 className="text-2xl md:text-3xl font-bold mt-1">{stats.ongoing_exams}</h3>
             </div>
-            <i className='bx bx-graduation text-6xl opacity-80'></i>
+            <i className='bx bx-graduation text-4xl md:text-5xl opacity-80'></i>
           </div>
         </Card>
       </div>
 
       {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
-        <Card>
-          <h3 className="text-lg font-semibold mb-4">Student Distribution</h3>
-          <ResponsiveContainer width="100%" height={300}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+        <Card className="panel-compact">
+          <h3 className="text-sm md:text-base font-semibold mb-3">Student Distribution</h3>
+          <ResponsiveContainer width="100%" height={250}>
             <PieChart>
               <Pie
                 data={[
@@ -229,7 +229,7 @@ const AdminOverview: React.FC = () => {
                 cy="50%"
                 labelLine={false}
                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
+                outerRadius={70}
                 fill="#8884d8"
                 dataKey="value"
               >
@@ -241,9 +241,9 @@ const AdminOverview: React.FC = () => {
           </ResponsiveContainer>
         </Card>
 
-        <Card>
-          <h3 className="text-lg font-semibold mb-4">System Overview</h3>
-          <ResponsiveContainer width="100%" height={300}>
+        <Card className="panel-compact">
+          <h3 className="text-sm md:text-base font-semibold mb-3">System Overview</h3>
+          <ResponsiveContainer width="100%" height={250}>
             <BarChart
               data={[
                 { name: 'Students', value: stats.total_students },
@@ -263,25 +263,25 @@ const AdminOverview: React.FC = () => {
       </div>
 
       {/* Modules Section (hidden on small screens) */}
-      <div className="mt-8 hidden md:block">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Management Modules</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="mt-6 hidden md:block">
+        <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-3">Management Modules</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {modules.map((module) => (
             <Card
               key={module.path}
-              className="cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+              className="panel-compact cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
               onClick={() => navigate(module.path)}
             >
-              <div className="flex items-start space-x-4">
-                <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center w-16 h-16`}>
-                  <i className={`bx ${module.icon} text-3xl`}></i>
+              <div className="flex items-start space-x-3">
+                <div className={`${module.color} text-white p-2 rounded-lg flex items-center justify-center w-14 h-14 flex-shrink-0`}>
+                  <i className={`bx ${module.icon} text-2xl`}></i>
                 </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900">{module.title}</h3>
-                  <p className="text-gray-600 text-sm mt-1">{module.description}</p>
-                  <button className="text-blue-600 text-sm font-medium mt-3 hover:text-blue-700 flex items-center space-x-1">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm md:text-base font-semibold text-gray-900">{module.title}</h3>
+                  <p className="text-gray-600 text-xs md:text-sm mt-0.5">{module.description}</p>
+                  <button className="text-blue-600 text-xs md:text-sm font-medium mt-2 hover:text-blue-700 flex items-center space-x-1">
                     <span>Open Module</span>
-                    <i className='bx bx-right-arrow-alt'></i>
+                    <i className='bx bx-right-arrow-alt text-xs'></i>
                   </button>
                 </div>
               </div>
@@ -291,32 +291,32 @@ const AdminOverview: React.FC = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="mt-6">
+        <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-3">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <button
             onClick={() => navigate('/admin/exams')}
-            className="bg-white border-2 border-blue-500 text-blue-600 px-6 py-4 rounded-lg font-semibold hover:bg-blue-50 transition"
+            className="bg-white border-2 border-blue-500 text-blue-600 px-4 py-3 rounded-lg font-semibold text-sm md:text-base hover:bg-blue-50 transition"
           >
             + Create New Exam
           </button>
           <button
             onClick={() => navigate('/admin/questions')}
-            className="bg-white border-2 border-green-500 text-green-600 px-6 py-4 rounded-lg font-semibold hover:bg-green-50 transition"
+            className="bg-white border-2 border-green-500 text-green-600 px-4 py-3 rounded-lg font-semibold text-sm md:text-base hover:bg-green-50 transition"
           >
             + Add Questions
           </button>
           <button
             onClick={() => navigate('/admin/students')}
-            className="bg-white border-2 border-purple-500 text-purple-600 px-6 py-4 rounded-lg font-semibold hover:bg-purple-50 transition"
+            className="bg-white border-2 border-purple-500 text-purple-600 px-4 py-3 rounded-lg font-semibold text-sm md:text-base hover:bg-purple-50 transition"
           >
             + Register Student
           </button>
           <button
             onClick={() => navigate('/admin/results')}
-            className="bg-white border-2 border-indigo-500 text-indigo-600 px-6 py-4 rounded-lg font-semibold hover:bg-indigo-50 transition flex items-center justify-center space-x-2"
+            className="bg-white border-2 border-indigo-500 text-indigo-600 px-4 py-3 rounded-lg font-semibold text-sm md:text-base hover:bg-indigo-50 transition flex items-center justify-center space-x-2"
           >
-            <i className='bx bx-bar-chart-alt-2'></i>
+            <i className='bx bx-bar-chart-alt-2 text-lg'></i>
             <span>View Results</span>
           </button>
         </div>

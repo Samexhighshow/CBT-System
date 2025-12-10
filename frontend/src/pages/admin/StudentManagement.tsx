@@ -166,68 +166,69 @@ const StudentManagement: React.FC = () => {
   };
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="app-shell section-shell">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Student Management</h1>
-          <p className="text-gray-600 mt-2">View and manage students</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Student Management</h1>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">View and manage students</p>
         </div>
-        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <i className='bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400'></i>
+        <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-48">
+            <i className='bx bx-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm'></i>
             <input
               type="text"
               placeholder="Search students..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Search students"
             />
           </div>
-          <Button onClick={() => setShowRegisterModal(true)} className="flex items-center gap-2">
-            <i className='bx bx-user-plus'></i>
-            <span>Register Student</span>
+          <Button onClick={() => setShowRegisterModal(true)} className="flex items-center gap-2 text-xs md:text-sm py-1.5 px-3">
+            <i className='bx bx-user-plus text-sm'></i>
+            <span className="hidden md:inline">Register Student</span>
+            <span className="md:hidden">Register</span>
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <Card className="bg-purple-50">
-          <p className="text-sm text-gray-600">Total Students</p>
-          <h3 className="text-2xl font-bold text-purple-600 mt-1">{loading ? '...' : stats.total}</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 mb-4">
+        <Card className="bg-purple-50 panel-compact">
+          <p className="text-xs md:text-sm text-gray-600">Total Students</p>
+          <h3 className="text-lg md:text-xl font-bold text-purple-600 mt-1">{loading ? '...' : stats.total}</h3>
         </Card>
-        <Card className="bg-blue-50">
-          <p className="text-sm text-gray-600">JSS Students</p>
-          <h3 className="text-2xl font-bold text-blue-600 mt-1">{loading ? '...' : stats.jss}</h3>
+        <Card className="bg-blue-50 panel-compact">
+          <p className="text-xs md:text-sm text-gray-600">JSS Students</p>
+          <h3 className="text-lg md:text-xl font-bold text-blue-600 mt-1">{loading ? '...' : stats.jss}</h3>
         </Card>
-        <Card className="bg-green-50">
-          <p className="text-sm text-gray-600">SSS Students</p>
-          <h3 className="text-2xl font-bold text-green-600 mt-1">{loading ? '...' : stats.sss}</h3>
+        <Card className="bg-green-50 panel-compact">
+          <p className="text-xs md:text-sm text-gray-600">SSS Students</p>
+          <h3 className="text-lg md:text-xl font-bold text-green-600 mt-1">{loading ? '...' : stats.sss}</h3>
         </Card>
-        <Card className="bg-indigo-50">
-          <p className="text-sm text-gray-600">Active</p>
-          <h3 className="text-2xl font-bold text-indigo-600 mt-1">{loading ? '...' : stats.active}</h3>
+        <Card className="bg-indigo-50 panel-compact">
+          <p className="text-xs md:text-sm text-gray-600">Active</p>
+          <h3 className="text-lg md:text-xl font-bold text-indigo-600 mt-1">{loading ? '...' : stats.active}</h3>
         </Card>
       </div>
 
       {/* Registration Options */}
-      <Card>
-        <h2 className="text-xl font-semibold mb-4">Register Students</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div onClick={() => setShowRegisterModal(true)} className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 cursor-pointer transition">
-            <div className="text-4xl mb-3">
-              <i className='bx bx-user-plus text-4xl'></i>
+      <Card className="panel-compact">
+        <h2 className="text-lg md:text-xl font-semibold mb-3">Register Students</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div onClick={() => setShowRegisterModal(true)} className="border-2 border-dashed border-gray-300 rounded-lg p-4 md:p-6 text-center hover:border-blue-500 cursor-pointer transition">
+            <div className="text-3xl md:text-4xl mb-2">
+              <i className='bx bx-user-plus text-3xl md:text-4xl'></i>
             </div>
-            <h3 className="font-semibold mb-2">Single Registration</h3>
-            <p className="text-sm text-gray-600">Register one student at a time</p>
+            <h3 className="font-semibold text-sm md:text-base mb-1">Single Registration</h3>
+            <p className="text-xs md:text-sm text-gray-600">Register one student at a time</p>
           </div>
-          <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 cursor-pointer transition">
+          <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 md:p-6 text-center hover:border-green-500 cursor-pointer transition">
             <input type="file" accept=".csv" onChange={handleBulkUpload} className="hidden" />
-            <div className="text-4xl mb-3">
-              <i className='bx bx-spreadsheet text-4xl'></i>
+            <div className="text-3xl md:text-4xl mb-2">
+              <i className='bx bx-spreadsheet text-3xl md:text-4xl'></i>
             </div>
-            <h3 className="font-semibold mb-2">Bulk Upload</h3>
-            <p className="text-sm text-gray-600">Import from Excel/CSV</p>
+            <h3 className="font-semibold text-sm md:text-base mb-1">Bulk Upload</h3>
+            <p className="text-xs md:text-sm text-gray-600">Import from Excel/CSV</p>
             <button onClick={(e) => { e.stopPropagation(); downloadTemplate(); }} className="mt-2 text-xs text-blue-600 hover:underline">
               Download Template
             </button>

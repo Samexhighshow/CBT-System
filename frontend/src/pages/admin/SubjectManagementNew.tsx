@@ -342,24 +342,24 @@ const SubjectManagementNew: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <div className="app-shell section-shell py-4">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+        <div className="mb-4">
+          <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Academic Management
           </h1>
-          <p className="text-gray-600 text-sm mt-1">Manage departments, classes, and subjects</p>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">Manage departments, classes, and subjects</p>
         </div>
 
         {/* Tabs */}
-        <div className="bg-white rounded-lg shadow-md p-1.5 mb-4">
+        <div className="bg-white rounded-lg shadow-md p-1.5 mb-3">
           <div className="flex gap-1.5">
             {(['departments', 'classes', 'subjects'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-2 px-4 rounded-md font-medium transition-all duration-200 text-sm ${
+                className={`flex-1 py-1.5 px-3 rounded-md font-medium transition-all duration-200 text-xs md:text-sm ${
                   activeTab === tab
                     ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                     : 'text-gray-600 hover:bg-gray-100'
@@ -369,8 +369,8 @@ const SubjectManagementNew: React.FC = () => {
                   tab === 'departments' ? 'bx-building' : 
                   tab === 'classes' ? 'bx-group' : 
                   'bx-book'
-                } mr-1 text-base`}></i>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                } mr-1 text-sm md:text-base`}></i>
+                <span className="hidden md:inline">{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
               </button>
             ))}
           </div>
@@ -378,20 +378,20 @@ const SubjectManagementNew: React.FC = () => {
 
         {/* Departments Tab */}
         {activeTab === 'departments' && (
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <div className="flex justify-between items-center mb-4">
+          <div className="bg-white rounded-lg shadow-md p-3">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-3">
               <div>
                 <h2 className="text-lg font-bold text-gray-800">Departments</h2>
                 <p className="text-xs text-gray-600">Required for SSS classes • {departments.length} total</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 w-full md:w-auto">
                 <select
                   value={itemsPerPage}
                   onChange={(e) => {
                     setItemsPerPage(Number(e.target.value));
                     setDeptPage(1);
                   }}
-                  className="px-2 py-1 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                  className="px-2 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
                 >
                   <option value={10}>10 per page</option>
                   <option value={15}>15 per page</option>
@@ -400,10 +400,11 @@ const SubjectManagementNew: React.FC = () => {
                 </select>
                 <button
                   onClick={() => setShowDeptModal(true)}
-                  className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-2 rounded-md hover:shadow-md transition-all duration-200 flex items-center gap-1.5 text-sm"
+                  className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-3 py-1.5 rounded-md hover:shadow-md transition-all duration-200 flex items-center gap-1.5 text-xs md:text-sm"
                 >
-                  <i className='bx bx-plus-circle text-lg'></i>
-                  Add Department
+                  <i className='bx bx-plus-circle text-base'></i>
+                  <span className="hidden md:inline">Add Department</span>
+                  <span className="md:hidden">Add</span>
                 </button>
               </div>
             </div>

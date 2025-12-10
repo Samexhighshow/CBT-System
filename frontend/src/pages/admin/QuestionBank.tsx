@@ -217,40 +217,40 @@ const QuestionBank: React.FC = () => {
   };
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
+    <div className="app-shell section-shell">
+      <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Question Bank</h1>
-          <p className="text-gray-600 mt-2">Manage exam questions</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Question Bank</h1>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">Manage exam questions</p>
         </div>
-        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+        <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
           <div className="relative">
-            <i className='bx bx-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400'></i>
+            <i className='bx bx-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm'></i>
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Search questions..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Search questions"
             />
           </div>
-          <Button onClick={() => setShowCreateModal(true)} variant="secondary" className="flex items-center gap-2">
-            <i className='bx bx-upload'></i>
-            <span>Upload Questions</span>
+          <Button onClick={() => setShowCreateModal(true)} variant="secondary" className="flex items-center gap-2 text-xs md:text-sm py-1.5 px-3">
+            <i className='bx bx-upload text-sm'></i>
+            <span>Upload</span>
           </Button>
-          <Button onClick={openCreate} className="flex items-center gap-2">
-            <i className='bx bx-plus'></i>
-            <span>Create Question</span>
+          <Button onClick={openCreate} className="flex items-center gap-2 text-xs md:text-sm py-1.5 px-3">
+            <i className='bx bx-plus text-sm'></i>
+            <span>Create</span>
           </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
         {loading ? (
           <>
             <SkeletonCard />
@@ -260,33 +260,33 @@ const QuestionBank: React.FC = () => {
           </>
         ) : (
           <>
-            <Card className="bg-blue-50">
-              <p className="text-sm text-gray-600">Total Questions</p>
-              <h3 className="text-2xl font-bold text-blue-600 mt-1">{stats.total_questions}</h3>
+            <Card className="bg-blue-50 panel-compact">
+              <p className="text-xs md:text-sm text-gray-600">Total Questions</p>
+              <h3 className="text-lg md:text-xl font-bold text-blue-600 mt-1">{stats.total_questions}</h3>
             </Card>
-            <Card className="bg-green-50">
-              <p className="text-sm text-gray-600">Multiple Choice</p>
-              <h3 className="text-2xl font-bold text-green-600 mt-1">{stats.multiple_choice}</h3>
+            <Card className="bg-green-50 panel-compact">
+              <p className="text-xs md:text-sm text-gray-600">Multiple Choice</p>
+              <h3 className="text-lg md:text-xl font-bold text-green-600 mt-1">{stats.multiple_choice}</h3>
             </Card>
-            <Card className="bg-purple-50">
-              <p className="text-sm text-gray-600">True/False</p>
-              <h3 className="text-2xl font-bold text-purple-600 mt-1">{stats.true_false}</h3>
+            <Card className="bg-purple-50 panel-compact">
+              <p className="text-xs md:text-sm text-gray-600">True/False</p>
+              <h3 className="text-lg md:text-xl font-bold text-purple-600 mt-1">{stats.true_false}</h3>
             </Card>
-            <Card className="bg-orange-50">
-              <p className="text-sm text-gray-600">Essay</p>
-              <h3 className="text-2xl font-bold text-orange-600 mt-1">{stats.essay}</h3>
+            <Card className="bg-orange-50 panel-compact">
+              <p className="text-xs md:text-sm text-gray-600">Essay</p>
+              <h3 className="text-lg md:text-xl font-bold text-orange-600 mt-1">{stats.essay}</h3>
             </Card>
           </>
         )}
       </div>
 
       {/* Upload Options */}
-      <Card>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Upload Questions</h2>
-          <div className="flex gap-2">
+      <Card className="panel-compact">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3">
+          <h2 className="text-lg md:text-xl font-semibold">Upload Questions</h2>
+          <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
             <select 
-              className="border rounded px-3 py-2" 
+              className="border rounded px-2 py-1.5 text-sm" 
               value={selectedCbtSubject ?? ''} 
               onChange={e => setSelectedCbtSubject(Number(e.target.value))}
               aria-label="Select CBT subject"
@@ -298,25 +298,26 @@ const QuestionBank: React.FC = () => {
                 </option>
               ))}
             </select>
-            <Button onClick={handleExport} variant="secondary" className="flex items-center gap-2">
-              <i className='bx bx-download'></i>
-              <span>Export CSV</span>
+            <Button onClick={handleExport} variant="secondary" className="flex items-center gap-2 text-xs md:text-sm py-1.5 px-2">
+              <i className='bx bx-download text-sm'></i>
+              <span className="hidden md:inline">Export CSV</span>
+              <span className="md:hidden">Export</span>
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 cursor-pointer transition">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-500 cursor-pointer transition">
             <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-            <div className="text-4xl mb-3">
-              <i className='bx bx-file text-4xl'></i>
+            <div className="text-3xl md:text-4xl mb-2">
+              <i className='bx bx-file text-3xl md:text-4xl'></i>
             </div>
-            <h3 className="font-semibold mb-2">Upload CSV File</h3>
-            <p className="text-sm text-gray-600">Bulk upload questions from CSV</p>
-            <div className="mt-3">
+            <h3 className="font-semibold text-sm md:text-base mb-1">Upload CSV File</h3>
+            <p className="text-xs md:text-sm text-gray-600">Bulk upload questions from CSV</p>
+            <div className="mt-2">
               <Button 
                 onClick={(e) => { e.stopPropagation(); window.open('http://127.0.0.1:8000/api/cbt/sample-csv', '_blank'); }} 
                 variant="secondary" 
-                className="text-sm"
+                className="text-xs py-1 px-2"
               >
                 Download Sample CSV
               </Button>

@@ -40,35 +40,35 @@ const RolesManagement: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Roles & Users</h1>
+    <div className="app-shell section-shell">
+      <h1 className="text-2xl md:text-3xl font-bold mb-4">Roles & Users</h1>
       {loading ? (
-        <p>Loading...</p>
+        <p className="text-sm text-gray-600">Loading...</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <h2 className="text-lg font-semibold mb-3">Roles</h2>
-            <ul className="space-y-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="panel-compact">
+            <h2 className="text-lg font-semibold mb-2">Roles</h2>
+            <ul className="space-y-1.5">
               {roles.map(r => (
-                <li key={r.id} className="px-3 py-2 border rounded">{r.name}</li>
+                <li key={r.id} className="px-2 py-1.5 border rounded text-sm">{r.name}</li>
               ))}
             </ul>
           </Card>
 
-          <Card>
-            <h2 className="text-lg font-semibold mb-3">Users</h2>
-            <div className="space-y-3">
+          <Card className="panel-compact">
+            <h2 className="text-lg font-semibold mb-2">Users</h2>
+            <div className="space-y-2">
               {users.map(u => (
-                <div key={u.id} className="p-3 border rounded">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{u.name}</p>
-                      <p className="text-sm text-gray-600">{u.email}</p>
+                <div key={u.id} className="p-2 border rounded text-sm">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{u.name}</p>
+                      <p className="text-xs text-gray-600">{u.email}</p>
                       <p className="text-xs text-gray-500">Roles: {u.roles?.map(r => r.name).join(', ') || 'None'}</p>
                     </div>
                     <div>
                       <select
-                        className="border rounded px-2 py-1"
+                        className="border rounded px-2 py-1 text-xs"
                         onChange={(e) => assignRole(u.id, e.target.value)}
                         defaultValue=""
                         aria-label={`Assign role to ${u.name}`}
