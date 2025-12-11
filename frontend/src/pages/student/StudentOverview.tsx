@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card } from '../../components';
+import { Card, AnnouncementsCarousel } from '../../components';
 import { api } from '../../services/api';
 
 interface DashboardStats {
@@ -122,9 +122,12 @@ const StudentOverview: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Student Dashboard</h1>
-        <p className="text-gray-600 mt-2">Welcome back! Here's your academic overview.</p>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Student Dashboard</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">Welcome back! Here's your academic overview.</p>
       </div>
+
+      {/* Announcements Carousel */}
+      <AnnouncementsCarousel limit={5} autoScrollInterval={6000} />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
