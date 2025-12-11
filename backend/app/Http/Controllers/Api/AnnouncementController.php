@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Announcement;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class AnnouncementController extends Controller
 {
@@ -74,6 +76,8 @@ class AnnouncementController extends Controller
             'title' => 'required|string|max:255',
             'content' => 'required|string|min:10',
             'published' => 'boolean',
+            'image' => 'nullable|image|max:2048',
+            'image_url' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -85,7 +89,16 @@ class AnnouncementController extends Controller
         }
 
         try {
+            /** @var User $user */
             $user = Auth::user();
+
+            $imageUrl = null;
+            if ($request->hasFile('image')) {
+                $path = $request->file('image')->store('announcements', 'public');
+                $imageUrl = Storage::url($path);
+            } elseif ($request->filled('image_url')) {
+                $imageUrl = $request->input('image_url');
+            }
 
             $announcement = Announcement::create([
                 'title' => $request->title,
@@ -93,6 +106,7 @@ class AnnouncementController extends Controller
                 'admin_id' => $user->id,
                 'published' => $request->input('published', true),
                 'published_at' => $request->input('published', true) ? now() : null,
+                'image_url' => $imageUrl,
             ]);
 
             return response()->json([
@@ -118,6 +132,9 @@ class AnnouncementController extends Controller
             'title' => 'sometimes|string|max:255',
             'content' => 'sometimes|string|min:10',
             'published' => 'sometimes|boolean',
+            'image' => 'nullable|image|max:2048',
+            'image_url' => 'nullable|string',
+            'remove_image' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -132,6 +149,7 @@ class AnnouncementController extends Controller
             $announcement = Announcement::findOrFail($id);
 
             // Check if user is the creator or admin
+            /** @var User $user */
             $user = Auth::user();
             if ($announcement->admin_id !== $user->id && !$user->hasRole('Main Admin')) {
                 return response()->json([
@@ -149,7 +167,34 @@ class AnnouncementController extends Controller
                 }
             }
 
-            $announcement->update($request->only(['title', 'content']));
+            // Handle image upload/removal
+            $imageUrl = $announcement->image_url;
+            if ($request->boolean('remove_image', false)) {
+                if ($announcement->image_url && str_starts_with($announcement->image_url, '/storage/')) {
+                    $relativePath = str_replace('/storage/', '', $announcement->image_url);
+                    Storage::disk('public')->delete($relativePath);
+                }
+                $imageUrl = null;
+            }
+
+            if ($request->hasFile('image')) {
+                if ($announcement->image_url && str_starts_with($announcement->image_url, '/storage/')) {
+                    $relativePath = str_replace('/storage/', '', $announcement->image_url);
+                    Storage::disk('public')->delete($relativePath);
+                }
+                $path = $request->file('image')->store('announcements', 'public');
+                $imageUrl = Storage::url($path);
+            } elseif ($request->filled('image_url')) {
+                $imageUrl = $request->input('image_url');
+            }
+
+            $announcement->update(array_filter([
+                'title' => $request->get('title', $announcement->title),
+                'content' => $request->get('content', $announcement->content),
+                'image_url' => $imageUrl,
+            ], function ($value) {
+                return $value !== null;
+            }));
 
             return response()->json([
                 'success' => true,
@@ -174,6 +219,7 @@ class AnnouncementController extends Controller
             $announcement = Announcement::findOrFail($id);
 
             // Check if user is the creator or main admin
+            /** @var User $user */
             $user = Auth::user();
             if ($announcement->admin_id !== $user->id && !$user->hasRole('Main Admin')) {
                 return response()->json([

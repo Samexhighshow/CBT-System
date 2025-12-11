@@ -16,6 +16,7 @@ class Announcement extends Model
         'admin_id',
         'published',
         'published_at',
+        'image_url',
     ];
 
     protected $casts = [

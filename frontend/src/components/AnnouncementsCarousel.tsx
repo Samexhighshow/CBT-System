@@ -5,6 +5,7 @@ interface Announcement {
   id: number;
   title: string;
   content: string;
+  image_url?: string | null;
   admin: {
     name: string;
   };
@@ -26,6 +27,7 @@ const AnnouncementsCarousel: React.FC<AnnouncementsCarouselProps> = ({
 
   useEffect(() => {
     fetchAnnouncements();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -92,17 +94,28 @@ const AnnouncementsCarousel: React.FC<AnnouncementsCarouselProps> = ({
 
       {/* Carousel Content */}
       <div className="relative z-10">
-        <div className="min-h-[120px]">
-          <h4 className="text-xl font-semibold mb-2 line-clamp-2">
-            {currentAnnouncement.title}
-          </h4>
-          <p className="text-sm text-white text-opacity-90 line-clamp-3 mb-3">
-            {currentAnnouncement.content}
-          </p>
-          <div className="flex items-center justify-between text-xs text-white text-opacity-75">
-            <span>By: {currentAnnouncement.admin.name}</span>
-            <span>{new Date(currentAnnouncement.published_at).toLocaleDateString()}</span>
+        <div className="min-h-[140px] grid gap-4 md:grid-cols-3 items-center">
+          <div className="md:col-span-2">
+            <h4 className="text-xl font-semibold mb-2 line-clamp-2">
+              {currentAnnouncement.title}
+            </h4>
+            <p className="text-sm text-white text-opacity-90 line-clamp-3 mb-3">
+              {currentAnnouncement.content}
+            </p>
+            <div className="flex items-center justify-between text-xs text-white text-opacity-75">
+              <span>By: {currentAnnouncement.admin.name}</span>
+              <span>{new Date(currentAnnouncement.published_at).toLocaleDateString()}</span>
+            </div>
           </div>
+          {currentAnnouncement.image_url && (
+            <div className="hidden md:block justify-self-end">
+              <img
+                src={currentAnnouncement.image_url}
+                alt={currentAnnouncement.title}
+                className="h-24 w-32 rounded-lg object-cover border border-white border-opacity-30"
+              />
+            </div>
+          )}
         </div>
 
         {/* Navigation Arrows */}

@@ -11,6 +11,7 @@ interface Announcement {
     id: number;
     name: string;
   };
+  image_url?: string | null;
   published_at: string;
   created_at: string;
   updated_at: string;
@@ -29,7 +30,11 @@ const AdminAnnouncements: React.FC = () => {
     title: '',
     content: '',
     published: true,
+    image_url: '' as string | null,
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
 
   useEffect(() => {
     fetchAnnouncements();
@@ -61,19 +66,31 @@ const AdminAnnouncements: React.FC = () => {
       return;
     }
 
+    const payload = new FormData();
+    payload.append('title', formData.title);
+    payload.append('content', formData.content);
+    payload.append('published', String(formData.published));
+    if (imageFile) payload.append('image', imageFile);
+    if (formData.image_url && !imageFile) payload.append('image_url', formData.image_url);
+    if (removeImage) payload.append('remove_image', '1');
+
     setLoading(true);
     try {
       if (editingId) {
-        // Update existing
-        await api.put(`/admin/announcements/${editingId}`, formData);
+        await api.post(`/admin/announcements/${editingId}?_method=PUT`, payload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
         showSuccess('Announcement updated successfully');
       } else {
-        // Create new
-        await api.post('/admin/announcements', formData);
+        await api.post('/admin/announcements', payload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
         showSuccess('Announcement created successfully');
       }
-      
-      setFormData({ title: '', content: '', published: true });
+      setFormData({ title: '', content: '', published: true, image_url: '' });
+      setImageFile(null);
+      setImagePreview(null);
+      setRemoveImage(false);
       setEditingId(null);
       setShowForm(false);
       fetchAnnouncements();
@@ -90,7 +107,11 @@ const AdminAnnouncements: React.FC = () => {
       title: announcement.title,
       content: announcement.content,
       published: announcement.published,
+      image_url: announcement.image_url || '',
     });
+    setImagePreview(announcement.image_url || null);
+    setImageFile(null);
+    setRemoveImage(false);
     setEditingId(announcement.id);
     setShowForm(true);
   };
@@ -187,6 +208,44 @@ const AdminAnnouncements: React.FC = () => {
                   rows={6}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
                 />
+              </div>
+
+              {/* Image */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="announcement-image">
+                  Optional Image
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  id="announcement-image"
+                  title="Announcement image"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setImageFile(file || null);
+                    setRemoveImage(false);
+                    if (file) {
+                      setImagePreview(URL.createObjectURL(file));
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                />
+                {(imagePreview || formData.image_url) && !removeImage && (
+                  <div className="relative inline-block">
+                    <img src={imagePreview || formData.image_url || ''} alt="Announcement" className="h-24 rounded border" />
+                  </div>
+                )}
+                {(formData.image_url || imagePreview) && (
+                  <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={removeImage}
+                      onChange={(e) => setRemoveImage(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span>Remove image</span>
+                  </label>
+                )}
               </div>
 
               {/* Publish Status */}

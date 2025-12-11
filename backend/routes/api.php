@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\RoleManagementController;
+use App\Http\Controllers\Api\PagePermissionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\SystemSettingController;
 use App\Http\Controllers\Api\ProfileController;
@@ -201,6 +203,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/roles', [RoleController::class, 'listRoles']);
     Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
+
+    // Role & page permissions management (Admin/Main Admin)
+    Route::middleware('role:Admin|Main Admin')->group(function () {
+        Route::get('/admin/roles', [RoleManagementController::class, 'listRoles']);
+        Route::get('/admin/users', [RoleManagementController::class, 'listUsers']);
+        Route::post('/admin/users/{user}/roles', [RoleManagementController::class, 'assignRole']);
+        Route::get('/admin/pages', [PagePermissionController::class, 'index']);
+        Route::get('/admin/pages/role-map', [PagePermissionController::class, 'rolePageMap']);
+        Route::post('/admin/pages/sync', [PagePermissionController::class, 'syncPages']);
+        Route::post('/admin/roles/{role}/pages', [PagePermissionController::class, 'assignToRole']);
+    });
     
     // Import questions to a subject
     Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
@@ -221,6 +234,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/cbt/results/subject/{subject}', [CbtResultsController::class, 'subjectSummary']);
     // All results with filters
     Route::get('/cbt/results', [CbtResultsController::class, 'allResults']);
+    // Results analytics and report cards
+    Route::get('/results/analytics', [CbtResultsController::class, 'analytics']);
+    Route::get('/results/report-cards', [CbtResultsController::class, 'reportCards']);
+    Route::post('/results/email/{student}', [CbtResultsController::class, 'emailStudentReport']);
     
     // CBT Subjects management
     Route::get('/cbt/subjects', [CbtSubjectController::class, 'index']);

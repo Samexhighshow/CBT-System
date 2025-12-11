@@ -6,6 +6,7 @@ interface Announcement {
   id: number;
   title: string;
   content: string;
+  image_url?: string | null;
   admin: {
     id: number;
     name: string;
@@ -131,10 +132,19 @@ const StudentAnnouncements: React.FC = () => {
                   <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
 
                   {/* Content */}
-                  <div className="prose dark:prose-invert max-w-none">
-                    <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-                      {selectedAnnouncement.content}
-                    </p>
+                  <div className="space-y-3">
+                    {selectedAnnouncement.image_url && (
+                      <img
+                        src={selectedAnnouncement.image_url}
+                        alt={selectedAnnouncement.title}
+                        className="w-full max-h-72 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
+                      />
+                    )}
+                    <div className="prose dark:prose-invert max-w-none">
+                      <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                        {selectedAnnouncement.content}
+                      </p>
+                    </div>
                   </div>
                 </div>
               ) : (
