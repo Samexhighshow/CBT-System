@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import { showSuccess, showError, showConfirm } from '../../utils/alerts';
 import { Card } from '../../components';
+import { adminNavLinks } from '../../config/adminNav';
 
 interface Role { name: string; }
 interface User { id: number; name: string; email: string; email_verified_at?: string | null; roles: Role[]; }
@@ -22,7 +22,7 @@ const AdminUserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [onlyApplicants, setOnlyApplicants] = useState(true);
   const [showRoleDetails, setShowRoleDetails] = useState(false);
-  const navigate = useNavigate();
+  const [syncingPages, setSyncingPages] = useState(false);
   
   // Get current logged-in user ID
   const currentUserId = (() => {
@@ -36,8 +36,77 @@ const AdminUserManagement: React.FC = () => {
 
   // Use shared api client which injects `auth_token` automatically
   const [editMode, setEditMode] = useState(false);
-  const availableModules = ['Dashboard','Users','Roles','System Settings','Questions','Exams','Students','Subjects','Results','Reports','Analytics','Profile','Classes'];
+  
+  // Extract available modules from actual navigation
+  const availableModules = useMemo(() => {
+    const modules: string[] = [];
+    adminNavLinks.forEach((nav) => {
+      modules.push(nav.name);
+      if (nav.subItems) {
+        nav.subItems.forEach((sub) => modules.push(sub.name));
+      }
+    });
+    return modules;
+  }, []);
+  
   const [roleModulesState, setRoleModulesState] = useState<Record<string, string[]>>(roleModules);
+
+  const flatNavPages = useMemo(() => {
+    const items: { name: string; path: string; category?: string }[] = [];
+    adminNavLinks.forEach((nav) => {
+      items.push({ name: nav.name, path: nav.path, category: nav.subItems ? nav.name : undefined });
+      if (nav.subItems) {
+        nav.subItems.forEach((sub) => items.push({ name: sub.name, path: sub.path, category: nav.name }));
+      }
+    });
+    return items;
+  }, []);
+
+  const loadRolePermissions = async () => {
+    try {
+      const [pagesRes, roleMapRes] = await Promise.all([
+        api.get('/admin/pages'),
+        api.get('/admin/pages/role-map')
+      ]);
+      
+      const pages = pagesRes.data?.pages || [];
+      const roleMap: Record<number, number[]> = {};
+      (roleMapRes.data || []).forEach((item: { role_id: number; page_ids: number[] }) => {
+        roleMap[item.role_id] = item.page_ids;
+      });
+
+      // Get roles
+      const rolesRes = await api.get('/admin/roles');
+      const rolesData = rolesRes.data || [];
+      
+      // Build role modules state from database
+      const newRoleModules: Record<string, string[]> = {};
+      rolesData.forEach((role: { id: number; name: string }) => {
+        const pageIds = roleMap[role.id] || [];
+        const rolePages = pages.filter((p: any) => pageIds.includes(p.id));
+        newRoleModules[role.name] = rolePages.map((p: any) => p.name);
+      });
+      
+      console.log('Loaded role permissions from database:', newRoleModules);
+      setRoleModulesState(newRoleModules);
+    } catch (err: any) {
+      console.error('Failed to load role permissions:', err);
+      // If loading fails, keep the current state (hardcoded defaults)
+    }
+  };
+
+  const syncNavigationPages = async () => {
+    try {
+      setSyncingPages(true);
+      await api.post('/admin/pages/sync', { pages: flatNavPages });
+      await loadRolePermissions(); // Reload permissions after sync
+      showSuccess('Navigation synced successfully! Role permissions updated.');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to sync navigation');
+    } finally {
+      setSyncingPages(false);
+    }
+  };
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -62,6 +131,7 @@ const AdminUserManagement: React.FC = () => {
       }
     };
     loadRoles();
+    loadRolePermissions(); // Load initial permissions from database
   }, []);
 
   const assignRole = async (userId: number, roleName: string) => {
@@ -108,20 +178,12 @@ const AdminUserManagement: React.FC = () => {
       {/* Header with Role Permissions Button */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Admin User Management</h2>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => navigate('/admin/roles-permissions')}
-            className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition text-xs md:text-sm"
-          >
-            Open Roles & Permissions
-          </button>
-          <button
-            onClick={() => setShowRoleDetails(!showRoleDetails)}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs md:text-sm"
-          >
-            {showRoleDetails ? 'Hide' : 'View'} Role Permissions
-          </button>
-        </div>
+        <button
+          onClick={() => setShowRoleDetails(!showRoleDetails)}
+          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs md:text-sm"
+        >
+          {showRoleDetails ? 'Hide' : 'View'} Role Permissions
+        </button>
       </div>
 
       {/* Role Permissions Card */}
@@ -129,12 +191,22 @@ const AdminUserManagement: React.FC = () => {
         <Card className="panel-compact">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 mb-3">
             <h2 className="text-lg md:text-xl font-semibold">Role Module Access</h2>
-            <button
-              onClick={() => setEditMode(!editMode)}
-              className="px-2 py-1.5 text-xs md:text-sm border rounded hover:bg-gray-50"
-            >
-              {editMode ? 'Done' : 'Edit Role Permissions'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={syncNavigationPages}
+                className="px-3 py-1.5 bg-emerald-600 text-white rounded text-xs md:text-sm flex items-center gap-2 disabled:opacity-60 hover:bg-emerald-700"
+                disabled={syncingPages}
+              >
+                <i className={`bx ${syncingPages ? 'bx-loader-alt animate-spin' : 'bx-sync'} text-lg`}></i>
+                <span>{syncingPages ? 'Syncing...' : 'Sync Navigation Modules'}</span>
+              </button>
+              <button
+                onClick={() => setEditMode(!editMode)}
+                className="px-2 py-1.5 text-xs md:text-sm border rounded hover:bg-gray-50"
+              >
+                {editMode ? 'Done' : 'Edit Role Permissions'}
+              </button>
+            </div>
           </div>
           <p className="text-xs md:text-sm text-gray-600 mb-3">
             This table shows which modules each role can access in the system.
@@ -207,8 +279,9 @@ const AdminUserManagement: React.FC = () => {
                 className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs md:text-sm"
                 onClick={async () => {
                   try {
-                    await api.post('/admin/roles/modules', roleModulesState);
-                    showSuccess('Role permissions updated');
+                    await api.post('/admin/roles/modules', { role_modules: roleModulesState });
+                    await loadRolePermissions(); // Reload to confirm changes
+                    showSuccess('Role permissions updated successfully');
                     setEditMode(false);
                   } catch (err: any) {
                     showError(err?.response?.data?.message || 'Failed to update role permissions');

@@ -213,6 +213,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/admin/pages/role-map', [PagePermissionController::class, 'rolePageMap']);
         Route::post('/admin/pages/sync', [PagePermissionController::class, 'syncPages']);
         Route::post('/admin/roles/{role}/pages', [PagePermissionController::class, 'assignToRole']);
+        Route::post('/admin/roles/modules', [PagePermissionController::class, 'updateRoleModules']);
     });
     
     // Import questions to a subject

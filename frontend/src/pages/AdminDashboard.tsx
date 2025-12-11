@@ -16,7 +16,6 @@ import HallManagement from './admin/HallManagement';
 import TeacherAssignment from './admin/TeacherAssignment';
 import ExamAccess from './admin/ExamAccess';
 import AdminAnnouncements from './admin/Announcements';
-import RolesManagement from './admin/RolesManagement';
 
 // Admin Dashboard with shared layout
 const AdminDashboard: React.FC = () => {
@@ -37,7 +36,6 @@ const AdminDashboard: React.FC = () => {
         <Route path="teachers/assign" element={<TeacherAssignment />} />
         <Route path="results" element={<ResultsAnalytics />} />
         <Route path="users" element={<AdminUserManagement />} />
-        <Route path="roles-permissions" element={<RolesManagement />} />
         <Route path="activity-logs" element={<ActivityLogs />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
