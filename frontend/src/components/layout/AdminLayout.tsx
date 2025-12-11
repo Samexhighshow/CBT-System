@@ -40,6 +40,7 @@ const AdminLayout: React.FC = () => {
     { name: 'Overview', path: '/admin', icon: 'bx-home-alt' },
     { name: 'Questions', path: '/admin/questions', icon: 'bx-edit-alt' },
     { name: 'Exams', path: '/admin/exams', icon: 'bx-book-content' },
+    { name: 'Exam Access', path: '/admin/exam-access', icon: 'bx-key' },
     { name: 'Students', path: '/admin/students', icon: 'bx-group' },
     { name: 'Subjects', path: '/admin/subjects', icon: 'bx-folder' },
     { 

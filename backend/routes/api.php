@@ -27,6 +27,7 @@ use App\Http\Controllers\StudentImportController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\Api\HallController;
 use App\Http\Controllers\Api\AllocationController;
+use App\Http\Controllers\Api\ExamAccessController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -273,4 +274,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/conflicts/{runId}', [AllocationController::class, 'getConflicts']);
         Route::get('/status/{runId}', [AllocationController::class, 'checkStatus']);
     });
+    
+    // Exam Access Management (One-Time Passwords)
+    Route::prefix('admin')->group(function () {
+        Route::get('/exams/today', [ExamAccessController::class, 'getTodayExams']);
+        Route::get('/exam-access', [ExamAccessController::class, 'index']);
+        Route::post('/exam-access/generate', [ExamAccessController::class, 'generate']);
+        Route::delete('/exam-access/{id}', [ExamAccessController::class, 'destroy']);
+    });
+    
+    // Student exam access verification (public endpoint for login)
+    Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
 });

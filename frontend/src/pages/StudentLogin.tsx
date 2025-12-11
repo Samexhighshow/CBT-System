@@ -125,6 +125,11 @@ const StudentLogin: React.FC = () => {
               Register here
             </Link>
           </p>
+          <p className="text-xs text-gray-500">
+            <Link to="/exam-access" className="text-blue-600 hover:text-blue-700 font-medium">
+              Have an exam access code? Login here
+            </Link>
+          </p>
           <p className="text-xs text-gray-500">Forgot password? <Link to="/forgot-password-otp" className="text-blue-600 hover:text-blue-700">Use OTP reset</Link></p>
           <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">
             ← Back to Home

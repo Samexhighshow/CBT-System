@@ -19,6 +19,7 @@ import PasswordResetRequest from './pages/PasswordResetRequest';
 import PasswordReset from './pages/PasswordReset';
 import PasswordOtpRequest from './pages/PasswordOtpRequest';
 import PasswordOtpReset from './pages/PasswordOtpReset';
+import ExamAccessLogin from './pages/ExamAccessLogin';
 import AdminSignup from './pages/admin/AdminSignup';
 import AdminUserManagement from './pages/admin/AdminUserManagement';
 import AdminSettings from './pages/admin/AdminSettings';
@@ -55,6 +56,7 @@ const App: React.FC = () => {
         <Route path="/register" element={<StudentRegistrationForm />} />
         <Route path="/login" element={<StudentLogin />} />
         <Route path="/student-login" element={<StudentLogin />} />
+        <Route path="/exam-access" element={<ExamAccessLogin />} />
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route path="/forgot-password" element={<PasswordResetRequest />} />
         <Route path="/reset-password" element={<PasswordReset />} />

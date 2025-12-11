@@ -14,6 +14,7 @@ import AllocationHistory from './admin/AllocationHistory';
 import AllocationViewer from './admin/AllocationViewer';
 import HallManagement from './admin/HallManagement';
 import TeacherAssignment from './admin/TeacherAssignment';
+import ExamAccess from './admin/ExamAccess';
 
 // Admin Dashboard with shared layout
 const AdminDashboard: React.FC = () => {
@@ -23,6 +24,7 @@ const AdminDashboard: React.FC = () => {
         <Route index element={<AdminOverview />} />
         <Route path="questions" element={<QuestionBank />} />
         <Route path="exams" element={<ExamManagement />} />
+        <Route path="exam-access" element={<ExamAccess />} />
         <Route path="students" element={<StudentManagement />} />
         <Route path="subjects" element={<SubjectManagement />} />
         <Route path="halls" element={<HallManagement />} />
