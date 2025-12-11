@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../components';
-import api from '../../services/api';
+import { api } from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
 import { adminNavLinks } from '../../config/adminNav';
 
@@ -46,7 +46,9 @@ const RolesManagement: React.FC = () => {
       });
       setRolePageMap(map);
     } catch (err: any) {
-      showError(err?.response?.data?.message || 'Failed to load roles/users');
+      console.error('Failed to load roles/users:', err);
+      const errorMsg = err?.response?.data?.message || err?.message || 'Failed to load roles/users';
+      showError(`${errorMsg} (Status: ${err?.response?.status || 'unknown'})`);
     } finally {
       setLoading(false);
     }

@@ -12,7 +12,8 @@ class RoleManagementController extends Controller
 {
     public function listRoles()
     {
-        return response()->json(Role::orderBy('name')->get());
+        $roles = Role::orderBy('name')->get(['id', 'name']);
+        return response()->json($roles);
     }
 
     public function listUsers()

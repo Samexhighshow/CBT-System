@@ -25,10 +25,18 @@ const AnnouncementsCarousel: React.FC<AnnouncementsCarouselProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    fetchAnnouncements();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const load = async () => {
+      try {
+        const response = await api.get(`/announcements?limit=${limit}`);
+        setAnnouncements(response.data.data || []);
+      } catch (error) {
+        console.error('Failed to fetch announcements:', error);
+      }
+    };
+    load();
+  }, [limit]);
 
   useEffect(() => {
     if (announcements.length === 0 || isHovered) return;
@@ -39,15 +47,6 @@ const AnnouncementsCarousel: React.FC<AnnouncementsCarouselProps> = ({
 
     return () => clearInterval(interval);
   }, [announcements.length, autoScrollInterval, isHovered]);
-
-  const fetchAnnouncements = async () => {
-    try {
-      const response = await api.get(`/announcements?limit=${limit}`);
-      setAnnouncements(response.data.data || []);
-    } catch (error) {
-      console.error('Failed to fetch announcements:', error);
-    }
-  };
 
   const goToNext = () => {
     setCurrentIndex((prev) => (prev + 1) % announcements.length);

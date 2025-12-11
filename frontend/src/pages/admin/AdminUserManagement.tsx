@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import { showSuccess, showError, showConfirm } from '../../utils/alerts';
 import { Card } from '../../components';
@@ -21,6 +22,7 @@ const AdminUserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [onlyApplicants, setOnlyApplicants] = useState(true);
   const [showRoleDetails, setShowRoleDetails] = useState(false);
+  const navigate = useNavigate();
   
   // Get current logged-in user ID
   const currentUserId = (() => {
@@ -37,7 +39,7 @@ const AdminUserManagement: React.FC = () => {
   const availableModules = ['Dashboard','Users','Roles','System Settings','Questions','Exams','Students','Subjects','Results','Reports','Analytics','Profile','Classes'];
   const [roleModulesState, setRoleModulesState] = useState<Record<string, string[]>>(roleModules);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get(`/users`, { params: { only_applicants: onlyApplicants ? 1 : undefined } });
@@ -47,9 +49,9 @@ const AdminUserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [onlyApplicants]);
 
-  useEffect(() => { fetchUsers(); }, [onlyApplicants]);
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => {
     const loadRoles = async () => {
       try {
@@ -106,12 +108,20 @@ const AdminUserManagement: React.FC = () => {
       {/* Header with Role Permissions Button */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Admin User Management</h2>
-        <button
-          onClick={() => setShowRoleDetails(!showRoleDetails)}
-          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs md:text-sm"
-        >
-          {showRoleDetails ? 'Hide' : 'View'} Role Permissions
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => navigate('/admin/roles-permissions')}
+            className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition text-xs md:text-sm"
+          >
+            Open Roles & Permissions
+          </button>
+          <button
+            onClick={() => setShowRoleDetails(!showRoleDetails)}
+            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs md:text-sm"
+          >
+            {showRoleDetails ? 'Hide' : 'View'} Role Permissions
+          </button>
+        </div>
       </div>
 
       {/* Role Permissions Card */}

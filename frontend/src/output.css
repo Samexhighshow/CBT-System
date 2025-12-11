@@ -942,6 +942,10 @@ code {
   height: 0.5rem;
 }
 
+.h-24 {
+  height: 6rem;
+}
+
 .h-28 {
   height: 7rem;
 }
@@ -990,8 +994,8 @@ code {
   height: 100vh;
 }
 
-.h-24 {
-  height: 6rem;
+.max-h-72 {
+  max-height: 18rem;
 }
 
 .max-h-96 {
@@ -1006,12 +1010,8 @@ code {
   max-height: 90vh;
 }
 
-.max-h-72 {
-  max-height: 18rem;
-}
-
-.min-h-\[120px\] {
-  min-height: 120px;
+.min-h-\[140px\] {
+  min-height: 140px;
 }
 
 .min-h-\[60px\] {
@@ -1024,10 +1024,6 @@ code {
 
 .min-h-screen {
   min-height: 100vh;
-}
-
-.min-h-\[140px\] {
-  min-height: 140px;
 }
 
 .w-1\/2 {
@@ -1751,6 +1747,11 @@ code {
 .bg-blue-600 {
   --tw-bg-opacity: 1;
   background-color: rgb(37 99 235 / var(--tw-bg-opacity, 1));
+}
+
+.bg-emerald-600 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(5 150 105 / var(--tw-bg-opacity, 1));
 }
 
 .bg-gray-100 {
@@ -3143,6 +3144,11 @@ svg {
 .hover\:bg-blue-700:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(29 78 216 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-emerald-700:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(4 120 87 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-gray-100:hover {
