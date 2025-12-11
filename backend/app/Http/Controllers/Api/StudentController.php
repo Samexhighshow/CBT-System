@@ -262,4 +262,29 @@ class StudentController extends Controller
             'department' => $student->department->name ?? null,
         ]);
     }
+
+    /**
+     * Get student by registration number (for exam access code generation)
+     */
+    public function getByRegistrationNumber($regNumber)
+    {
+        $student = Student::where('registration_number', strtoupper($regNumber))
+            ->with(['department', 'schoolClass'])
+            ->first();
+
+        if (!$student) {
+            return response()->json([
+                'message' => 'Student not found with this registration number'
+            ], 404);
+        }
+
+        return response()->json([
+            'id' => $student->id,
+            'name' => $student->first_name . ' ' . $student->last_name,
+            'reg_number' => $student->registration_number,
+            'email' => $student->email,
+            'department' => $student->department->name ?? null,
+            'class_level' => $student->class_level,
+        ]);
+    }
 }

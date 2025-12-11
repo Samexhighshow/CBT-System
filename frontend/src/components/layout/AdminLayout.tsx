@@ -42,7 +42,8 @@ const AdminLayout: React.FC = () => {
     { name: 'Exams', path: '/admin/exams', icon: 'bx-book-content' },
     { name: 'Exam Access', path: '/admin/exam-access', icon: 'bx-key' },
     { name: 'Students', path: '/admin/students', icon: 'bx-group' },
-    { name: 'Subjects', path: '/admin/subjects', icon: 'bx-folder' },
+    { name: 'Academic Management', path: '/admin/subjects', icon: 'bx-folder' },
+    { name: 'Announcements', path: '/admin/announcements', icon: 'bx-megaphone' },
     { 
       name: 'Allocation System', 
       path: '/admin/allocations', 

@@ -55,8 +55,9 @@ class ExamAccessController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'exam_id' => 'required|exists:exams,id',
-            'reg_numbers' => 'required|array|min:1',
-            'reg_numbers.*' => 'required|string',
+            'student_id' => 'sometimes|exists:users,id',
+            'reg_numbers' => 'sometimes|array|min:1',
+            'reg_numbers.*' => 'sometimes|string',
         ]);
 
         if ($validator->fails()) {
@@ -69,9 +70,58 @@ class ExamAccessController extends Controller
 
         try {
             $exam = Exam::findOrFail($request->exam_id);
-            $regNumbers = $request->reg_numbers;
             $generated = [];
             $errors = [];
+
+            // Handle single student generation
+            if ($request->has('student_id')) {
+                $student = User::findOrFail($request->student_id);
+                
+                // Check if student already has an unused access code for this exam
+                $existingAccess = ExamAccess::where('exam_id', $exam->id)
+                    ->where('student_id', $student->id)
+                    ->where('used', false)
+                    ->first();
+
+                if ($existingAccess) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Student already has an unused access code for this exam",
+                    ], 422);
+                }
+
+                // Generate access code
+                $accessCode = ExamAccess::generateUniqueCode();
+
+                // Set expiration to end of exam day
+                $expiresAt = Carbon::parse($exam->date)->endOfDay();
+
+                // Create access record
+                $access = ExamAccess::create([
+                    'exam_id' => $exam->id,
+                    'student_id' => $student->id,
+                    'access_code' => $accessCode,
+                    'used' => false,
+                    'expires_at' => $expiresAt,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Access code generated successfully',
+                    'data' => [
+                        'id' => $access->id,
+                        'access_code' => $accessCode,
+                        'student_name' => $student->name,
+                        'student_reg_number' => $student->reg_number,
+                        'exam_title' => $exam->title,
+                        'generated_at' => $access->created_at,
+                        'expires_at' => $expiresAt,
+                    ],
+                ], 201);
+            }
+
+            // Handle bulk registration numbers
+            $regNumbers = $request->reg_numbers ?? [];
 
             foreach ($regNumbers as $regNumber) {
                 // Find student by registration number

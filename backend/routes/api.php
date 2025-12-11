@@ -28,6 +28,7 @@ use App\Http\Controllers\BackupController;
 use App\Http\Controllers\Api\HallController;
 use App\Http\Controllers\Api\AllocationController;
 use App\Http\Controllers\Api\ExamAccessController;
+use App\Http\Controllers\Api\AnnouncementController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -52,6 +53,7 @@ Route::post('/admin/signup', [UserController::class, 'store']);
 // Students
 Route::prefix('students')->group(function () {
     Route::get('/', [StudentController::class, 'index']);
+    Route::get('/by-reg-number/{regNumber}', [StudentController::class, 'getByRegistrationNumber']);
     Route::get('/{id}', [StudentController::class, 'show']);
     Route::post('/', [StudentController::class, 'store']);
     Route::put('/{id}', [StudentController::class, 'update']);
@@ -283,6 +285,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/exam-access/{id}', [ExamAccessController::class, 'destroy']);
     });
     
+    // Announcements Management (Admin)
+    Route::prefix('admin/announcements')->group(function () {
+        Route::get('/', [AnnouncementController::class, 'adminIndex']); // Get all for admin management
+        Route::post('/', [AnnouncementController::class, 'store']); // Create new
+        Route::put('/{id}', [AnnouncementController::class, 'update']); // Update
+        Route::delete('/{id}', [AnnouncementController::class, 'destroy']); // Delete
+    });
+    
     // Student exam access verification (public endpoint for login)
     Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
+    
+    // Announcements (Public - for students to view)
+    Route::prefix('announcements')->group(function () {
+        Route::get('/', [AnnouncementController::class, 'index']); // Get all published
+        Route::get('/{id}', [AnnouncementController::class, 'show']); // Get specific announcement
+    });
 });
