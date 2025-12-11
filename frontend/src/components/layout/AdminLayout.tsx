@@ -42,7 +42,6 @@ const AdminLayout: React.FC = () => {
     { name: 'Exams', path: '/admin/exams', icon: 'bx-book-content' },
     { name: 'Students', path: '/admin/students', icon: 'bx-group' },
     { name: 'Subjects', path: '/admin/subjects', icon: 'bx-folder' },
-    { name: 'Halls', path: '/admin/halls', icon: 'bx-building' },
     { 
       name: 'Allocation System', 
       path: '/admin/allocations', 
@@ -51,11 +50,10 @@ const AdminLayout: React.FC = () => {
         { name: 'View Allocations', path: '/admin/allocations', icon: 'bx-list-ul' },
         { name: 'Generate Allocation', path: '/admin/allocations/generate', icon: 'bx-plus-circle' },
         { name: 'Teacher Assignment', path: '/admin/teachers/assign', icon: 'bx-user-check' },
+        { name: 'Halls', path: '/admin/halls', icon: 'bx-building' },
       ]
     },
     { name: 'Results', path: '/admin/results', icon: 'bx-bar-chart-alt-2' },
-    { name: 'Users', path: '/admin/users', icon: 'bx-shield' },
-    { name: 'Activity Logs', path: '/admin/activity-logs', icon: 'bx-history' },
   ];
 
   const isActivePath = (path: string) => {

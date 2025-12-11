@@ -98,6 +98,33 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
             <span>Profile Settings</span>
           </button>
 
+          {/* Admin links */}
+          <button
+            onClick={() => {
+              navigate('/admin/users');
+              setIsOpen(false);
+            }}
+            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 11a4 4 0 110-8 4 4 0 010 8zm8 4a4 4 0 00-3-3.87M3 20h12v-2a4 4 0 00-3-3.87M15 11a4 4 0 100-8 4 4 0 000 8z" />
+            </svg>
+            <span>Users</span>
+          </button>
+
+          <button
+            onClick={() => {
+              navigate('/admin/activity-logs');
+              setIsOpen(false);
+            }}
+            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Activity Logs</span>
+          </button>
+
           {/* Settings Link (Main Admin Only) */}
           {showSettings && (
             <button
