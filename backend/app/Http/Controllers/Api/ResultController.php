@@ -94,20 +94,6 @@ class ResultController extends Controller
             'prev_page' => $attempts->currentPage() > 1 ? $attempts->currentPage() - 1 : null,
         ]);
     }
-                    'registration_number' => $attempt->student->registration_number,
-                    'department' => $attempt->student->department->name ?? 'N/A',
-                    'class_level' => $attempt->student->class_level,
-                    'score' => $attempt->score,
-                    'total_marks' => $exam->total_marks,
-                    'percentage' => round(($attempt->score / $exam->total_marks) * 100, 2),
-                    'passed' => $attempt->score >= $exam->passing_marks,
-                    'completed_at' => $attempt->completed_at,
-                    'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
-                ];
-            });
-
-        return response()->json($results);
-    }
 
     /**
      * Get analytics for results

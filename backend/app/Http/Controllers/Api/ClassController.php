@@ -59,14 +59,25 @@ class ClassController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:school_classes,name',
-            'code' => 'required|string|max:50|unique:school_classes,code',
+            'name' => 'required|string|max:255',
             'department_id' => 'nullable|exists:departments,id',
             'description' => 'nullable|string',
             'capacity' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'metadata' => 'nullable|array',
         ]);
+        
+        // Check for unique combination of name + department_id
+        $exists = SchoolClass::where('name', $validated['name'])
+            ->where('department_id', $validated['department_id'] ?? null)
+            ->exists();
+        
+        if ($exists) {
+            return response()->json([
+                'message' => 'This class already exists in the selected department',
+                'errors' => ['name' => ['This class already exists in the selected department']]
+            ], 422);
+        }
 
         // Check if this is an SSS class and validate department requirement
         $isSSS = str_contains(strtoupper($validated['name']), 'SSS');
@@ -105,14 +116,31 @@ class ClassController extends Controller
         $class = SchoolClass::findOrFail($id);
 
         $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255', Rule::unique('school_classes')->ignore($class->id)],
-            'code' => ['sometimes', 'string', 'max:50', Rule::unique('school_classes')->ignore($class->id)],
+            'name' => 'sometimes|string|max:255',
             'department_id' => 'sometimes|exists:departments,id',
             'description' => 'nullable|string',
             'capacity' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'metadata' => 'nullable|array',
         ]);
+        
+        // Check for unique combination of name + department_id (excluding current class)
+        if (isset($validated['name']) || isset($validated['department_id'])) {
+            $name = $validated['name'] ?? $class->name;
+            $deptId = $validated['department_id'] ?? $class->department_id;
+            
+            $exists = SchoolClass::where('name', $name)
+                ->where('department_id', $deptId)
+                ->where('id', '!=', $id)
+                ->exists();
+            
+            if ($exists) {
+                return response()->json([
+                    'message' => 'This class already exists in the selected department',
+                    'errors' => ['name' => ['This class already exists in the selected department']]
+                ], 422);
+            }
+        }
 
         $class->update($validated);
 
@@ -141,6 +169,41 @@ class ClassController extends Controller
 
         return response()->json([
             'message' => 'Class deleted successfully'
+        ]);
+    }
+
+    /**
+     * Bulk delete classes.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'required|exists:school_classes,id',
+        ]);
+
+        $classes = SchoolClass::withCount('students')
+            ->whereIn('id', $validated['ids'])
+            ->get();
+
+        // Check if any class has students
+        $classesWithStudents = $classes->filter(fn($c) => $c->students_count > 0);
+        if ($classesWithStudents->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Cannot delete classes with enrolled students',
+                'classes_with_students' => $classesWithStudents->map(fn($c) => [
+                    'id' => $c->id,
+                    'name' => $c->name,
+                    'students_count' => $c->students_count
+                ])
+            ], 422);
+        }
+
+        $deletedCount = SchoolClass::whereIn('id', $validated['ids'])->delete();
+
+        return response()->json([
+            'message' => 'Classes deleted successfully',
+            'deleted_count' => $deletedCount
         ]);
     }
 }

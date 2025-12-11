@@ -104,6 +104,7 @@ Route::prefix('subjects')->group(function () {
     Route::post('/', [SubjectController::class, 'store']);
     Route::put('/{id}', [SubjectController::class, 'update']);
     Route::delete('/{id}', [SubjectController::class, 'destroy']);
+    Route::post('/bulk-delete', [SubjectController::class, 'bulkDelete']);
     Route::post('/for-student', [SubjectController::class, 'getSubjectsForStudent']);
     Route::post('/student/save', [SubjectController::class, 'saveStudentSubjects']);
 });
@@ -115,6 +116,7 @@ Route::prefix('departments')->group(function () {
     Route::post('/', [DepartmentController::class, 'store']);
     Route::put('/{id}', [DepartmentController::class, 'update']);
     Route::delete('/{id}', [DepartmentController::class, 'destroy']);
+    Route::post('/bulk-delete', [DepartmentController::class, 'bulkDelete']);
 });
 
 // Classes - Public endpoints for student registration
@@ -127,6 +129,7 @@ Route::prefix('classes')->group(function () {
         Route::post('/', [\App\Http\Controllers\Api\ClassController::class, 'store']);
         Route::put('/{id}', [\App\Http\Controllers\Api\ClassController::class, 'update']);
         Route::delete('/{id}', [\App\Http\Controllers\Api\ClassController::class, 'destroy']);
+        Route::post('/bulk-delete', [\App\Http\Controllers\Api\ClassController::class, 'bulkDelete']);
     });
 });
 

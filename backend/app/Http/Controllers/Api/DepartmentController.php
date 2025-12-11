@@ -87,4 +87,22 @@ class DepartmentController extends Controller
             'message' => 'Department deleted successfully'
         ]);
     }
+
+    /**
+     * Bulk delete departments.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'required|exists:departments,id',
+        ]);
+
+        $deletedCount = Department::whereIn('id', $validated['ids'])->delete();
+
+        return response()->json([
+            'message' => 'Departments deleted successfully',
+            'deleted_count' => $deletedCount
+        ]);
+    }
 }
