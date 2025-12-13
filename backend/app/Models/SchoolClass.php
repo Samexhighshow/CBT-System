@@ -15,12 +15,11 @@ class SchoolClass extends Model
 
     protected $fillable = [
         'name',
-        'code',
-        'department_id',
         'description',
         'capacity',
         'is_active',
-        'metadata'
+        'metadata',
+        'department_id'
     ];
 
     protected $casts = [
@@ -29,11 +28,12 @@ class SchoolClass extends Model
     ];
 
     /**
-     * Get the department that owns the class.
+     * Get departments linked to this class by matching class_level to class name.
+     * Classes are now grouped by name, departments have class_level matching the class name.
      */
-    public function department(): BelongsTo
+    public function departments(): HasMany
     {
-        return $this->belongsTo(Department::class);
+        return $this->hasMany(Department::class, 'class_level', 'name');
     }
 
     /**
@@ -50,6 +50,14 @@ class SchoolClass extends Model
     public function subjects(): HasMany
     {
         return $this->hasMany(Subject::class, 'class_id');
+    }
+
+    /**
+     * Owning department for SSS classes.
+     */
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
     }
 
     /**

@@ -20,21 +20,15 @@ class ClassController extends Controller
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('code', 'like', "%{$search}%");
+                $q->where('name', 'like', "%{$search}%");
             });
-        }
-
-        // Department filter
-        if ($request->has('department_id')) {
-            $query->where('department_id', $request->department_id);
         }
 
         // Active status filter
         if ($request->has('is_active')) {
             $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
-        } else {
-            // By default, show only active classes
+        } elseif (!$request->has('show_all')) {
+            // By default, show only active classes unless show_all is requested
             $query->where('is_active', true);
         }
 
@@ -58,41 +52,45 @@ class ClassController extends Controller
      */
     public function store(Request $request)
     {
+        // Base validation
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'department_id' => 'nullable|exists:departments,id',
             'description' => 'nullable|string',
             'capacity' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'metadata' => 'nullable|array',
+            'department_id' => 'nullable|integer|exists:departments,id',
         ]);
-        
-        // Check for unique combination of name + department_id
-        $exists = SchoolClass::where('name', $validated['name'])
-            ->where('department_id', $validated['department_id'] ?? null)
-            ->exists();
-        
-        if ($exists) {
-            return response()->json([
-                'message' => 'This class already exists in the selected department',
-                'errors' => ['name' => ['This class already exists in the selected department']]
-            ], 422);
-        }
 
-        // Check if this is an SSS class and validate department requirement
-        $isSSS = str_contains(strtoupper($validated['name']), 'SSS');
-        if ($isSSS && !$request->department_id) {
-            return response()->json([
-                'message' => 'Department is required for SSS classes',
-                'errors' => ['department_id' => ['Department is required for SSS classes']]
-            ], 422);
+        // If class is SSS level, department is required
+        if (strtoupper($validated['name']) !== null && str_contains(strtoupper($validated['name']), 'SSS')) {
+            $request->validate([
+                'department_id' => 'required|integer|exists:departments,id',
+            ]);
+            $validated['department_id'] = (int) $request->input('department_id');
+
+            // Enforce uniqueness within department for SSS classes
+            $exists = \App\Models\SchoolClass::where('name', $validated['name'])
+                ->where('department_id', $validated['department_id'])
+                ->exists();
+            if ($exists) {
+                return response()->json([
+                    'message' => 'This SSS class already exists for the selected department',
+                    'errors' => ['name' => ['Duplicate class within department']]
+                ], 422);
+            }
+        } else {
+            // Non-SSS classes are unique by name only
+            $request->validate([
+                'name' => 'unique:school_classes,name',
+            ]);
         }
 
         $class = SchoolClass::create($validated);
 
         return response()->json([
             'message' => 'Class created successfully',
-            'class' => $class->load('department')
+            'class' => $class
         ], 201);
     }
 
@@ -101,7 +99,7 @@ class ClassController extends Controller
      */
     public function show(string $id)
     {
-        $class = SchoolClass::with(['department', 'students'])
+        $class = SchoolClass::with('students')
             ->withCount('students')
             ->findOrFail($id);
 
@@ -115,38 +113,51 @@ class ClassController extends Controller
     {
         $class = SchoolClass::findOrFail($id);
 
+        // Base validation
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'department_id' => 'sometimes|exists:departments,id',
+            'name' => ['sometimes', 'string', 'max:255'],
             'description' => 'nullable|string',
             'capacity' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'metadata' => 'nullable|array',
+            'department_id' => 'nullable|integer|exists:departments,id',
         ]);
-        
-        // Check for unique combination of name + department_id (excluding current class)
-        if (isset($validated['name']) || isset($validated['department_id'])) {
-            $name = $validated['name'] ?? $class->name;
-            $deptId = $validated['department_id'] ?? $class->department_id;
-            
-            $exists = SchoolClass::where('name', $name)
-                ->where('department_id', $deptId)
-                ->where('id', '!=', $id)
-                ->exists();
-            
-            if ($exists) {
+
+        // Determine target name and department after update
+        $targetName = $validated['name'] ?? $class->name;
+        $targetDept = array_key_exists('department_id', $validated) ? $validated['department_id'] : $class->department_id;
+
+        // If SSS, require department and enforce uniqueness by (name, department_id)
+        if (str_contains(strtoupper($targetName), 'SSS')) {
+            if ($targetDept === null) {
                 return response()->json([
-                    'message' => 'This class already exists in the selected department',
-                    'errors' => ['name' => ['This class already exists in the selected department']]
+                    'message' => 'Department is required for SSS classes',
+                    'errors' => ['department_id' => ['Department is required for SSS classes']]
                 ], 422);
             }
+
+            $exists = \App\Models\SchoolClass::where('name', $targetName)
+                ->where('department_id', $targetDept)
+                ->where('id', '!=', $id)
+                ->exists();
+            if ($exists) {
+                return response()->json([
+                    'message' => 'This SSS class already exists for the selected department',
+                    'errors' => ['name' => ['Duplicate class within department']]
+                ], 422);
+            }
+        } else {
+            // Non-SSS classes: unique by name only
+            $request->validate([
+                'name' => [Rule::unique('school_classes', 'name')->ignore($id)],
+            ]);
         }
 
         $class->update($validated);
 
         return response()->json([
             'message' => 'Class updated successfully',
-            'class' => $class->load('department')
+            'class' => $class
         ]);
     }
 
@@ -205,5 +216,94 @@ class ClassController extends Controller
             'message' => 'Classes deleted successfully',
             'deleted_count' => $deletedCount
         ]);
+    }
+
+    /**
+     * Bulk upload classes from CSV
+     * Expected columns: name,description,capacity,is_active
+     */
+    public function bulkUpload(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt|max:5120'
+        ]);
+
+        $file = $request->file('file');
+        $path = $file->getRealPath();
+        $content = file_get_contents($path);
+        $lines = explode("\n", trim($content));
+
+        if (count($lines) < 2) {
+            return response()->json([
+                'message' => 'CSV file is empty or invalid',
+                'errors' => ['file' => ['CSV must contain header and at least one row']]
+            ], 422);
+        }
+
+        $header = str_getcsv(array_shift($lines));
+        $expectedHeaders = ['name', 'description', 'capacity', 'is_active'];
+        
+        if ($header !== $expectedHeaders) {
+            return response()->json([
+                'message' => 'Invalid CSV header format',
+                'expected' => $expectedHeaders,
+                'provided' => $header,
+                'errors' => ['file' => ['CSV header does not match expected format']]
+            ], 422);
+        }
+
+        $inserted = 0;
+        $errors = [];
+        $rowNum = 2;
+
+        foreach ($lines as $line) {
+            if (empty(trim($line))) continue;
+
+            $data = str_getcsv($line);
+            
+            if (count($data) !== count($expectedHeaders)) {
+                $errors[] = "Row {$rowNum}: Invalid number of columns";
+                $rowNum++;
+                continue;
+            }
+
+            $row = array_combine($expectedHeaders, $data);
+            
+            try {
+                // Validate required fields
+                if (empty($row['name'])) {
+                    $errors[] = "Row {$rowNum}: Class name is required";
+                    $rowNum++;
+                    continue;
+                }
+
+                // Check for duplicate
+                if (SchoolClass::where('name', $row['name'])->exists()) {
+                    $errors[] = "Row {$rowNum}: Class '{$row['name']}' already exists";
+                    $rowNum++;
+                    continue;
+                }
+
+                SchoolClass::create([
+                    'name' => $row['name'],
+                    'description' => $row['description'] ?? null,
+                    'capacity' => (int)($row['capacity'] ?? 30),
+                    'is_active' => filter_var($row['is_active'] ?? '1', FILTER_VALIDATE_BOOLEAN)
+                ]);
+
+                $inserted++;
+            } catch (\Exception $e) {
+                $errors[] = "Row {$rowNum}: {$e->getMessage()}";
+            }
+
+            $rowNum++;
+        }
+
+        return response()->json([
+            'message' => "Bulk upload completed. {$inserted} classes imported.",
+            'inserted' => $inserted,
+            'errors' => $errors,
+            'error_count' => count($errors)
+        ], count($errors) > 0 && $inserted === 0 ? 422 : 200);
     }
 }

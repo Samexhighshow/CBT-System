@@ -14,14 +14,11 @@ class Subject extends Model
         'code', 
         'description', 
         'is_compulsory', 
-        'class_level', 
         'class_id',
+        'class_level',
         'department_id',
         'subject_type',
-        'is_active',
-        'subject_group', 
-        'class_levels', 
-        'departments'
+        'is_active'
     ];
 
     protected $casts = [
@@ -40,21 +37,15 @@ class Subject extends Model
     }
 
     /**
-     * Get the department this subject belongs to (for SSS subjects)
+     * Get departments available for this subject's class.
+     * Departments are filtered by matching their class_level to the subject's class name.
      */
-    public function department(): BelongsTo
+    public function availableDepartments()
     {
-        return $this->belongsTo(Department::class);
-    }
-
-    /**
-     * Many-to-many relationship with departments
-     */
-    public function departments(): BelongsToMany
-    {
-        return $this->belongsToMany(Department::class, 'department_subjects')
-            ->withPivot('is_compulsory', 'is_core')
-            ->withTimestamps();
+        if (!$this->schoolClass) {
+            return collect([]);
+        }
+        return $this->schoolClass->departments();
     }
 
     /**
@@ -74,10 +65,10 @@ class Subject extends Model
     }
 
     /**
-     * Check if this subject requires a department (SSS subjects)
+     * Get the subject type description
      */
-    public function requiresDepartment(): bool
+    public function getTypeDescription(): string
     {
-        return in_array($this->class_level, ['SSS 1', 'SSS 2', 'SSS 3', 'SSS']);
+        return $this->subject_type === 'core' ? 'Core (mandatory)' : 'Elective (optional)';
     }
 }

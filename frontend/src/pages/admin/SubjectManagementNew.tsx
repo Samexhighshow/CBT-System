@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 
@@ -14,10 +14,10 @@ interface Department {
 interface SchoolClass {
   id: number;
   name: string;
-  department_id: number | null;
   description: string;
   capacity: number;
   is_active: boolean;
+  department_id?: number;
 }
 
 interface Subject {
@@ -26,7 +26,6 @@ interface Subject {
   code: string;
   description: string;
   class_id: number;
-  department_id: number | null;
   subject_type: 'core' | 'elective';
   is_compulsory: boolean;
   class_level: string;
@@ -40,6 +39,16 @@ const SubjectManagementNew: React.FC = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjectShowAll, setSubjectShowAll] = useState<boolean>(false);
+  const [classShowAll, setClassShowAll] = useState<boolean>(true);
+  const [deptShowAll, setDeptShowAll] = useState<boolean>(true);
+  const [deptSearch, setDeptSearch] = useState<string>('');
+  const [deptSort, setDeptSort] = useState<'name-asc'|'name-desc'|'code-asc'|'code-desc'>('name-asc');
+  const [classSearch, setClassSearch] = useState<string>('');
+  const [classSort, setClassSort] = useState<'name-asc'|'name-desc'|'capacity-asc'|'capacity-desc'|'status'>('name-asc');
+  const [subjectLevelFilter, setSubjectLevelFilter] = useState<string>('');
+  const [subjectSearch, setSubjectSearch] = useState<string>('');
+  const [subjectSort, setSubjectSort] = useState<'name-asc'|'name-desc'|'code-asc'|'code-desc'|'status'|'recent'>('name-asc');
   
   // Pagination states
   const [deptPage, setDeptPage] = useState(1);
@@ -57,29 +66,26 @@ const SubjectManagementNew: React.FC = () => {
     name: '',
     code: '',
     description: '',
-    class_level: 'SSS'
+    class_level: ''
   });
   
-  const [classForm, setClassForm] = useState({
+  const [classForm, setClassForm] = useState<{ name: string; description: string; capacity: number; is_active: boolean; department_id?: string | number }>({
     name: '',
-    department_id: '',
     description: '',
     capacity: 30,
-    is_active: true
+    is_active: true,
+    department_id: ''
   });
   
   const [subjectForm, setSubjectForm] = useState({
     name: '',
     code: '',
     description: '',
-    class_id: '',
-    department_id: '',
+    class_level: '',
     subject_type: 'core' as 'core' | 'elective',
     is_compulsory: true
   });
 
-  const [selectedClassForSubject, setSelectedClassForSubject] = useState<SchoolClass | null>(null);
-  const [availableDepartments, setAvailableDepartments] = useState<Department[]>([]);
   
   // Selection states for bulk operations
   const [selectedDepts, setSelectedDepts] = useState<number[]>([]);
@@ -101,40 +107,29 @@ const SubjectManagementNew: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Update selected class when class_id changes
-    if (subjectForm.class_id) {
-      const selectedClass = classes.find(c => c.id === Number(subjectForm.class_id));
-      setSelectedClassForSubject(selectedClass || null);
-      
-      // Filter departments based on selected class
-      if (selectedClass) {
-        if (isSSClass(selectedClass.name)) {
-          // For SSS classes, show only the department linked to this class
-          if (selectedClass.department_id) {
-            const classDept = departments.filter(d => d.id === selectedClass.department_id);
-            setAvailableDepartments(classDept);
-          } else {
-            // If SSS class has no department, show all SSS departments
-            setAvailableDepartments(departments.filter(d => d.class_level === 'SSS'));
-          }
-        } else {
-          setAvailableDepartments([]);
-          setSubjectForm(prev => ({ ...prev, department_id: '' }));
-        }
-      }
-    } else {
-      setSelectedClassForSubject(null);
-      setAvailableDepartments([]);
+    // If no class_level selected yet, default to first available class name
+    if (!deptForm.class_level && classes.length > 0) {
+      setDeptForm(prev => ({ ...prev, class_level: classes[0].name }));
     }
-  }, [subjectForm.class_id, classes, departments]);
+  }, [classes, deptForm.class_level]);
+
+  useEffect(() => {
+    // For subject creation, default to the first class level if none selected (only when not editing)
+    if (!editingSubject && !subjectForm.class_level && classes.length > 0) {
+      const firstLevel = Array.from(new Set(classes.map((c: any) => c.name))).sort((a, b) => a.localeCompare(b))[0];
+      if (firstLevel) {
+        setSubjectForm(prev => ({ ...prev, class_level: firstLevel }));
+      }
+    }
+  }, [classes, subjectForm.class_level, editingSubject]);
 
   const loadAllData = async () => {
     try {
       setLoading(true);
       const [deptRes, classRes, subjectRes] = await Promise.all([
-        api.get('/departments?limit=1000'),
-        api.get('/classes?limit=1000'),
-        api.get('/subjects?limit=1000'),
+        api.get(`/departments?limit=1000${deptShowAll ? '&show_all=1' : ''}`),
+        api.get(`/classes?limit=1000${classShowAll ? '&show_all=1' : ''}`),
+        api.get(`/subjects?limit=1000${subjectLevelFilter ? `&class_level=${encodeURIComponent(subjectLevelFilter)}` : ''}${subjectShowAll ? `&show_all=1` : ''}`),
       ]);
       
       // Extract data from paginated response
@@ -151,59 +146,104 @@ const SubjectManagementNew: React.FC = () => {
       setDepartments(Array.isArray(deptData) ? deptData : []);
       setClasses(Array.isArray(classData) ? classData : []);
       setSubjects(Array.isArray(subjectData) ? subjectData : []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load data:', error);
-      showError('Failed to load data');
+      console.error('Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url
+      });
+      showError('Failed to load data. Check console for details.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Refetch subjects when class level or show_all changes
+  useEffect(() => {
+    // Refetch subjects when class level filter changes
+    const fetchSubjects = async () => {
+      try {
+        const res = await api.get(`/subjects?limit=1000${subjectLevelFilter ? `&class_level=${encodeURIComponent(subjectLevelFilter)}` : ''}${subjectShowAll ? `&show_all=1` : ''}`);
+        const data = res.data.data || res.data || [];
+        setSubjects(Array.isArray(data) ? data : []);
+      } catch (error: any) {
+        console.error('Failed to load filtered subjects:', error);
+      }
+    };
+    fetchSubjects();
+  }, [subjectLevelFilter, subjectShowAll]);
+
   const isSSClass = (className: string): boolean => {
     return className.toUpperCase().includes('SSS');
   };
 
-  // Pagination helpers
-  const getPaginatedData = <T,>(data: T[], page: number): T[] => {
-    const startIndex = (page - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return data.slice(startIndex, endIndex);
+  const getDepartmentsForClass = (cls: SchoolClass) => {
+    // Prefer explicit department_id (SSS classes), fallback to class_level name match
+    if (cls.department_id) {
+      const byId = departments.find(d => Number(d.id) === Number(cls.department_id));
+      if (byId) return [byId];
+    }
+    return departments.filter(d => d.class_level && d.class_level.toLowerCase() === cls.name.toLowerCase());
   };
 
-  const getTotalPages = (totalItems: number): number => {
-    return Math.ceil(totalItems / itemsPerPage);
+  // Group classes by class level name, aggregating departments for SSS
+  const getClassLevelGroups = () => {
+    const groups: Record<string, { name: string; departments: Array<{ id: number; name: string }>; classes: any[] }> = {};
+    classes.forEach((cls: any) => {
+      const key = cls.name;
+      if (!groups[key]) {
+        groups[key] = { name: key, departments: [], classes: [] };
+      }
+      groups[key].classes.push(cls);
+      if (isSSClass(cls.name) && cls.department_id && departments.length > 0) {
+        const dept = departments.find((d: any) => d.id === Number(cls.department_id));
+        if (dept && !groups[key].departments.some(d => d.id === dept.id)) {
+          groups[key].departments.push({ id: dept.id, name: dept.name });
+        }
+      }
+    });
+    return Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
   };
 
+  const getSubjectsForClass = (cls: SchoolClass) => subjects.filter(s => s.class_level === cls.name);
+
+  const getClassLevels = () => {
+    return Array.from(new Set(classes.map((c: any) => c.name))).sort((a, b) => a.localeCompare(b));
+  };
+
+  // Pagination helper functions
+  const ITEMS_PER_PAGE = 10;
+  
+  const getPaginatedData = (data: any[], page: number) => {
+    const startIndex = (page - 1) * ITEMS_PER_PAGE;
+    return data.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  };
+  
+  const getTotalPages = (totalItems: number) => {
+    return Math.ceil(totalItems / ITEMS_PER_PAGE);
+  };
+  
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages = [];
+    const maxPagesToShow = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+    let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+    if (endPage - startPage < maxPagesToShow - 1) {
+      startPage = Math.max(1, endPage - maxPagesToShow + 1);
+    }
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+  
   const handlePageChange = (newPage: number, setPage: (page: number) => void, totalPages: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setPage(newPage);
     }
-  };
-
-  const getPageNumbers = (currentPage: number, totalPages: number): (number | string)[] => {
-    if (totalPages <= 7) {
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
-    }
-
-    const pages: (number | string)[] = [];
-    
-    if (currentPage <= 3) {
-      for (let i = 1; i <= 5; i++) pages.push(i);
-      pages.push('...');
-      pages.push(totalPages);
-    } else if (currentPage >= totalPages - 2) {
-      pages.push(1);
-      pages.push('...');
-      for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      pages.push('...');
-      for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
-      pages.push('...');
-      pages.push(totalPages);
-    }
-    
-    return pages;
   };
 
   // Department CRUD
@@ -225,7 +265,7 @@ const SubjectManagementNew: React.FC = () => {
       }
       setShowDeptModal(false);
       setEditingDept(null);
-      setDeptForm({ name: '', code: '', description: '', class_level: 'SSS' });
+      setDeptForm({ name: '', code: '', description: '', class_level: classes[0]?.name || '' });
       loadAllData();
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to save department');
@@ -245,6 +285,19 @@ const SubjectManagementNew: React.FC = () => {
     }
   };
 
+  const handleToggleDeptStatus = async (dept: any) => {
+    try {
+      const newStatus = !dept.is_active;
+      await api.put(`/departments/${dept.id}`, {
+        is_active: newStatus
+      });
+      showSuccess(`Department ${newStatus ? 'activated' : 'deactivated'} successfully`);
+      loadAllData();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to update department status');
+    }
+  };
+
   // Class CRUD
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,32 +307,31 @@ const SubjectManagementNew: React.FC = () => {
       return;
     }
 
-    // Validate department requirement for SSS classes
-    if (isSSClass(classForm.name) && !classForm.department_id) {
-      showError('Department is required for SSS classes');
-      return;
+    // If SSS class, department is required
+    if (isSSClass(classForm.name)) {
+      const deptId = (classForm as any).department_id;
+      if (!deptId) {
+        showError('Please select a department for SSS classes');
+        return;
+      }
     }
 
     try {
-      const payload = {
-        ...classForm,
-        department_id: classForm.department_id || null
-      };
       if (editingClass) {
-        await api.put(`/classes/${editingClass.id}`, payload);
+        await api.put(`/classes/${editingClass.id}`, classForm);
         showSuccess('Class updated successfully');
       } else {
-        await api.post('/classes', payload);
+        await api.post('/classes', classForm);
         showSuccess('Class created successfully');
       }
       setShowClassModal(false);
       setEditingClass(null);
       setClassForm({
         name: '',
-        department_id: '',
         description: '',
         capacity: 30,
-        is_active: true
+        is_active: true,
+        department_id: ''
       });
       loadAllData();
     } catch (error: any) {
@@ -300,25 +352,31 @@ const SubjectManagementNew: React.FC = () => {
     }
   };
 
+  const handleToggleClassStatus = async (cls: any) => {
+    try {
+      const newStatus = !cls.is_active;
+      await api.put(`/classes/${cls.id}`, {
+        is_active: newStatus
+      });
+      showSuccess(`Class ${newStatus ? 'activated' : 'deactivated'} successfully`);
+      loadAllData();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to update class status');
+    }
+  };
+
   // Subject CRUD
   const handleCreateSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!subjectForm.name || !subjectForm.code || !subjectForm.class_id) {
+    if (!subjectForm.name || !subjectForm.code || !subjectForm.class_level) {
       showError('Please fill in all required fields');
-      return;
-    }
-
-    // Validate department requirement for SSS classes
-    if (selectedClassForSubject && isSSClass(selectedClassForSubject.name) && !subjectForm.department_id) {
-      showError('Department is required for SSS class subjects');
       return;
     }
 
     try {
       const payload = {
         ...subjectForm,
-        department_id: subjectForm.department_id || null,
         is_compulsory: subjectForm.subject_type === 'core'
       };
       
@@ -335,8 +393,7 @@ const SubjectManagementNew: React.FC = () => {
         name: '',
         code: '',
         description: '',
-        class_id: '',
-        department_id: '',
+        class_level: '',
         subject_type: 'core',
         is_compulsory: true
       });
@@ -356,6 +413,19 @@ const SubjectManagementNew: React.FC = () => {
       } catch (error) {
         showError('Failed to delete subject');
       }
+    }
+  };
+
+  const handleToggleSubjectStatus = async (subject: any) => {
+    try {
+      const newStatus = !subject.is_active;
+      await api.put(`/subjects/${subject.id}`, {
+        is_active: newStatus
+      });
+      showSuccess(`Subject ${newStatus ? 'activated' : 'deactivated'} successfully`);
+      loadAllData();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to update subject status');
     }
   };
 
@@ -430,10 +500,10 @@ const SubjectManagementNew: React.FC = () => {
     setEditingClass(cls);
     setClassForm({
       name: cls.name,
-      department_id: cls.department_id?.toString() || '',
       description: cls.description,
       capacity: cls.capacity,
-      is_active: cls.is_active
+      is_active: cls.is_active,
+      department_id: cls.department_id || ''
     });
     setShowClassModal(true);
   };
@@ -444,8 +514,7 @@ const SubjectManagementNew: React.FC = () => {
       name: subject.name,
       code: subject.code,
       description: subject.description,
-      class_id: subject.class_id?.toString() || '',
-      department_id: subject.department_id?.toString() || '',
+      class_level: subject.class_level || '',
       subject_type: subject.subject_type,
       is_compulsory: subject.is_compulsory
     });
@@ -467,7 +536,7 @@ const SubjectManagementNew: React.FC = () => {
       showSuccess('Department updated successfully');
       setShowDeptModal(false);
       setEditingDept(null);
-      setDeptForm({ name: '', code: '', description: '', class_level: 'SSS' });
+      setDeptForm({ name: '', code: '', description: '', class_level: classes[0]?.name || '' });
       loadAllData();
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to update department');
@@ -483,21 +552,12 @@ const SubjectManagementNew: React.FC = () => {
       return;
     }
 
-    if (isSSClass(classForm.name) && !classForm.department_id) {
-      showError('Department is required for SSS classes');
-      return;
-    }
-
     try {
-      const payload = {
-        ...classForm,
-        department_id: classForm.department_id || null
-      };
-      await api.put(`/classes/${editingClass.id}`, payload);
+      await api.put(`/classes/${editingClass.id}`, classForm);
       showSuccess('Class updated successfully');
       setShowClassModal(false);
       setEditingClass(null);
-      setClassForm({ name: '', department_id: '', description: '', capacity: 30, is_active: true });
+      setClassForm({ name: '', description: '', capacity: 30, is_active: true, department_id: '' });
       loadAllData();
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to update class');
@@ -508,27 +568,21 @@ const SubjectManagementNew: React.FC = () => {
     e.preventDefault();
     if (!editingSubject) return;
 
-    if (!subjectForm.name || !subjectForm.code || !subjectForm.class_id) {
+    if (!subjectForm.name || !subjectForm.code || !subjectForm.class_level) {
       showError('Please fill in all required fields');
-      return;
-    }
-
-    if (selectedClassForSubject && isSSClass(selectedClassForSubject.name) && !subjectForm.department_id) {
-      showError('Department is required for SSS class subjects');
       return;
     }
 
     try {
       const payload = {
         ...subjectForm,
-        department_id: subjectForm.department_id || null,
         is_compulsory: subjectForm.subject_type === 'core'
       };
       await api.put(`/subjects/${editingSubject.id}`, payload);
       showSuccess('Subject updated successfully');
       setShowSubjectModal(false);
       setEditingSubject(null);
-      setSubjectForm({ name: '', code: '', description: '', class_id: '', department_id: '', subject_type: 'core', is_compulsory: true });
+      setSubjectForm({ name: '', code: '', description: '', class_level: '', subject_type: 'core', is_compulsory: true });
       loadAllData();
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to update subject');
@@ -652,18 +706,18 @@ const SubjectManagementNew: React.FC = () => {
     
     if (type === 'departments') {
       csvContent = 'name,code,description,class_level,is_active\n' +
-                   'Science,SCI,Science Department,SSS,1\n' +
-                   'Art & Humanity,ART,Arts Department,SSS,1';
+           'Science,SCI,Science Department,SSS 1,1\n' +
+           'Art & Humanity,ART,Arts Department,SSS 1,1';
       filename = 'departments-sample-template.csv';
     } else if (type === 'classes') {
-      csvContent = 'name,department_id,description,capacity,is_active\n' +
-                   'SSS 1,1,Senior Secondary School 1,30,1\n' +
-                   'SSS 2,1,Senior Secondary School 2,30,1';
+      csvContent = 'name,description,capacity,is_active\n' +
+                   'SSS 1,Senior Secondary School 1,30,1\n' +
+                   'SSS 2,Senior Secondary School 2,30,1';
       filename = 'classes-sample-template.csv';
     } else if (type === 'subjects') {
-      csvContent = 'name,code,class_id,subject_type,department_id,description\n' +
-                   'Mathematics,MATH101,1,core,1,Core Mathematics\n' +
-                   'English Language,ENG101,1,core,1,Compulsory English';
+      csvContent = 'name,code,class_level,subject_type,description\n' +
+                   'Mathematics,MATH101,SSS 1,core,Core for all SSS 1 classes\n' +
+                   'Government,GOV201,JSS 3,elective,Elective for JSS 3';
       filename = 'subjects-sample-template.csv';
     }
 
@@ -704,7 +758,7 @@ const SubjectManagementNew: React.FC = () => {
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow-md p-1.5 mb-3">
           <div className="flex gap-1.5">
-            {(['departments', 'classes', 'subjects'] as const).map((tab) => (
+            {(['departments', 'classes', 'subjects'] as const).map((tab: 'departments' | 'classes' | 'subjects') => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -737,13 +791,7 @@ const SubjectManagementNew: React.FC = () => {
                     Required for SSS classes • {departments.length} total
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <select
-                    value="departments"
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="departments">Select Department</option>
-                  </select>
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleExportDepts()}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
@@ -809,6 +857,36 @@ const SubjectManagementNew: React.FC = () => {
                     <p className="text-xs text-gray-600">{departments.length} total departments</p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={deptShowAll}
+                        onChange={(e) => { setDeptShowAll(e.target.checked); setDeptPage(1); loadAllData(); }}
+                      />
+                      Show inactive
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                        <input
+                          value={deptSearch}
+                          onChange={(e) => { setDeptSearch(e.target.value); setDeptPage(1); }}
+                          placeholder="Search departments..."
+                          className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                        />
+                      </div>
+                      <select
+                        value={deptSort}
+                        onChange={(e) => { setDeptSort(e.target.value as any); setDeptPage(1); }}
+                        className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                        title="Sort"
+                      >
+                        <option value="name-asc">Name A→Z</option>
+                        <option value="name-desc">Name Z→A</option>
+                        <option value="code-asc">Code A→Z</option>
+                        <option value="code-desc">Code Z→A</option>
+                      </select>
+                    </div>
                     <select
                       value={itemsPerPage}
                       onChange={(e) => {
@@ -861,7 +939,23 @@ const SubjectManagementNew: React.FC = () => {
 
                 {/* Departments Grid */}
                 <div className="grid gap-3">
-                  {getPaginatedData(departments, deptPage).map((dept) => (
+                  {getPaginatedData(
+                    [...departments]
+                      .filter((d: any) => 
+                        d.name.toLowerCase().includes(deptSearch.toLowerCase()) ||
+                        d.code.toLowerCase().includes(deptSearch.toLowerCase())
+                      )
+                      .sort((a: any, b: any) => {
+                        switch (deptSort) {
+                          case 'name-asc': return a.name.localeCompare(b.name);
+                          case 'name-desc': return b.name.localeCompare(a.name);
+                          case 'code-asc': return a.code.localeCompare(b.code);
+                          case 'code-desc': return b.code.localeCompare(a.code);
+                          default: return 0;
+                        }
+                      }),
+                    deptPage
+                  ).map((dept: any) => (
                     <div key={dept.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedDepts.includes(dept.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
                       <div className="flex justify-between items-start gap-2">
                         <input
@@ -879,16 +973,22 @@ const SubjectManagementNew: React.FC = () => {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="text-base font-semibold text-gray-800">{dept.name}</h3>
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                              {dept.class_level}
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-xs font-medium">
+                              {dept.code}
                             </span>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              dept.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                            }`}>
+                            <button
+                              onClick={() => handleToggleDeptStatus(dept)}
+                              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-all hover:shadow-sm ${
+                                dept.is_active ? 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                              }`}
+                              title="Click to toggle status"
+                            >
+                              <div className={`w-2 h-2 rounded-full ${
+                                dept.is_active ? 'bg-green-600' : 'bg-gray-400'
+                              }`}></div>
                               {dept.is_active ? 'Active' : 'Inactive'}
-                            </span>
+                            </button>
                           </div>
-                          <p className="text-xs text-gray-600">Code: {dept.code}</p>
                           {dept.description && (
                             <p className="text-xs text-gray-500 mt-1">{dept.description}</p>
                           )}
@@ -928,7 +1028,7 @@ const SubjectManagementNew: React.FC = () => {
                       >
                         <i className='bx bx-chevron-left'></i>
                       </button>
-                      {getPageNumbers(deptPage, getTotalPages(departments.length)).map((page, idx) => (
+                      {getPageNumbers(deptPage, getTotalPages(departments.length)).map((page: any, idx: number) => (
                         page === '...' ? (
                           <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
                         ) : (
@@ -976,12 +1076,6 @@ const SubjectManagementNew: React.FC = () => {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <select
-                    value="classes"
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="classes">Select Class</option>
-                  </select>
                   <button
                     onClick={() => handleExportClasses()}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
@@ -1038,6 +1132,49 @@ const SubjectManagementNew: React.FC = () => {
               </div>
             </div>
 
+            {/* Classes Summary */}
+            {classes.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+                {getClassLevelGroups().map((group) => {
+                  // Aggregate subjects across grouped classes
+                  const subs = group.classes.flatMap((c: any) => getSubjectsForClass(c));
+                  const coreCount = subs.filter(s => s.subject_type === 'core').length;
+                  const electiveCount = subs.filter(s => s.subject_type === 'elective').length;
+                  const totalCapacity = group.classes.reduce((sum: number, c: any) => sum + (c.capacity || 0), 0);
+                  const isActive = group.classes.some((c: any) => c.is_active);
+                  return (
+                    <div key={`summary-${group.name}`} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="text-[11px] text-gray-500">Class Level</p>
+                          <h3 className="text-base font-semibold text-gray-900">{group.name}</h3>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
+                          {isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-700 space-y-1">
+                        <p>Departments: <span className="font-semibold">{group.departments.length}</span></p>
+                        <p>Subjects: <span className="font-semibold">{subs.length}</span> (Core {coreCount} • Elective {electiveCount})</p>
+                        <p>Capacity (sum): <span className="font-semibold">{totalCapacity}</span></p>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {group.departments.length === 0 ? (
+                          <span className="text-[11px] text-gray-500">No departments yet</span>
+                        ) : (
+                          group.departments.map((dept) => (
+                            <span key={dept.id} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-[11px] font-medium">
+                              {dept.name}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Classes List Section */}
             {classes.length > 0 && (
               <div className="bg-white rounded-lg shadow-md p-4">
@@ -1047,6 +1184,37 @@ const SubjectManagementNew: React.FC = () => {
                     <p className="text-xs text-gray-600">{classes.length} total classes</p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={classShowAll}
+                        onChange={(e) => { setClassShowAll(e.target.checked); setClassPage(1); loadAllData(); }}
+                      />
+                      Show inactive
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                        <input
+                          value={classSearch}
+                          onChange={(e) => { setClassSearch(e.target.value); setClassPage(1); }}
+                          placeholder="Search classes..."
+                          className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                        />
+                      </div>
+                      <select
+                        value={classSort}
+                        onChange={(e) => { setClassSort(e.target.value as any); setClassPage(1); }}
+                        className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                        title="Sort"
+                      >
+                        <option value="name-asc">Name A→Z</option>
+                        <option value="name-desc">Name Z→A</option>
+                        <option value="capacity-asc">Capacity ↑</option>
+                        <option value="capacity-desc">Capacity ↓</option>
+                        <option value="status">Status (Active first)</option>
+                      </select>
+                    </div>
                     <select
                       value={itemsPerPage}
                       onChange={(e) => {
@@ -1099,7 +1267,21 @@ const SubjectManagementNew: React.FC = () => {
 
                 {/* Classes Grid */}
                 <div className="grid gap-3">
-                  {getPaginatedData(classes, classPage).map((cls) => (
+                  {getPaginatedData(
+                    [...classes]
+                      .filter((c: any) => c.name.toLowerCase().includes(classSearch.toLowerCase()))
+                      .sort((a: any, b: any) => {
+                        switch (classSort) {
+                          case 'name-asc': return a.name.localeCompare(b.name);
+                          case 'name-desc': return b.name.localeCompare(a.name);
+                          case 'capacity-asc': return (a.capacity ?? 0) - (b.capacity ?? 0);
+                          case 'capacity-desc': return (b.capacity ?? 0) - (a.capacity ?? 0);
+                          case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+                          default: return 0;
+                        }
+                      }),
+                    classPage
+                  ).map((cls: any) => (
                     <div key={cls.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedClasses.includes(cls.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
                       <div className="flex justify-between items-start gap-2">
                         <input
@@ -1118,22 +1300,38 @@ const SubjectManagementNew: React.FC = () => {
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="text-base font-semibold text-gray-800">{cls.name}</h3>
                             {isSSClass(cls.name) && (
-                              <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+                              <span className="px-2 py-0.5 bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-800 border border-purple-200 rounded-full text-xs font-medium">
                                 SSS
                               </span>
                             )}
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              cls.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                            }`}>
+                            <button
+                              onClick={() => handleToggleClassStatus(cls)}
+                              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-all hover:shadow-sm ${
+                                cls.is_active ? 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                              }`}
+                              title="Click to toggle status"
+                            >
+                              <div className={`w-2 h-2 rounded-full ${
+                                cls.is_active ? 'bg-green-600' : 'bg-gray-400'
+                              }`}></div>
                               {cls.is_active ? 'Active' : 'Inactive'}
-                            </span>
+                            </button>
                           </div>
-                          {cls.department_id && (
-                            <p className="text-xs text-gray-600">
-                              Dept: {departments.find(d => d.id === cls.department_id)?.name || 'N/A'}
-                            </p>
-                          )}
-                          <p className="text-xs text-gray-600">Capacity: {cls.capacity}</p>
+                          <p className="text-xs text-gray-600">Capacity: <span className="font-medium">{cls.capacity}</span></p>
+                          <div className="mt-1">
+                            <p className="text-xs text-gray-600 mb-1">Departments under this class:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {getDepartmentsForClass(cls).length === 0 ? (
+                                <span className="text-[11px] text-gray-500">None yet</span>
+                              ) : (
+                                getDepartmentsForClass(cls).map(dept => (
+                                  <span key={dept.id} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-[11px] font-medium">
+                                    {dept.name}
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          </div>
                         </div>
                         <div className="flex gap-1.5">
                           <button
@@ -1170,7 +1368,7 @@ const SubjectManagementNew: React.FC = () => {
                     >
                       <i className='bx bx-chevron-left'></i>
                     </button>
-                    {getPageNumbers(classPage, getTotalPages(classes.length)).map((page, idx) => (
+                    {getPageNumbers(classPage, getTotalPages(classes.length)).map((page: any, idx: number) => (
                       page === '...' ? (
                         <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
                       ) : (
@@ -1209,7 +1407,7 @@ const SubjectManagementNew: React.FC = () => {
             <div className="mb-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Upload Questions</h2>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Subjects</h2>
                   <p className="text-sm text-gray-600">
                     {classes.length === 0 
                       ? '⚠️ Create classes first' 
@@ -1218,12 +1416,6 @@ const SubjectManagementNew: React.FC = () => {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <select
-                    value="subjects"
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="subjects">Select CBT Subject</option>
-                  </select>
                   <button
                     onClick={() => handleExportSubjects()}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
@@ -1289,168 +1481,279 @@ const SubjectManagementNew: React.FC = () => {
             </div>
 
             {/* Subjects List Section */}
-            {subjects.length > 0 && (
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800">Your Subjects</h3>
-                    <p className="text-xs text-gray-600">{subjects.length} total subjects</p>
-                  </div>
+            <div className="bg-white rounded-lg shadow-md p-4">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">Your Subjects</h3>
+                  <p className="text-xs text-gray-600">{subjects.length} total subjects</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={subjectShowAll}
+                      onChange={(e) => { setSubjectShowAll(e.target.checked); setSubjectPage(1); }}
+                    />
+                    Show inactive
+                  </label>
                   <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                      <input
+                        value={subjectSearch}
+                        onChange={(e) => { setSubjectSearch(e.target.value); setSubjectPage(1); }}
+                        placeholder="Search subjects..."
+                        className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                      />
+                    </div>
                     <select
-                      value={itemsPerPage}
-                      onChange={(e) => {
-                        setItemsPerPage(Number(e.target.value));
-                        setSubjectPage(1);
-                      }}
+                      value={subjectSort}
+                      onChange={(e) => { setSubjectSort(e.target.value as any); setSubjectPage(1); }}
                       className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                      title="Sort"
                     >
-                      <option value={10}>10 per page</option>
-                      <option value={15}>15 per page</option>
-                      <option value={25}>25 per page</option>
-                      <option value={50}>50 per page</option>
+                      <option value="name-asc">Name A→Z</option>
+                      <option value="name-desc">Name Z→A</option>
+                      <option value="code-asc">Code A→Z</option>
+                      <option value="code-desc">Code Z→A</option>
+                      <option value="status">Status (Active first)</option>
+                      <option value="recent">Recently added</option>
                     </select>
                   </div>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setSubjectPage(1);
+                    }}
+                    className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value={10}>10 per page</option>
+                    <option value={15}>15 per page</option>
+                    <option value={25}>25 per page</option>
+                    <option value={50}>50 per page</option>
+                  </select>
                 </div>
+              </div>
 
-                {/* Selection Bar */}
-                {subjects.length > 0 && (
-                  <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedSubjects.length > 0 && selectedSubjects.length === subjects.length}
-                          onChange={handleSelectAllSubjects}
-                          className="w-5 h-5 cursor-pointer"
-                          title="Select all subjects"
-                        />
-                        <span className="text-sm font-semibold text-blue-800">
-                          {selectedSubjects.length > 0 ? `${selectedSubjects.length} of ${subjects.length} selected` : 'Select All'}
-                        </span>
+              {/* Selection Bar */}
+              {subjects.length > 0 && (
+                <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedSubjects.length > 0 && selectedSubjects.length === subjects.length}
+                        onChange={handleSelectAllSubjects}
+                        className="w-5 h-5 cursor-pointer"
+                        title="Select all subjects"
+                      />
+                      <span className="text-sm font-semibold text-blue-800">
+                        {selectedSubjects.length > 0 ? `${selectedSubjects.length} of ${subjects.length} selected` : 'Select All'}
+                      </span>
+                    </div>
+                    {selectedSubjects.length > 0 && (
+                      <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                        <button
+                          onClick={handleExportSubjects}
+                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <i className='bx bx-download text-sm'></i>Export
+                        </button>
+                        <button
+                          onClick={handleBulkDeleteSubjects}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <i className='bx bx-trash text-sm'></i>Delete
+                        </button>
                       </div>
-                      {selectedSubjects.length > 0 && (
-                        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                          <button
-                            onClick={handleExportSubjects}
-                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
-                          >
-                            <i className='bx bx-download text-sm'></i>Export
-                          </button>
-                          <button
-                            onClick={handleBulkDeleteSubjects}
-                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
-                          >
-                            <i className='bx bx-trash text-sm'></i>Delete
-                          </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Subjects Filter */}
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-2">
+                <div className="text-sm text-gray-700 font-medium">Subjects</div>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-700">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-gray-600">Class Level:</span>
+                    <select
+                      value={subjectLevelFilter}
+                      onChange={(e) => setSubjectLevelFilter(e.target.value)}
+                      className="px-2 py-1 border border-gray-300 rounded-md text-xs"
+                    >
+                      <option value="">All</option>
+                      {Array.from(new Set(classes.map((c: any) => c.name))).map((level) => (
+                        <option key={`levelfilter-${level}`} value={level}>{level}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubjectLevelFilter('');
+                      setSubjectSearch('');
+                      setSubjectSort('name-asc');
+                      setSubjectPage(1);
+                    }}
+                    className="px-3 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    Reset filters
+                  </button>
+                </div>
+              </div>
+
+              {/* Subjects Grid + Pagination */}
+              {(() => {
+                // Apply filters and sort
+                let filtered = subjects.filter((s: any) =>
+                  (s.name || '').toLowerCase().includes(subjectSearch.toLowerCase()) ||
+                  (s.code || '').toLowerCase().includes(subjectSearch.toLowerCase())
+                );
+                filtered = [...filtered].sort((a: any, b: any) => {
+                  switch (subjectSort) {
+                    case 'name-asc': return (a.name || '').localeCompare(b.name || '');
+                    case 'name-desc': return (b.name || '').localeCompare(a.name || '');
+                    case 'code-asc': return (a.code || '').localeCompare(b.code || '');
+                    case 'code-desc': return (b.code || '').localeCompare(a.code || '');
+                    case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+                    case 'recent': return (b.id ?? 0) - (a.id ?? 0);
+                    default: return 0;
+                  }
+                });
+
+                const paged = getPaginatedData(filtered, subjectPage);
+
+                return (
+                  <>
+                    <div className="grid gap-3">
+                      {filtered.length === 0 ? (
+                        <div className="border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                          No subjects available for this class level.
                         </div>
+                      ) : (
+                        paged.map((subject: any) => (
+                          <div key={subject.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedSubjects.includes(subject.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
+                            <div className="flex justify-between items-start gap-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedSubjects.includes(subject.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedSubjects([...selectedSubjects, subject.id]);
+                                  } else {
+                                    setSelectedSubjects(selectedSubjects.filter(id => id !== subject.id));
+                                  }
+                                }}
+                                className="mt-1 w-4 h-4 cursor-pointer"
+                              />
+                              <div className="flex-1">
+                                <div className="flex flex-col gap-1.5 mb-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="text-base font-semibold text-gray-800">{subject.name}</h3>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                      subject.subject_type === 'core' 
+                                        ? 'bg-orange-100 text-orange-800 border border-orange-200' 
+                                        : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                    }`}>
+                                      {subject.subject_type === 'core' ? 'Core' : 'Elective'}
+                                    </span>
+                                    {subject.class_level && (
+                                      <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
+                                        {subject.class_level}
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => handleToggleSubjectStatus(subject)}
+                                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-all hover:shadow-sm ${
+                                        subject.is_active ? 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                                      }`}
+                                      title="Click to toggle status"
+                                    >
+                                      <div className={`w-2 h-2 rounded-full ${
+                                        subject.is_active ? 'bg-green-600' : 'bg-gray-400'
+                                      }`}></div>
+                                      {subject.is_active ? 'Active' : 'Inactive'}
+                                    </button>
+                                  </div>
+                                  <p className="text-xs text-gray-600">
+                                    Code: <span className="font-medium">{subject.code}</span>
+                                  </p>
+                                  <p className="text-xs text-gray-600">
+                                    {subject.subject_type === 'core' 
+                                      ? '✓ Required for all students and departments' 
+                                      : '○ Optional - students choose based on department/interest'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex gap-1.5">
+                                <button
+                                  onClick={() => handleEditSubject(subject)}
+                                  className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
+                                  title="Edit"
+                                >
+                                  <i className='bx bx-edit text-lg'></i>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSubject(subject.id)}
+                                  className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
+                                  title="Delete"
+                                >
+                                  <i className='bx bx-trash text-lg'></i>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))
                       )}
                     </div>
-                  </div>
-                )}
 
-                {/* Subjects Grid */}
-                <div className="grid gap-3">
-                  {getPaginatedData(subjects, subjectPage).map((subject) => (
-                    <div key={subject.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedSubjects.includes(subject.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
-                      <div className="flex justify-between items-start gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedSubjects.includes(subject.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedSubjects([...selectedSubjects, subject.id]);
-                            } else {
-                              setSelectedSubjects(selectedSubjects.filter(id => id !== subject.id));
-                            }
-                          }}
-                          className="mt-1 w-4 h-4 cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-base font-semibold text-gray-800">{subject.name}</h3>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              subject.subject_type === 'core' 
-                                ? 'bg-orange-100 text-orange-800' 
-                                : 'bg-blue-100 text-blue-800'
-                            }`}>
-                              {subject.subject_type === 'core' ? 'Core' : 'Elective'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-600">Code: {subject.code}</p>
-                          <p className="text-xs text-gray-600">
-                            Class: {classes.find(c => c.id === subject.class_id)?.name || 'N/A'}
-                          </p>
-                          {subject.department_id && (
-                            <p className="text-xs text-gray-600">
-                              Dept: {departments.find(d => d.id === subject.department_id)?.name || 'N/A'}
-                            </p>
-                          )}
+                    {/* Pagination */}
+                    {getTotalPages(filtered.length) > 1 && (
+                      <div className="mt-4 flex items-center justify-between border-t pt-3">
+                        <div className="text-xs text-gray-600">
+                          Showing {((subjectPage - 1) * itemsPerPage) + 1} to {Math.min(subjectPage * itemsPerPage, filtered.length)} of {filtered.length}
                         </div>
-                        <div className="flex gap-1.5">
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleEditSubject(subject)}
-                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
-                            title="Edit"
+                            onClick={() => handlePageChange(subjectPage - 1, setSubjectPage, getTotalPages(filtered.length))}
+                            disabled={subjectPage === 1}
+                            className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                           >
-                            <i className='bx bx-edit text-lg'></i>
+                            <i className='bx bx-chevron-left'></i>
                           </button>
+                          {getPageNumbers(subjectPage, getTotalPages(filtered.length)).map((page: any, idx: number) => (
+                            page === '...' ? (
+                              <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                            ) : (
+                              <button
+                                key={page}
+                                onClick={() => setSubjectPage(page as number)}
+                                className={`px-3 py-1 border rounded-md text-xs ${
+                                  page === subjectPage
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            )
+                          ))}
                           <button
-                            onClick={() => handleDeleteSubject(subject.id)}
-                            className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
-                            title="Delete"
+                            onClick={() => handlePageChange(subjectPage + 1, setSubjectPage, getTotalPages(filtered.length))}
+                            disabled={subjectPage === getTotalPages(filtered.length)}
+                            className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                           >
-                            <i className='bx bx-trash text-lg'></i>
+                            <i className='bx bx-chevron-right'></i>
                           </button>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Pagination */}
-                {getTotalPages(subjects.length) > 1 && (
-                  <div className="mt-4 flex items-center justify-between border-t pt-3">
-                    <div className="text-xs text-gray-600">
-                      Showing {((subjectPage - 1) * itemsPerPage) + 1} to {Math.min(subjectPage * itemsPerPage, subjects.length)} of {subjects.length}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handlePageChange(subjectPage - 1, setSubjectPage, getTotalPages(subjects.length))}
-                        disabled={subjectPage === 1}
-                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                      >
-                        <i className='bx bx-chevron-left'></i>
-                      </button>
-                      {getPageNumbers(subjectPage, getTotalPages(subjects.length)).map((page, idx) => (
-                        page === '...' ? (
-                          <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
-                        ) : (
-                          <button
-                            key={page}
-                            onClick={() => setSubjectPage(page as number)}
-                            className={`px-3 py-1 border rounded-md text-xs ${
-                              page === subjectPage
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        )
-                      ))}
-                      <button
-                        onClick={() => handlePageChange(subjectPage + 1, setSubjectPage, getTotalPages(subjects.length))}
-                        disabled={subjectPage === getTotalPages(subjects.length)}
-                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                      >
-                        <i className='bx bx-chevron-right'></i>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         )}
 
@@ -1472,6 +1775,14 @@ const SubjectManagementNew: React.FC = () => {
                   <i className='bx bx-x'></i>
                 </button>
               </div>
+
+              {/* Info Note */}
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800">
+                  <i className='bx bx-info-circle mr-1'></i>
+                  <strong>Note:</strong> Departments are required for SSS classes (e.g., Science, Art, Commercial). Create them first before setting up SSS class levels.
+                </p>
+              </div>
               
               <form onSubmit={handleCreateDepartment} className="space-y-3">
                 <div>
@@ -1486,6 +1797,7 @@ const SubjectManagementNew: React.FC = () => {
                     placeholder="e.g., Science, Art, Commercial"
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-1">Enter the full department name</p>
                 </div>
 
                 <div>
@@ -1500,21 +1812,7 @@ const SubjectManagementNew: React.FC = () => {
                     placeholder="e.g., SCI, ART, COM"
                     required
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Class Level
-                  </label>
-                  <select
-                    value={deptForm.class_level}
-                    onChange={(e) => setDeptForm({ ...deptForm, class_level: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  >
-                    <option value="SSS">SSS (Senior Secondary)</option>
-                    <option value="JSS">JSS (Junior Secondary)</option>
-                    <option value="Primary">Primary</option>
-                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Short code (2-4 letters, auto-capitalized)</p>
                 </div>
 
                 <div>
@@ -1568,6 +1866,19 @@ const SubjectManagementNew: React.FC = () => {
                   <i className='bx bx-x'></i>
                 </button>
               </div>
+
+              {/* Info Note */}
+              <div className="mb-4 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800 mb-1">
+                  <i className='bx bx-info-circle mr-1'></i>
+                  <strong>Quick Guide:</strong>
+                </p>
+                <ul className="text-xs text-blue-700 space-y-1 ml-4 list-disc">
+                  <li><strong>JSS/Primary:</strong> No department needed</li>
+                  <li><strong>SSS classes:</strong> Requires a department (Science, Art, or Commercial) - <span className="font-semibold text-purple-700">Create departments first in the Departments tab</span></li>
+                  <li>Capacity sets the maximum number of students per class</li>
+                </ul>
+              </div>
               
               <form onSubmit={handleCreateClass} className="space-y-3">
                 <div>
@@ -1582,6 +1893,7 @@ const SubjectManagementNew: React.FC = () => {
                     placeholder="e.g., SSS 1, JSS 2, Primary 4"
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-1">Enter class level (JSS, SSS, or Primary)</p>
                   {isSSClass(classForm.name) && (
                     <p className="text-xs text-purple-600 mt-1">
                       <i className='bx bx-info-circle'></i> This is an SSS class - department is required
@@ -1602,22 +1914,27 @@ const SubjectManagementNew: React.FC = () => {
                         </p>
                       </div>
                     ) : (
-                      <select
-                        value={classForm.department_id}
-                        onChange={(e) => setClassForm({ ...classForm, department_id: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        required={isSSClass(classForm.name)}
-                      >
-                        <option value="">Select Department</option>
-                        {departments.map((dept) => (
-                          <option key={dept.id} value={dept.id}>
-                            {dept.name} ({dept.code})
-                          </option>
-                        ))}
-                      </select>
+                      <>
+                        <select
+                          value={(classForm as any).department_id || ''}
+                          onChange={(e) => setClassForm({ ...classForm, department_id: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          required={isSSClass(classForm.name)}
+                        >
+                          <option value="">Select Department</option>
+                          {departments.map((dept: any) => (
+                            <option key={dept.id} value={dept.id}>
+                              {dept.name} ({dept.code})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Choose the department for this SSS class</p>
+                      </>
                     )}
                   </div>
                 )}
+
+
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -1629,7 +1946,9 @@ const SubjectManagementNew: React.FC = () => {
                     onChange={(e) => setClassForm({ ...classForm, capacity: Number(e.target.value) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                     min="1"
+                    placeholder="30"
                   />
+                  <p className="text-xs text-gray-500 mt-1">Maximum number of students allowed in this class</p>
                 </div>
 
                 <div className="flex gap-2 pt-3">
@@ -1702,7 +2021,7 @@ const SubjectManagementNew: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Class *
+                    Class Level *
                   </label>
                   {classes.length === 0 ? (
                     <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-md">
@@ -1713,50 +2032,25 @@ const SubjectManagementNew: React.FC = () => {
                     </div>
                   ) : (
                     <select
-                      value={subjectForm.class_id}
-                      onChange={(e) => setSubjectForm({ ...subjectForm, class_id: e.target.value })}
+                      value={subjectForm.class_level}
+                      onChange={(e) => setSubjectForm({ ...subjectForm, class_level: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                       required
                     >
-                      <option value="">Select Class</option>
-                      {classes.map((cls) => (
-                        <option key={cls.id} value={cls.id}>
-                          {cls.name}
+                      <option value="">Select Class Level</option>
+                      {getClassLevels().map((level) => (
+                        <option key={level} value={level}>
+                          {level}
                         </option>
                       ))}
                     </select>
                   )}
+                  <p className="mt-1 text-[11px] text-gray-600">
+                    Selecting a class level will apply Core subjects to every department in that level; Electives stay optional per student.
+                  </p>
                 </div>
 
-                {selectedClassForSubject && isSSClass(selectedClassForSubject.name) && (
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Department * <span className="text-purple-600">(Required)</span>
-                    </label>
-                    {availableDepartments.length === 0 ? (
-                      <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-md">
-                        <p className="text-xs text-yellow-800">
-                          <i className='bx bx-error-circle mr-1'></i>
-                          No departments available. Please create a department first.
-                        </p>
-                      </div>
-                    ) : (
-                      <select
-                        value={subjectForm.department_id}
-                        onChange={(e) => setSubjectForm({ ...subjectForm, department_id: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
-                        required
-                      >
-                        <option value="">Select Department</option>
-                        {availableDepartments.map((dept) => (
-                          <option key={dept.id} value={dept.id}>
-                            {dept.name} ({dept.code})
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                )}
+
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -1857,7 +2151,7 @@ const SubjectManagementNew: React.FC = () => {
                       <li>• <strong>name</strong> (required)</li>
                       <li>• code (required)</li>
                       <li>• description (optional)</li>
-                      <li>• class_level (optional, default: SSS)</li>
+                      <li>• class_level (required): must match an existing class name (e.g., “SSS 1”)</li>
                       <li>• is_active (optional, default: 1)</li>
                     </ul>
                   )}
@@ -1874,9 +2168,8 @@ const SubjectManagementNew: React.FC = () => {
                     <ul className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 space-y-1 mb-3">
                       <li>• <strong>name</strong> (required)</li>
                       <li>• code (required)</li>
-                      <li>• class_id (required)</li>
+                      <li>• class_level (required: e.g., "SSS 1", "JSS 2")</li>
                       <li>• subject_type (required: core/elective)</li>
-                      <li>• department_id (optional)</li>
                       <li>• description (optional)</li>
                     </ul>
                   )}
