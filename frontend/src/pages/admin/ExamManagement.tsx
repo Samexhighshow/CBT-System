@@ -100,6 +100,25 @@ const ExamManagement: React.FC = () => {
     });
   };
 
+  const handleDownloadSampleExamCSV = () => {
+    const csvContent = 'title,description,subject_id,duration,total_marks,passing_marks,start_time,end_time,status\n'
+      + 'Midterm Exam,Midterm covering chapters 1-5,1,60,100,50,2025-12-15T09:00,2025-12-15T10:00,published';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'exams-sample-template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleUploadCSVClick = () => {
+    showError('Bulk CSV upload for exams is not available yet. Please use Manual Entry for now.');
+  };
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     onSearch: () => searchInputRef.current?.focus(),
@@ -191,30 +210,47 @@ const ExamManagement: React.FC = () => {
         )}
       </div>
 
-      {/* Create Exam Options */}
+      {/* Exam setup actions */}
       <Card className="panel-compact">
-        <h2 className="text-lg md:text-xl font-semibold mb-3">Create Exam</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div onClick={() => setShowCreateModal(true)} className="border-2 border-dashed border-gray-300 rounded-lg p-4 md:p-6 text-center hover:border-blue-500 cursor-pointer transition">
-            <div className="text-3xl md:text-4xl mb-2">
-              <i className='bx bx-plus-circle text-3xl md:text-4xl'></i>
+        <h2 className="text-lg md:text-xl font-semibold mb-3">Exam Setup</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div 
+            onClick={handleUploadCSVClick}
+            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition"
+          >
+            <div className="flex justify-center mb-4">
+              <div className="text-5xl text-gray-400">
+                <i className='bx bx-file'></i>
+              </div>
             </div>
-            <h3 className="font-semibold mb-2">Create New Exam</h3>
-            <p className="text-sm text-gray-600">Set up a new examination</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Upload CSV File</h3>
+            <p className="text-sm text-gray-600">Bulk upload exams from CSV</p>
           </div>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 cursor-pointer transition">
-            <div className="text-4xl mb-3">
-              <i className='bx bx-copy-alt text-4xl'></i>
+
+          <div 
+            onClick={handleDownloadSampleExamCSV}
+            className="border-2 border-dashed border-green-500 rounded-lg p-8 text-center cursor-pointer hover:border-green-600 hover:bg-green-50 transition"
+          >
+            <div className="flex justify-center mb-4">
+              <div className="text-5xl text-green-500">
+                <i className='bx bx-download'></i>
+              </div>
             </div>
-            <h3 className="font-semibold mb-2">Duplicate Exam</h3>
-            <p className="text-sm text-gray-600">Select exam below to duplicate</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Download Sample CSV</h3>
+            <p className="text-sm text-gray-600">Download CSV format template</p>
           </div>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-500 cursor-pointer transition opacity-50">
-            <div className="text-4xl mb-3">
-              <i className='bx bx-import text-4xl'></i>
+
+          <div 
+            onClick={() => setShowCreateModal(true)}
+            className="border-2 border-dashed border-purple-500 rounded-lg p-8 text-center cursor-pointer hover:border-purple-600 hover:bg-purple-50 transition"
+          >
+            <div className="flex justify-center mb-4">
+              <div className="text-5xl text-purple-500">
+                <i className='bx bx-edit'></i>
+              </div>
             </div>
-            <h3 className="font-semibold mb-2">Import Exam</h3>
-            <p className="text-sm text-gray-600">Import from template</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Manual Entry</h3>
+            <p className="text-sm text-gray-600">Add exams one by one</p>
           </div>
         </div>
       </Card>
