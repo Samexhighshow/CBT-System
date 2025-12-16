@@ -49,6 +49,9 @@ const AdminUserManagement: React.FC = () => {
         nav.subItems.forEach((sub) => items.push({ name: sub.name, path: sub.path, category: nav.name }));
       }
     });
+    // Add hidden pages (System Settings and Activity Logs) for role permission system
+    items.push({ name: 'System Settings', path: '/admin/settings', category: undefined });
+    items.push({ name: 'Activity Logs', path: '/admin/activity-logs', category: undefined });
     return items;
   }, []);
 

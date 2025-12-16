@@ -45,7 +45,7 @@
 /* Global compact theme + alignment helpers */
 :root {
   --page-max-width: 1200px;
-  --page-inline: clamp(14px, 2vw, 22px);
+  --page-inline: clamp(12px, 2vw, 20px);
   --section-gap: clamp(16px, 2.5vw, 28px);
   --card-padding: clamp(12px, 2vw, 18px);
   --card-radius: 12px;

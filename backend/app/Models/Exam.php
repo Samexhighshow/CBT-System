@@ -18,6 +18,11 @@ class Exam extends Model
         'metadata' => 'array'
     ];
 
+    public function subject()
+    {
+        return $this->belongsTo(Subject::class, 'subject_id');
+    }
+
     public function questions()
     {
         return $this->hasMany(Question::class, 'exam_id');

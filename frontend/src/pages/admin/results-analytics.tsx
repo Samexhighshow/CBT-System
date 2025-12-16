@@ -2,6 +2,20 @@ import React, { useEffect, useState } from 'react';
 import Card from '../../components/Card';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
+import { api } from '../../services/api';
+import { showError } from '../../utils/alerts';
+
+interface Subject {
+  id: number;
+  name: string;
+  code: string;
+}
+
+interface SchoolClass {
+  id: number;
+  name: string;
+  code: string;
+}
 
 type Summary = {
   highest: number;
@@ -18,10 +32,31 @@ type Attempt = {
 };
 
 export default function ResultsAnalytics() {
+  const [loading, setLoading] = useState(true);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [subjectId, setSubjectId] = useState<number | null>(null);
+  const [classId, setClassId] = useState<number | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadOptions();
+  }, []);
+
+  const loadOptions = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/preferences/options');
+      setSubjects(res.data?.subjects || []);
+      setClasses(res.data?.classes || []);
+    } catch (err) {
+      showError('Failed to load subjects and classes');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadAnalytics = async () => {
     if (!subjectId) return;
@@ -47,13 +82,63 @@ export default function ResultsAnalytics() {
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <Card>
-        <div className="flex items-center gap-2">
-          <input className="border p-2" placeholder="Subject ID" onChange={e => setSubjectId(Number(e.target.value))} />
-          <Button onClick={loadAnalytics} disabled={!subjectId}>Load Analytics</Button>
-          <Button onClick={exportPdf} disabled={!subjectId}>Export PDF</Button>
-          <Button onClick={exportExcel} disabled={!subjectId}>Export Excel</Button>
+    <div className="app-shell section-shell">
+      <h1 className="text-2xl font-bold mb-4">Results & Analytics</h1>
+      
+      <Card className="mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Class (Optional)
+            </label>
+            <select
+              value={classId || ''}
+              onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            >
+              <option value="">-- All Classes --</option>
+              {classes.map((cls) => (
+                <option key={cls.id} value={cls.id}>
+                  {cls.name} {cls.code ? `(${cls.code})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Subject <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={subjectId || ''}
+              onChange={(e) => setSubjectId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            >
+              <option value="">-- Select Subject --</option>
+              {subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name} ({subject.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <Button onClick={loadAnalytics} disabled={!subjectId || loading} className="flex-1">
+              Load Analytics
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-4">
+          <Button onClick={exportPdf} disabled={!subjectId} variant="outline" size="sm">
+            <i className="bx bx-file-blank mr-1"></i> Export PDF
+          </Button>
+          <Button onClick={exportExcel} disabled={!subjectId} variant="outline" size="sm">
+            <i className="bx bx-spreadsheet mr-1"></i> Export Excel
+          </Button>
         </div>
       </Card>
 

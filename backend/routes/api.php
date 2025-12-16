@@ -197,6 +197,23 @@ Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
     Route::post('/2fa/disable', [ProfileController::class, 'disable2FA']);
 });
 
+// User Preferences (Subject/Class Selection)
+Route::middleware('auth:sanctum')->prefix('preferences')->group(function () {
+    Route::get('/options', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getOptions']);
+    
+    // Teacher preferences
+    Route::get('/teacher/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getTeacherSubjects']);
+    Route::post('/teacher/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'saveTeacherSubjects']);
+    
+    // Student preferences
+    Route::get('/student/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getStudentSubjects']);
+    Route::post('/student/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'saveStudentSubjects']);
+    Route::put('/student/class-department', [\App\Http\Controllers\Api\UserPreferenceController::class, 'updateStudentClassDepartment']);
+    
+    // Get subjects by class
+    Route::get('/subjects/class/{classId}', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getSubjectsByClass']);
+});
+
 // CBT System routes (authenticated)
 Route::middleware('auth:sanctum')->group(function () {
     // User management (Main Admin only - enforced by middleware in controller)

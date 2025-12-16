@@ -4,6 +4,7 @@ import AvatarDropdown from '../AvatarDropdown';
 import useAuthStore from '../../store/authStore';
 import FooterMinimal from '../FooterMinimal';
 import { adminNavLinks, NavLinkConfig } from '../../config/adminNav';
+import { useRoleBasedNav } from '../../hooks/useRoleBasedNav';
 
 const AdminLayout: React.FC = () => {
   const navigate = useNavigate();
@@ -12,6 +13,7 @@ const AdminLayout: React.FC = () => {
   const [isMainAdmin, setIsMainAdmin] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [allocationDropdownOpen, setAllocationDropdownOpen] = useState(false);
+  const { loading: navLoading, filterNavLinks } = useRoleBasedNav();
 
   useEffect(() => {
     if (!user) {
@@ -28,9 +30,10 @@ const AdminLayout: React.FC = () => {
     setIsSidebarOpen(false);
   }, [location.pathname]);
 
-  if (!user) return null;
+  if (!user || navLoading) return null;
 
-  const navLinks: NavLinkConfig[] = adminNavLinks;
+  // Filter nav links based on user's role-based permissions
+  const navLinks: NavLinkConfig[] = filterNavLinks(adminNavLinks);
 
   const isActivePath = (path: string) => {
     if (path === '/admin') {
@@ -43,10 +46,10 @@ const AdminLayout: React.FC = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col w-full">
       {/* Top Navigation Bar - Desktop */}
       <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full sticky top-0 z-40">
-        <div className="app-shell">
-          <div className="flex justify-between items-center h-14">
+        <div className="w-full px-3 md:px-4 lg:px-6">
+          <div className="flex justify-between items-center h-14 max-w-full">
             {/* Left Section: Logo + Desktop Nav */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-1">
               {/* Mobile Hamburger */}
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -117,8 +120,8 @@ const AdminLayout: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Section: Avatar */}
-            <div className="flex items-center">
+            {/* Right Section: Avatar - Separated with space */}
+            <div className="flex items-center ml-auto pl-4">
               <AvatarDropdown showSettings={isMainAdmin} />
             </div>
           </div>

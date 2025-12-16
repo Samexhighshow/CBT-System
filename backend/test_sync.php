@@ -39,9 +39,16 @@ $navPages = [
     ['name' => 'Overview', 'path' => '/admin', 'category' => null],
     ['name' => 'Questions', 'path' => '/admin/questions', 'category' => null],
     ['name' => 'Exams', 'path' => '/admin/exams', 'category' => null],
+    ['name' => 'Exam Access', 'path' => '/admin/exam-access', 'category' => null],
     ['name' => 'Students', 'path' => '/admin/students', 'category' => null],
-    ['name' => 'Results', 'path' => '/admin/results', 'category' => null],
     ['name' => 'Academic Management', 'path' => '/admin/subjects', 'category' => null],
+    ['name' => 'Announcements', 'path' => '/admin/announcements', 'category' => null],
+    ['name' => 'Allocation System', 'path' => '/admin/allocations', 'category' => null],
+    ['name' => 'View Allocations', 'path' => '/admin/allocations', 'category' => 'Allocation System'],
+    ['name' => 'Generate Allocation', 'path' => '/admin/allocations/generate', 'category' => 'Allocation System'],
+    ['name' => 'Teacher Assignment', 'path' => '/admin/teachers/assign', 'category' => 'Allocation System'],
+    ['name' => 'Halls', 'path' => '/admin/halls', 'category' => 'Allocation System'],
+    ['name' => 'Results', 'path' => '/admin/results', 'category' => null],
     ['name' => 'System Settings', 'path' => '/admin/settings', 'category' => null],
     ['name' => 'Activity Logs', 'path' => '/admin/activity-logs', 'category' => null],
 ];
@@ -89,10 +96,12 @@ $roleDefaults = [
         return !in_array($name, $excluded);
     }, ARRAY_FILTER_USE_KEY)),
     'Sub-Admin' => array_values(array_intersect_key($pagesByName, array_flip([
-        'Overview', 'Questions', 'Exams', 'Students', 'Results', 'Academic Management'
+        'Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results', 
+        'Academic Management', 'Announcements', 'Allocation System', 'View Allocations', 
+        'Generate Allocation', 'Teacher Assignment', 'Halls'
     ]))),
     'Moderator' => array_values(array_intersect_key($pagesByName, array_flip([
-        'Overview', 'Exams', 'Students', 'Results'
+        'Overview', 'Exams', 'Exam Access', 'Students', 'Results'
     ]))),
     'Teacher' => array_values(array_intersect_key($pagesByName, array_flip([
         'Overview', 'Questions', 'Results'

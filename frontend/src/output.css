@@ -1178,6 +1178,10 @@ code {
   max-width: 20rem;
 }
 
+.max-w-full {
+  max-width: 100%;
+}
+
 .flex-1 {
   flex: 1 1 0%;
 }
@@ -1293,6 +1297,10 @@ code {
 
 .items-start {
   align-items: flex-start;
+}
+
+.items-end {
+  align-items: flex-end;
 }
 
 .items-center {
@@ -2302,6 +2310,10 @@ code {
   padding-top: 2rem;
 }
 
+.pl-4 {
+  padding-left: 1rem;
+}
+
 .text-left {
   text-align: left;
 }
@@ -2839,7 +2851,7 @@ code {
 
 :root {
   --page-max-width: 1200px;
-  --page-inline: clamp(14px, 2vw, 22px);
+  --page-inline: clamp(12px, 2vw, 20px);
   --section-gap: clamp(16px, 2.5vw, 28px);
   --card-padding: clamp(12px, 2vw, 18px);
   --card-radius: 12px;
@@ -3729,6 +3741,11 @@ svg {
     padding: 1.5rem;
   }
 
+  .md\:px-4 {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
   .md\:text-2xl {
     font-size: 1.5rem;
     line-height: 2rem;
@@ -3811,6 +3828,11 @@ svg {
   .lg\:px-8 {
     padding-left: 2rem;
     padding-right: 2rem;
+  }
+
+  .lg\:px-6 {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
   }
 }
 
