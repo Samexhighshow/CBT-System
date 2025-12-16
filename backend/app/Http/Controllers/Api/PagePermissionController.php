@@ -103,18 +103,22 @@ class PagePermissionController extends Controller
             $pagesByName[$page->name] = $page->permission_name;
         }
 
+        // Pages exclusive to Main Admin only
+        $mainAdminOnlyPages = ['System Settings', 'Activity Logs', 'Users', 'Roles'];
+
         $roleDefaults = [
-            'Main Admin' => $allPermissions, // Full access to everything
+            'Main Admin' => $allPermissions, // Main Admin gets EVERYTHING - no exceptions
             'Admin' => array_values(array_filter($pagesByName, function($name) {
-                // Admin gets most things except system-level management
-                $excluded = ['Users', 'Roles', 'System Settings'];
+                // Admin gets everything except Main Admin exclusive pages
+                $excluded = ['System Settings', 'Activity Logs', 'Users', 'Roles'];
                 return !in_array($name, $excluded);
             }, ARRAY_FILTER_USE_KEY)),
             'Sub-Admin' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Questions', 'Exams', 'Students', 'Results', 'Academic Management'
+                'Overview', 'Questions', 'Exams', 'Students', 'Results', 'Academic Management',
+                'Announcements', 'Exam Access'
             ]))),
             'Moderator' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Exams', 'Students', 'Results'
+                'Overview', 'Exams', 'Students', 'Results', 'Exam Access'
             ]))),
             'Teacher' => array_values(array_intersect_key($pagesByName, array_flip([
                 'Overview', 'Questions', 'Results'

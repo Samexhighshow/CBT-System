@@ -25,4 +25,6 @@ export const adminNavLinks: NavLinkConfig[] = [
     ],
   },
   { name: 'Results', path: '/admin/results', icon: 'bx-bar-chart-alt-2' },
+  { name: 'Activity Logs', path: '/admin/activity-logs', icon: 'bx-history' },
+  { name: 'System Settings', path: '/admin/settings', icon: 'bx-cog' },
 ];

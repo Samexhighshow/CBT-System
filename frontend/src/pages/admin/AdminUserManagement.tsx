@@ -7,15 +7,6 @@ import { adminNavLinks } from '../../config/adminNav';
 interface Role { name: string; }
 interface User { id: number; name: string; email: string; email_verified_at?: string | null; roles: Role[]; }
 
-// Define module access for each role (Student role is managed separately)
-const roleModules: Record<string, string[]> = {
-  'Main Admin': ['Dashboard', 'Users', 'Roles', 'System Settings', 'Questions', 'Exams', 'Students', 'Subjects', 'Results', 'Reports', 'Analytics'],
-  'Admin': ['Dashboard', 'Questions', 'Exams', 'Students', 'Subjects', 'Results', 'Reports', 'Analytics'],
-  'Sub-Admin': ['Dashboard', 'Questions', 'Exams', 'Students', 'Results', 'Analytics'],
-  'Moderator': ['Dashboard', 'Exams', 'Students', 'Results', 'Analytics'],
-  'Teacher': ['Dashboard', 'Questions', 'Results', 'Analytics']
-};
-
 const AdminUserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
@@ -23,6 +14,7 @@ const AdminUserManagement: React.FC = () => {
   const [onlyApplicants, setOnlyApplicants] = useState(true);
   const [showRoleDetails, setShowRoleDetails] = useState(false);
   const [syncingPages, setSyncingPages] = useState(false);
+  const [roleModulesState, setRoleModulesState] = useState<Record<string, string[]>>({});
   
   // Get current logged-in user ID
   const currentUserId = (() => {
@@ -48,8 +40,6 @@ const AdminUserManagement: React.FC = () => {
     });
     return modules;
   }, []);
-  
-  const [roleModulesState, setRoleModulesState] = useState<Record<string, string[]>>(roleModules);
 
   const flatNavPages = useMemo(() => {
     const items: { name: string; path: string; category?: string }[] = [];
@@ -62,7 +52,7 @@ const AdminUserManagement: React.FC = () => {
     return items;
   }, []);
 
-  const loadRolePermissions = async () => {
+  const loadRolePermissions = useCallback(async () => {
     try {
       const [pagesRes, roleMapRes] = await Promise.all([
         api.get('/admin/pages'),
@@ -91,9 +81,9 @@ const AdminUserManagement: React.FC = () => {
       setRoleModulesState(newRoleModules);
     } catch (err: any) {
       console.error('Failed to load role permissions:', err);
-      // If loading fails, keep the current state (hardcoded defaults)
+      // If loading fails, keep the current state
     }
-  };
+  }, []);
 
   const syncNavigationPages = async () => {
     try {
@@ -132,7 +122,7 @@ const AdminUserManagement: React.FC = () => {
     };
     loadRoles();
     loadRolePermissions(); // Load initial permissions from database
-  }, []);
+  }, [loadRolePermissions]);
 
   const assignRole = async (userId: number, roleName: string) => {
     // Prevent assigning role to current user
