@@ -72,6 +72,13 @@ Route::prefix('exams')->group(function () {
     Route::post('/', [ExamController::class, 'store']);
     Route::put('/{id}', [ExamController::class, 'update']);
     Route::delete('/{id}', [ExamController::class, 'destroy']);
+    
+    // PHASE 1: Access control check
+    Route::get('/{id}/check-access', [ExamController::class, 'checkAccess']);
+    
+        // PHASE 8: Results visibility control
+        Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility']);
+    
     Route::post('/{id}/start', [ExamController::class, 'startExam']);
     Route::post('/{id}/submit', [ExamController::class, 'submitExam']);
     Route::get('/{id}/questions', [ExamController::class, 'getQuestions']);
