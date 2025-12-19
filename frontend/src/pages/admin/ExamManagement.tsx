@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, SkeletonTable } from '../../components';
 import { api } from '../../services/api';
-import { showError, showSuccess } from '../../utils/alerts';
+import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 /*
@@ -42,11 +42,15 @@ const ExamManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState<ExamRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'exams' | 'results'>('exams');
   const [showInactive, setShowInactive] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'title-asc' | 'title-desc' | 'start-recent' | 'start-oldest'>('title-asc');
   const [perPage, setPerPage] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
+  const [selectedExams, setSelectedExams] = useState<number[]>([]);
+  const [classLevelFilter, setClassLevelFilter] = useState<string>('');
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Modal and form state
   const [showExamModal, setShowExamModal] = useState(false);
@@ -64,18 +68,100 @@ const ExamManagement: React.FC = () => {
     instructions: '',
   });
 
+  const handleDownloadSampleCSV = () => {
+    const csvContent = 'title,description,class_id,subject_id,duration_minutes,start_datetime,end_datetime,instructions,status\n' +
+                       'Mid-Term Math Exam,Mathematics examination for SSS 1,1,1,90,2025-01-15 09:00:00,2025-01-15 10:30:00,Answer all questions,scheduled\n' +
+                       'English Language Test,Comprehension and grammar test,2,2,60,2025-01-20 14:00:00,2025-01-20 15:00:00,No use of dictionaries,draft';
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'exams-sample-template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBulkUpload = async () => {
+    if (!uploadFile) return;
+    
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', uploadFile);
+    
+    try {
+      await api.post('/exams/bulk-upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      showSuccess('Exams uploaded successfully');
+      setShowUploadModal(false);
+      setUploadFile(null);
+      loadExams();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to upload CSV');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const loadExams = async () => {
     try {
       setLoading(true);
       const response = await api.get('/exams');
       const data = response.data?.data || response.data || [];
       setExams(data);
+      setSelectedExams([]);
     } catch (error) {
       console.error('Failed to fetch exams', error);
       showError('Unable to load exams');
       setExams([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectAllExams = () => {
+    if (selectedExams.length === exams.length) {
+      setSelectedExams([]);
+    } else {
+      setSelectedExams(exams.map(e => e.id));
+    }
+  };
+
+  const handleExportExams = async () => {
+    try {
+      const response = await api.get('/exams/export', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `exams_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showSuccess('Exams exported successfully');
+    } catch (error) {
+      console.error('Export failed:', error);
+      showError('Failed to export exams');
+    }
+  };
+
+  const handleBulkDeleteExams = async () => {
+    if (selectedExams.length === 0) return;
+    
+    const result = await showDeleteConfirm(`${selectedExams.length} selected exam(s)`);
+    if (!result.isConfirmed) return;
+
+    try {
+      await Promise.all(selectedExams.map(id => api.delete(`/exams/${id}`)));
+      showSuccess(`${selectedExams.length} exam(s) deleted successfully`);
+      setSelectedExams([]);
+      loadExams();
+    } catch (error) {
+      console.error('Bulk delete failed:', error);
+      showError('Failed to delete some exams');
     }
   };
 
@@ -210,7 +296,8 @@ const ExamManagement: React.FC = () => {
       (exam.school_class?.name || '').toLowerCase().includes(term)
     );
     const isInactive = exam.status === 'completed' || exam.status === 'cancelled';
-    return matchesSearch && (showInactive ? true : !isInactive);
+    const matchesClassLevel = classLevelFilter ? exam.school_class?.name === classLevelFilter : true;
+    return matchesSearch && (showInactive ? true : !isInactive) && matchesClassLevel;
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -236,6 +323,30 @@ const ExamManagement: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const currentPage = Math.min(page, totalPages);
   const paged = sorted.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  const getPageNumbers = (current: number, total: number) => {
+    const pages: (number | string)[] = [];
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) pages.push(i);
+    } else {
+      if (current <= 3) {
+        for (let i = 1; i <= 5; i++) pages.push(i);
+        pages.push('...');
+        pages.push(total);
+      } else if (current >= total - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = total - 4; i <= total; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = current - 1; i <= current + 1; i++) pages.push(i);
+        pages.push('...');
+        pages.push(total);
+      }
+    }
+    return pages;
+  };
 
   const handlePublish = async (exam: ExamRow) => {
     try {
@@ -311,29 +422,7 @@ const ExamManagement: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Exam Management
           </h1>
-          <p className="text-xs md:text-sm text-gray-600 mt-1">Manage exams, schedules, and results</p>
-        </div>
-
-        {/* Tabs */}
-        <div className="bg-white rounded-lg shadow-md p-1.5 mb-3">
-          <div className="flex gap-1.5">
-            {(['overview', 'exams', 'results'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-1.5 px-3 rounded-md font-medium transition-all duration-200 text-xs md:text-sm ${
-                  activeTab === tab
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <i className={`bx ${
-                  tab === 'overview' ? 'bx-chart' : tab === 'exams' ? 'bx-edit' : 'bx-bar-chart-alt-2'
-                } mr-1 text-sm md:text-base`}></i>
-                <span className="hidden md:inline">{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
-              </button>
-            ))}
-          </div>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">Create and manage exams</p>
         </div>
 
         {/* Actions */}
@@ -342,7 +431,10 @@ const ExamManagement: React.FC = () => {
             {exams.length} total exams
           </div>
           <div className="flex items-center gap-2">
-            <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium text-xs transition-colors flex items-center gap-2">
+            <button
+              onClick={handleExportExams}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium text-xs transition-colors flex items-center gap-2"
+            >
               <i className='bx bx-download'></i>
               Export CSV
             </button>
@@ -352,7 +444,7 @@ const ExamManagement: React.FC = () => {
         {/* Action Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div 
-            onClick={() => showSuccess('CSV upload coming soon')}
+            onClick={() => setShowUploadModal(true)}
             className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
           >
             <div className="flex justify-center mb-3">
@@ -365,7 +457,7 @@ const ExamManagement: React.FC = () => {
           </div>
 
           <div 
-            onClick={() => showSuccess('Sample CSV downloaded')}
+            onClick={handleDownloadSampleCSV}
             className="border-2 border-dashed border-green-500 rounded-lg p-6 text-center cursor-pointer hover:border-green-600 hover:bg-green-50 transition-all duration-200"
           >
             <div className="flex justify-center mb-3">
@@ -392,54 +484,133 @@ const ExamManagement: React.FC = () => {
         </div>
 
         {/* List Section */}
-        <Card>
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3">
-            <div>
-              <h3 className="text-lg font-bold text-gray-800">Your Exams</h3>
-              <p className="text-xs text-gray-600">{sorted.length} matching exams</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-xs text-gray-700">
-                <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }} />
-                Show inactive
-              </label>
-              <div className="relative">
-                <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
-                <input
-                  ref={searchInputRef}
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-                  placeholder="Search exams..."
-                  className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
-                />
+        <div className="border border-gray-200 rounded-lg">
+          <div className="bg-white p-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Your Exams</h3>
+                <p className="text-xs text-gray-600">{sorted.length} matching exams</p>
               </div>
-              <select
-                value={sortBy}
-                onChange={(e) => { setSortBy(e.target.value as any); setPage(1); }}
-                className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                title="Sort"
-              >
-                <option value="title-asc">Name A→Z</option>
-                <option value="title-desc">Name Z→A</option>
-                <option value="start-recent">Start: Recent</option>
-                <option value="start-oldest">Start: Oldest</option>
-              </select>
-              <select
-                value={perPage}
-                onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
-                className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={10}>10 per page</option>
-                <option value={15}>15 per page</option>
-                <option value={25}>25 per page</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-gray-700">
+                  <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }} />
+                  Show inactive
+                </label>
+                <div className="relative">
+                  <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                  <input
+                    ref={searchInputRef}
+                    value={searchTerm}
+                    onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+                    placeholder="Search exams..."
+                    className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                  />
+                </div>
+                <select
+                  value={sortBy}
+                  onChange={(e) => { setSortBy(e.target.value as any); setPage(1); }}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                  title="Sort"
+                >
+                  <option value="title-asc">Name A→Z</option>
+                  <option value="title-desc">Name Z→A</option>
+                  <option value="start-recent">Start: Recent</option>
+                  <option value="start-oldest">Start: Oldest</option>
+                </select>
+                <select
+                  value={perPage}
+                  onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={10}>10 per page</option>
+                  <option value={15}>15 per page</option>
+                  <option value={25}>25 per page</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Selection Bar */}
+            {exams.length > 0 && (
+              <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedExams.length > 0 && selectedExams.length === exams.length}
+                      onChange={handleSelectAllExams}
+                      className="w-5 h-5 cursor-pointer"
+                      title="Select all exams"
+                    />
+                    <span className="text-sm font-semibold text-blue-800">
+                      {selectedExams.length > 0 ? `${selectedExams.length} of ${exams.length} selected` : 'Select All'}
+                    </span>
+                  </div>
+                  {selectedExams.length > 0 && (
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                      <button
+                        onClick={handleExportExams}
+                        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                      >
+                        <i className='bx bx-download text-sm'></i>Export
+                      </button>
+                      <button
+                        onClick={handleBulkDeleteExams}
+                        className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                      >
+                        <i className='bx bx-trash text-sm'></i>Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Filters */}
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3">
+              <div className="text-sm text-gray-700 font-medium">Exams</div>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-700">
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] text-gray-600">Class Level:</span>
+                  <select
+                    value={classLevelFilter}
+                    onChange={(e) => { setClassLevelFilter(e.target.value); setPage(1); }}
+                    className="px-2 py-1 border border-gray-300 rounded-md text-xs"
+                  >
+                    <option value="">All</option>
+                    {Array.from(new Set(classes.map(c => c.name))).map((level) => (
+                      <option key={`levelfilter-${level}`} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClassLevelFilter('');
+                    setSearchTerm('');
+                    setSortBy('title-asc');
+                    setPage(1);
+                  }}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Reset filters
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-xs border-collapse">
+          {/* Table Container - only scroll when needed */}
+          <div className={paged.length >= 6 ? 'max-h-96 overflow-auto' : ''}>
+            <table className="min-w-full text-xs border-collapse bg-white">
               <thead>
                 <tr className="bg-gray-50 text-gray-700 border-b">
+                  <th className="px-3 py-2 w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedExams.length > 0 && selectedExams.length === exams.length}
+                      onChange={handleSelectAllExams}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-3 py-2 text-left font-semibold">Exam Title</th>
                   <th className="px-3 py-2 text-left font-semibold">Class Level</th>
                   <th className="px-3 py-2 text-left font-semibold">Subject</th>
@@ -455,11 +626,11 @@ const ExamManagement: React.FC = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                      <td colSpan={10} className="p-3"><SkeletonTable rows={6} cols={10} /></td>
+                      <td colSpan={11} className="p-3"><SkeletonTable rows={6} cols={11} /></td>
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                      <td colSpan={10} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
+                      <td colSpan={11} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
                   </tr>
                 ) : (
                   paged.map((exam) => {
@@ -467,7 +638,21 @@ const ExamManagement: React.FC = () => {
                     const end = exam.end_datetime || exam.end_time;
                     const questionCount = exam.metadata?.question_count ?? '—';
                     return (
-                      <tr key={exam.id} className="border-b hover:bg-gray-50">
+                      <tr key={exam.id} className={`border-b transition-colors ${selectedExams.includes(exam.id) ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50 border-gray-200'}`}>
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedExams.includes(exam.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedExams([...selectedExams, exam.id]);
+                              } else {
+                                setSelectedExams(selectedExams.filter(id => id !== exam.id));
+                              }
+                            }}
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-3 py-2 text-sm text-gray-900">{exam.title}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.school_class?.name || '—'}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.subject?.name || '—'}</td>
@@ -508,7 +693,7 @@ const ExamManagement: React.FC = () => {
                               </button>
                               
                               {/* Dropdown menu - shows on hover */}
-                              <div className="absolute right-0 mt-1 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 overflow-hidden">
+                              <div className="absolute right-0 bottom-full mb-1 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
                                 {/* View */}
                                 <button
                                   onClick={() => handleView(exam.id)}
@@ -551,7 +736,7 @@ const ExamManagement: React.FC = () => {
                                 
                                 {/* Add Questions */}
                                 <button
-                                  onClick={() => navigate(`/admin/exams/${exam.id}/questions`)}
+                                  onClick={() => navigate(`/admin/questions?examId=${exam.id}`)}
                                   className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
                                 >
                                   <i className='bx bx-plus text-purple-500'></i>
@@ -560,7 +745,7 @@ const ExamManagement: React.FC = () => {
                                 
                                 {/* View Results */}
                                 <button
-                                  onClick={() => navigate(`/admin/exams/${exam.id}/results`)}
+                                  onClick={() => navigate(`/admin/results?examId=${exam.id}`)}
                                   className="w-full text-left px-4 py-3 text-sm text-cyan-700 hover:bg-cyan-50 flex items-center gap-3 transition-colors"
                                 >
                                   <i className='bx bx-bar-chart-alt-2 text-cyan-500'></i>
@@ -571,10 +756,11 @@ const ExamManagement: React.FC = () => {
 
                             {/* Delete - Red */}
                             <button
-                              onClick={() => {
-                                if (window.confirm('Delete this exam?')) {
+                              onClick={async () => {
+                                const result = await showDeleteConfirm(exam.title);
+                                if (result.isConfirmed) {
                                   api.delete(`/exams/${exam.id}`).then(() => {
-                                    showSuccess('Exam deleted');
+                                    showSuccess('Exam deleted successfully');
                                     loadExams();
                                   }).catch(err => showError(err.response?.data?.message || 'Delete failed'));
                                 }
@@ -595,16 +781,49 @@ const ExamManagement: React.FC = () => {
           </div>
 
           {/* Pagination */}
-          <div className="mt-3 flex items-center justify-between text-xs">
-            <span className="text-gray-600">Page {currentPage} of {totalPages}</span>
-            <div className="flex items-center gap-1">
-              <Button size="sm" variant="secondary" disabled={currentPage <= 1} onClick={() => setPage(1)}>First</Button>
-              <Button size="sm" variant="secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Prev</Button>
-              <Button size="sm" variant="secondary" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>Next</Button>
-              <Button size="sm" variant="secondary" disabled={currentPage >= totalPages} onClick={() => setPage(totalPages)}>Last</Button>
-            </div>
+          <div className="bg-white border-t border-gray-200 p-4">
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between text-xs">
+                <div className="text-gray-600">
+                  Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, sorted.length)} of {sorted.length}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <i className='bx bx-chevron-left'></i>
+                  </button>
+                  {getPageNumbers(currentPage, totalPages).map((pageNum, idx) => (
+                    pageNum === '...' ? (
+                      <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                    ) : (
+                      <button
+                        key={pageNum}
+                        onClick={() => setPage(pageNum as number)}
+                        className={`px-3 py-1 border rounded-md text-xs ${
+                          pageNum === currentPage
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    )
+                  ))}
+                  <button
+                    onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <i className='bx bx-chevron-right'></i>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        </Card>
+        </div>
 
         {/* Exam Modal */}
         {showExamModal && (
@@ -797,6 +1016,96 @@ const ExamManagement: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+        {/* Bulk Upload Modal */}
+        {showUploadModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-xl font-bold text-gray-800">
+                  Bulk Upload Exams
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadFile(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-2xl transition-colors"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="px-6 py-6 space-y-5">
+                <div>
+                  <p className="text-sm text-gray-700 mb-3 font-medium">
+                    Upload a CSV file with the following columns:
+                  </p>
+                  <ul className="text-xs text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-1.5">
+                    <li>• <strong>title</strong> (required)</li>
+                    <li>• <strong>description</strong> (optional)</li>
+                    <li>• <strong>class_id</strong> (required): ID of the class</li>
+                    <li>• <strong>subject_id</strong> (required): ID of the subject</li>
+                    <li>• <strong>duration_minutes</strong> (required): Duration in minutes</li>
+                    <li>• <strong>start_datetime</strong> (required): Format: YYYY-MM-DD HH:MM:SS</li>
+                    <li>• <strong>end_datetime</strong> (required): Format: YYYY-MM-DD HH:MM:SS</li>
+                    <li>• <strong>instructions</strong> (optional)</li>
+                    <li>• <strong>status</strong> (optional): draft/scheduled/active/completed/cancelled</li>
+                  </ul>
+                </div>
+
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-all bg-gray-50 hover:bg-blue-50">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                    id="csv-upload-exams"
+                  />
+                  <label htmlFor="csv-upload-exams" className="cursor-pointer block">
+                    <div className="flex justify-center mb-3">
+                      <i className='bx bx-cloud-upload text-6xl text-gray-400'></i>
+                    </div>
+                    <p className="text-base font-semibold text-gray-800 mb-1">
+                      {uploadFile ? uploadFile.name : 'Click to upload CSV'}
+                    </p>
+                    <p className="text-sm text-gray-500">or drag and drop</p>
+                  </label>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      setUploadFile(null);
+                    }}
+                    className="flex-1 px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkUpload}
+                    disabled={!uploadFile || uploading}
+                    className="flex-1 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:shadow-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                  >
+                    {uploading ? (
+                      <>
+                        <i className='bx bx-loader-alt bx-spin text-lg'></i>
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <i className='bx bx-upload text-lg'></i>
+                        Upload
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

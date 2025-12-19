@@ -850,95 +850,98 @@ const SubjectManagementNew: React.FC = () => {
 
             {/* Departments List Section */}
             {departments.length > 0 && (
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800">Your Departments</h3>
-                    <p className="text-xs text-gray-600">{departments.length} total departments</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-2 text-xs text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={deptShowAll}
-                        onChange={(e) => { setDeptShowAll(e.target.checked); setDeptPage(1); loadAllData(); }}
-                      />
-                      Show inactive
-                    </label>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-white p-4">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800">Your Departments</h3>
+                      <p className="text-xs text-gray-600">{departments.length} total departments</p>
+                    </div>
                     <div className="flex items-center gap-2">
-                      <div className="relative">
-                        <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                      <label className="flex items-center gap-2 text-xs text-gray-700">
                         <input
-                          value={deptSearch}
-                          onChange={(e) => { setDeptSearch(e.target.value); setDeptPage(1); }}
-                          placeholder="Search departments..."
-                          className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                          type="checkbox"
+                          checked={deptShowAll}
+                          onChange={(e) => { setDeptShowAll(e.target.checked); setDeptPage(1); loadAllData(); }}
                         />
+                        Show inactive
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                          <input
+                            value={deptSearch}
+                            onChange={(e) => { setDeptSearch(e.target.value); setDeptPage(1); }}
+                            placeholder="Search departments..."
+                            className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                          />
+                        </div>
+                        <select
+                          value={deptSort}
+                          onChange={(e) => { setDeptSort(e.target.value as any); setDeptPage(1); }}
+                          className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                          title="Sort"
+                        >
+                          <option value="name-asc">Name A→Z</option>
+                          <option value="name-desc">Name Z→A</option>
+                          <option value="code-asc">Code A→Z</option>
+                          <option value="code-desc">Code Z→A</option>
+                        </select>
                       </div>
                       <select
-                        value={deptSort}
-                        onChange={(e) => { setDeptSort(e.target.value as any); setDeptPage(1); }}
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setDeptPage(1);
+                        }}
                         className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                        title="Sort"
                       >
-                        <option value="name-asc">Name A→Z</option>
-                        <option value="name-desc">Name Z→A</option>
-                        <option value="code-asc">Code A→Z</option>
-                        <option value="code-desc">Code Z→A</option>
+                        <option value={10}>10 per page</option>
+                        <option value={15}>15 per page</option>
+                        <option value={25}>25 per page</option>
+                        <option value={50}>50 per page</option>
                       </select>
                     </div>
-                    <select
-                      value={itemsPerPage}
-                      onChange={(e) => {
-                        setItemsPerPage(Number(e.target.value));
-                        setDeptPage(1);
-                      }}
-                      className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value={10}>10 per page</option>
-                      <option value={15}>15 per page</option>
-                      <option value={25}>25 per page</option>
-                      <option value={50}>50 per page</option>
-                    </select>
                   </div>
-                </div>
 
-                {/* Selection Bar */}
-                <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedDepts.length > 0 && selectedDepts.length === departments.length}
-                        onChange={handleSelectAllDepts}
-                        className="w-5 h-5 cursor-pointer"
-                        title="Select all departments"
-                      />
-                      <span className="text-sm font-semibold text-blue-800">
-                        {selectedDepts.length > 0 ? `${selectedDepts.length} of ${departments.length} selected` : 'Select All'}
-                      </span>
-                    </div>
-                    {selectedDepts.length > 0 && (
-                      <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                        <button
-                          onClick={handleExportDepts}
-                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
-                        >
-                          <i className='bx bx-download text-sm'></i>Export
-                        </button>
-                        <button
-                          onClick={handleBulkDeleteDepts}
-                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
-                        >
-                          <i className='bx bx-trash text-sm'></i>Delete
-                        </button>
+                  {/* Selection Bar */}
+                  <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedDepts.length > 0 && selectedDepts.length === departments.length}
+                          onChange={handleSelectAllDepts}
+                          className="w-5 h-5 cursor-pointer"
+                          title="Select all departments"
+                        />
+                        <span className="text-sm font-semibold text-blue-800">
+                          {selectedDepts.length > 0 ? `${selectedDepts.length} of ${departments.length} selected` : 'Select All'}
+                        </span>
                       </div>
-                    )}
+                      {selectedDepts.length > 0 && (
+                        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                          <button
+                            onClick={handleExportDepts}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                          >
+                            <i className='bx bx-download text-sm'></i>Export
+                          </button>
+                          <button
+                            onClick={handleBulkDeleteDepts}
+                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                          >
+                            <i className='bx bx-trash text-sm'></i>Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Departments Grid */}
-                <div className="grid gap-3">
+                {/* Departments Grid - Scrollable */}
+                <div className="max-h-96 overflow-y-auto bg-white">
+                  <div className="grid gap-3 p-4">
                   {getPaginatedData(
                     [...departments]
                       .filter((d: any) => 
@@ -1012,49 +1015,52 @@ const SubjectManagementNew: React.FC = () => {
                       </div>
                     </div>
                   ))}
+                  </div>
                 </div>
 
                 {/* Pagination for Departments */}
-                {getTotalPages(departments.length) > 1 && (
-                  <div className="mt-4 flex items-center justify-between border-t pt-3">
-                    <div className="text-xs text-gray-600">
-                      Showing {((deptPage - 1) * itemsPerPage) + 1} to {Math.min(deptPage * itemsPerPage, departments.length)} of {departments.length}
+                <div className="bg-white border-t border-gray-200 p-4">
+                  {getTotalPages(departments.length) > 1 && (
+                    <div className="mt-0 flex items-center justify-between">
+                      <div className="text-xs text-gray-600">
+                        Showing {((deptPage - 1) * itemsPerPage) + 1} to {Math.min(deptPage * itemsPerPage, departments.length)} of {departments.length}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePageChange(deptPage - 1, setDeptPage, getTotalPages(departments.length))}
+                          disabled={deptPage === 1}
+                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                        >
+                          <i className='bx bx-chevron-left'></i>
+                        </button>
+                        {getPageNumbers(deptPage, getTotalPages(departments.length)).map((page: any, idx: number) => (
+                          page === '...' ? (
+                            <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                          ) : (
+                            <button
+                              key={page}
+                              onClick={() => setDeptPage(page as number)}
+                              className={`px-3 py-1 border rounded-md text-xs ${
+                                page === deptPage
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'border-gray-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          )
+                        ))}
+                        <button
+                          onClick={() => handlePageChange(deptPage + 1, setDeptPage, getTotalPages(departments.length))}
+                          disabled={deptPage === getTotalPages(departments.length)}
+                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                        >
+                          <i className='bx bx-chevron-right'></i>
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handlePageChange(deptPage - 1, setDeptPage, getTotalPages(departments.length))}
-                        disabled={deptPage === 1}
-                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                      >
-                        <i className='bx bx-chevron-left'></i>
-                      </button>
-                      {getPageNumbers(deptPage, getTotalPages(departments.length)).map((page: any, idx: number) => (
-                        page === '...' ? (
-                          <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
-                        ) : (
-                          <button
-                            key={page}
-                            onClick={() => setDeptPage(page as number)}
-                            className={`px-3 py-1 border rounded-md text-xs ${
-                              page === deptPage
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        )
-                      ))}
-                      <button
-                        onClick={() => handlePageChange(deptPage + 1, setDeptPage, getTotalPages(departments.length))}
-                        disabled={deptPage === getTotalPages(departments.length)}
-                        className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                      >
-                        <i className='bx bx-chevron-right'></i>
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1177,71 +1183,72 @@ const SubjectManagementNew: React.FC = () => {
 
             {/* Classes List Section */}
             {classes.length > 0 && (
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800">Your Classes</h3>
-                    <p className="text-xs text-gray-600">{classes.length} total classes</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-2 text-xs text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={classShowAll}
-                        onChange={(e) => { setClassShowAll(e.target.checked); setClassPage(1); loadAllData(); }}
-                      />
-                      Show inactive
-                    </label>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-white p-4">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800">Your Classes</h3>
+                      <p className="text-xs text-gray-600">{classes.length} total classes</p>
+                    </div>
                     <div className="flex items-center gap-2">
-                      <div className="relative">
-                        <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                      <label className="flex items-center gap-2 text-xs text-gray-700">
                         <input
-                          value={classSearch}
-                          onChange={(e) => { setClassSearch(e.target.value); setClassPage(1); }}
-                          placeholder="Search classes..."
-                          className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                          type="checkbox"
+                          checked={classShowAll}
+                          onChange={(e) => { setClassShowAll(e.target.checked); setClassPage(1); loadAllData(); }}
                         />
+                        Show inactive
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                          <input
+                            value={classSearch}
+                            onChange={(e) => { setClassSearch(e.target.value); setClassPage(1); }}
+                            placeholder="Search classes..."
+                            className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                          />
+                        </div>
+                        <select
+                          value={classSort}
+                          onChange={(e) => { setClassSort(e.target.value as any); setClassPage(1); }}
+                          className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                          title="Sort"
+                        >
+                          <option value="name-asc">Name A→Z</option>
+                          <option value="name-desc">Name Z→A</option>
+                          <option value="capacity-asc">Capacity ↑</option>
+                          <option value="capacity-desc">Capacity ↓</option>
+                          <option value="status">Status (Active first)</option>
+                        </select>
                       </div>
                       <select
-                        value={classSort}
-                        onChange={(e) => { setClassSort(e.target.value as any); setClassPage(1); }}
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setClassPage(1);
+                        }}
                         className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                        title="Sort"
                       >
-                        <option value="name-asc">Name A→Z</option>
-                        <option value="name-desc">Name Z→A</option>
-                        <option value="capacity-asc">Capacity ↑</option>
-                        <option value="capacity-desc">Capacity ↓</option>
-                        <option value="status">Status (Active first)</option>
+                        <option value={10}>10 per page</option>
+                        <option value={15}>15 per page</option>
+                        <option value={25}>25 per page</option>
+                        <option value={50}>50 per page</option>
                       </select>
                     </div>
-                    <select
-                      value={itemsPerPage}
-                      onChange={(e) => {
-                        setItemsPerPage(Number(e.target.value));
-                        setClassPage(1);
-                      }}
-                      className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value={10}>10 per page</option>
-                      <option value={15}>15 per page</option>
-                      <option value={25}>25 per page</option>
-                      <option value={50}>50 per page</option>
-                    </select>
                   </div>
-                </div>
 
-                {/* Selection Bar */}
-                <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedClasses.length > 0 && selectedClasses.length === classes.length}
-                        onChange={handleSelectAllClasses}
-                        className="w-5 h-5 cursor-pointer"
-                        title="Select all classes"
-                      />
+                  {/* Selection Bar */}
+                  <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedClasses.length > 0 && selectedClasses.length === classes.length}
+                          onChange={handleSelectAllClasses}
+                          className="w-5 h-5 cursor-pointer"
+                          title="Select all classes"
+                        />
                       <span className="text-sm font-semibold text-blue-800">
                         {selectedClasses.length > 0 ? `${selectedClasses.length} of ${classes.length} selected` : 'Select All'}
                       </span>
@@ -1264,13 +1271,15 @@ const SubjectManagementNew: React.FC = () => {
                     )}
                   </div>
                 </div>
+                </div>
 
-                {/* Classes Grid */}
-                <div className="grid gap-3">
-                  {getPaginatedData(
-                    [...classes]
-                      .filter((c: any) => c.name.toLowerCase().includes(classSearch.toLowerCase()))
-                      .sort((a: any, b: any) => {
+                {/* Classes Grid - Scrollable */}
+                <div className="max-h-96 overflow-y-auto bg-white">
+                  <div className="grid gap-3 p-4">
+                    {getPaginatedData(
+                      [...classes]
+                        .filter((c: any) => c.name.toLowerCase().includes(classSearch.toLowerCase()))
+                        .sort((a: any, b: any) => {
                         switch (classSort) {
                           case 'name-asc': return a.name.localeCompare(b.name);
                           case 'name-desc': return b.name.localeCompare(a.name);
@@ -1352,49 +1361,52 @@ const SubjectManagementNew: React.FC = () => {
                       </div>
                     </div>
                   ))}
-                </div>
+                    </div>
+                  </div>
 
-              {/* Pagination for Classes */}
-              {getTotalPages(classes.length) > 1 && (
-                <div className="mt-4 flex items-center justify-between border-t pt-3">
-                  <div className="text-xs text-gray-600">
-                    Showing {((classPage - 1) * itemsPerPage) + 1} to {Math.min(classPage * itemsPerPage, classes.length)} of {classes.length}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handlePageChange(classPage - 1, setClassPage, getTotalPages(classes.length))}
-                      disabled={classPage === 1}
-                      className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                    >
-                      <i className='bx bx-chevron-left'></i>
-                    </button>
-                    {getPageNumbers(classPage, getTotalPages(classes.length)).map((page: any, idx: number) => (
-                      page === '...' ? (
-                        <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
-                      ) : (
+                {/* Pagination for Classes */}
+                <div className="bg-white border-t border-gray-200 p-4">
+                  {getTotalPages(classes.length) > 1 && (
+                    <div className="mt-0 flex items-center justify-between">
+                      <div className="text-xs text-gray-600">
+                        Showing {((classPage - 1) * itemsPerPage) + 1} to {Math.min(classPage * itemsPerPage, classes.length)} of {classes.length}
+                      </div>
+                      <div className="flex items-center gap-2">
                         <button
-                          key={page}
-                          onClick={() => setClassPage(page as number)}
-                          className={`px-3 py-1 border rounded-md text-xs ${
-                            page === classPage
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'border-gray-300 hover:bg-gray-50'
-                          }`}
+                          onClick={() => handlePageChange(classPage - 1, setClassPage, getTotalPages(classes.length))}
+                          disabled={classPage === 1}
+                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                         >
-                          {page}
+                          <i className='bx bx-chevron-left'></i>
                         </button>
-                      )
-                    ))}
-                    <button
-                      onClick={() => handlePageChange(classPage + 1, setClassPage, getTotalPages(classes.length))}
-                      disabled={classPage === getTotalPages(classes.length)}
-                      className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                    >
-                      <i className='bx bx-chevron-right'></i>
-                    </button>
-                  </div>
+                        {getPageNumbers(classPage, getTotalPages(classes.length)).map((page: any, idx: number) => (
+                          page === '...' ? (
+                            <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                          ) : (
+                            <button
+                              key={page}
+                              onClick={() => setClassPage(page as number)}
+                              className={`px-3 py-1 border rounded-md text-xs ${
+                                page === classPage
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'border-gray-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          )
+                        ))}
+                        <button
+                          onClick={() => handlePageChange(classPage + 1, setClassPage, getTotalPages(classes.length))}
+                          disabled={classPage === getTotalPages(classes.length)}
+                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                        >
+                          <i className='bx bx-chevron-right'></i>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                )}
               </div>
             )}
           </div>
@@ -1481,70 +1493,71 @@ const SubjectManagementNew: React.FC = () => {
             </div>
 
             {/* Subjects List Section */}
-            <div className="bg-white rounded-lg shadow-md p-4">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-800">Your Subjects</h3>
-                  <p className="text-xs text-gray-600">{subjects.length} total subjects</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 text-xs text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={subjectShowAll}
-                      onChange={(e) => { setSubjectShowAll(e.target.checked); setSubjectPage(1); }}
-                    />
-                    Show inactive
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
-                      <input
-                        value={subjectSearch}
-                        onChange={(e) => { setSubjectSearch(e.target.value); setSubjectPage(1); }}
-                        placeholder="Search subjects..."
-                        className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
-                      />
-                    </div>
-                    <select
-                      value={subjectSort}
-                      onChange={(e) => { setSubjectSort(e.target.value as any); setSubjectPage(1); }}
-                      className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                      title="Sort"
-                    >
-                      <option value="name-asc">Name A→Z</option>
-                      <option value="name-desc">Name Z→A</option>
-                      <option value="code-asc">Code A→Z</option>
-                      <option value="code-desc">Code Z→A</option>
-                      <option value="status">Status (Active first)</option>
-                      <option value="recent">Recently added</option>
-                    </select>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-white p-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Your Subjects</h3>
+                    <p className="text-xs text-gray-600">{subjects.length} total subjects</p>
                   </div>
-                  <select
-                    value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(Number(e.target.value));
-                      setSubjectPage(1);
-                    }}
-                    className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value={10}>10 per page</option>
-                    <option value={15}>15 per page</option>
-                    <option value={25}>25 per page</option>
-                    <option value={50}>50 per page</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Selection Bar */}
-              {subjects.length > 0 && (
-                <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-700">
                       <input
                         type="checkbox"
-                        checked={selectedSubjects.length > 0 && selectedSubjects.length === subjects.length}
-                        onChange={handleSelectAllSubjects}
+                        checked={subjectShowAll}
+                        onChange={(e) => { setSubjectShowAll(e.target.checked); setSubjectPage(1); }}
+                      />
+                      Show inactive
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
+                        <input
+                          value={subjectSearch}
+                          onChange={(e) => { setSubjectSearch(e.target.value); setSubjectPage(1); }}
+                          placeholder="Search subjects..."
+                          className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                        />
+                      </div>
+                      <select
+                        value={subjectSort}
+                        onChange={(e) => { setSubjectSort(e.target.value as any); setSubjectPage(1); }}
+                        className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                        title="Sort"
+                      >
+                        <option value="name-asc">Name A→Z</option>
+                        <option value="name-desc">Name Z→A</option>
+                        <option value="code-asc">Code A→Z</option>
+                        <option value="code-desc">Code Z→A</option>
+                        <option value="status">Status (Active first)</option>
+                        <option value="recent">Recently added</option>
+                      </select>
+                    </div>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setSubjectPage(1);
+                      }}
+                      className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={15}>15 per page</option>
+                      <option value={25}>25 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Selection Bar */}
+                {subjects.length > 0 && (
+                  <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedSubjects.length > 0 && selectedSubjects.length === subjects.length}
+                          onChange={handleSelectAllSubjects}
                         className="w-5 h-5 cursor-pointer"
                         title="Select all subjects"
                       />
@@ -1603,67 +1616,70 @@ const SubjectManagementNew: React.FC = () => {
                   </button>
                 </div>
               </div>
+              </div>
 
-              {/* Subjects Grid + Pagination */}
-              {(() => {
-                // Apply filters and sort
-                let filtered = subjects.filter((s: any) =>
-                  (s.name || '').toLowerCase().includes(subjectSearch.toLowerCase()) ||
-                  (s.code || '').toLowerCase().includes(subjectSearch.toLowerCase())
-                );
-                filtered = [...filtered].sort((a: any, b: any) => {
-                  switch (subjectSort) {
-                    case 'name-asc': return (a.name || '').localeCompare(b.name || '');
-                    case 'name-desc': return (b.name || '').localeCompare(a.name || '');
-                    case 'code-asc': return (a.code || '').localeCompare(b.code || '');
-                    case 'code-desc': return (b.code || '').localeCompare(a.code || '');
-                    case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
-                    case 'recent': return (b.id ?? 0) - (a.id ?? 0);
-                    default: return 0;
-                  }
-                });
+              {/* Subjects Grid + Pagination - Scrollable */}
+              <div className="max-h-96 overflow-y-auto bg-white">
+                <div className="p-4">
+                  {(() => {
+                    // Apply filters and sort
+                    let filtered = subjects.filter((s: any) =>
+                      (s.name || '').toLowerCase().includes(subjectSearch.toLowerCase()) ||
+                      (s.code || '').toLowerCase().includes(subjectSearch.toLowerCase())
+                    );
+                    filtered = [...filtered].sort((a: any, b: any) => {
+                      switch (subjectSort) {
+                        case 'name-asc': return (a.name || '').localeCompare(b.name || '');
+                        case 'name-desc': return (b.name || '').localeCompare(a.name || '');
+                        case 'code-asc': return (a.code || '').localeCompare(b.code || '');
+                        case 'code-desc': return (b.code || '').localeCompare(a.code || '');
+                        case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+                        case 'recent': return (b.id ?? 0) - (a.id ?? 0);
+                        default: return 0;
+                      }
+                    });
 
-                const paged = getPaginatedData(filtered, subjectPage);
+                    const paged = getPaginatedData(filtered, subjectPage);
 
-                return (
-                  <>
-                    <div className="grid gap-3">
-                      {filtered.length === 0 ? (
-                        <div className="border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
-                          No subjects available for this class level.
-                        </div>
-                      ) : (
-                        paged.map((subject: any) => (
-                          <div key={subject.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedSubjects.includes(subject.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
-                            <div className="flex justify-between items-start gap-2">
-                              <input
-                                type="checkbox"
-                                checked={selectedSubjects.includes(subject.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedSubjects([...selectedSubjects, subject.id]);
-                                  } else {
-                                    setSelectedSubjects(selectedSubjects.filter(id => id !== subject.id));
-                                  }
-                                }}
-                                className="mt-1 w-4 h-4 cursor-pointer"
-                              />
-                              <div className="flex-1">
-                                <div className="flex flex-col gap-1.5 mb-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <h3 className="text-base font-semibold text-gray-800">{subject.name}</h3>
-                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                                      subject.subject_type === 'core' 
-                                        ? 'bg-orange-100 text-orange-800 border border-orange-200' 
-                                        : 'bg-blue-100 text-blue-800 border border-blue-200'
-                                    }`}>
-                                      {subject.subject_type === 'core' ? 'Core' : 'Elective'}
-                                    </span>
-                                    {subject.class_level && (
-                                      <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
-                                        {subject.class_level}
-                                      </span>
-                                    )}
+                    return (
+                      <>
+                        <div className="grid gap-3">
+                          {filtered.length === 0 ? (
+                            <div className="border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                              No subjects available for this class level.
+                            </div>
+                          ) : (
+                            paged.map((subject: any) => (
+                              <div key={subject.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedSubjects.includes(subject.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
+                                <div className="flex justify-between items-start gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSubjects.includes(subject.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedSubjects([...selectedSubjects, subject.id]);
+                                      } else {
+                                        setSelectedSubjects(selectedSubjects.filter(id => id !== subject.id));
+                                      }
+                                    }}
+                                    className="mt-1 w-4 h-4 cursor-pointer"
+                                  />
+                                  <div className="flex-1">
+                                    <div className="flex flex-col gap-1.5 mb-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className="text-base font-semibold text-gray-800">{subject.name}</h3>
+                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                          subject.subject_type === 'core' 
+                                            ? 'bg-orange-100 text-orange-800 border border-orange-200' 
+                                            : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                        }`}>
+                                          {subject.subject_type === 'core' ? 'Core' : 'Elective'}
+                                        </span>
+                                        {subject.class_level && (
+                                          <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
+                                            {subject.class_level}
+                                          </span>
+                                        )}
                                     <button
                                       onClick={() => handleToggleSubjectStatus(subject)}
                                       className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-all hover:shadow-sm ${
@@ -1752,7 +1768,9 @@ const SubjectManagementNew: React.FC = () => {
                     )}
                   </>
                 );
-              })()}
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2125,9 +2143,9 @@ const SubjectManagementNew: React.FC = () => {
         {/* Bulk Upload Modal */}
         {uploadModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-800">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-xl font-bold text-gray-800">
                   Bulk Upload {uploadModal === 'departments' ? 'Departments' : uploadModal === 'classes' ? 'Classes' : 'Subjects'}
                 </h3>
                 <button
@@ -2135,15 +2153,15 @@ const SubjectManagementNew: React.FC = () => {
                     setUploadModal(null);
                     setUploadFile(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600 text-xl"
+                  className="text-gray-400 hover:text-gray-600 text-2xl transition-colors"
                 >
-                  <i className='bx bx-x'></i>
+                  ×
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="px-6 py-6 space-y-5">
                 <div>
-                  <p className="text-sm text-gray-600 mb-3">
+                  <p className="text-sm text-gray-700 mb-3 font-medium">
                     Upload a CSV file with the following columns:
                   </p>
                   {uploadModal === 'departments' && (
@@ -2156,26 +2174,26 @@ const SubjectManagementNew: React.FC = () => {
                     </ul>
                   )}
                   {uploadModal === 'classes' && (
-                    <ul className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 space-y-1 mb-3">
+                    <ul className="text-xs text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-1.5">
                       <li>• <strong>name</strong> (required)</li>
-                      <li>• department_id (required)</li>
-                      <li>• description (optional)</li>
-                      <li>• capacity (optional, default: 30)</li>
-                      <li>• is_active (optional, default: 1)</li>
+                      <li>• <strong>department_id</strong> (required)</li>
+                      <li>• <strong>description</strong> (optional)</li>
+                      <li>• <strong>capacity</strong> (optional, default: 30)</li>
+                      <li>• <strong>is_active</strong> (optional, default: 1)</li>
                     </ul>
                   )}
                   {uploadModal === 'subjects' && (
-                    <ul className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 space-y-1 mb-3">
+                    <ul className="text-xs text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-1.5">
                       <li>• <strong>name</strong> (required)</li>
-                      <li>• code (required)</li>
-                      <li>• class_level (required: e.g., "SSS 1", "JSS 2")</li>
-                      <li>• subject_type (required: core/elective)</li>
-                      <li>• description (optional)</li>
+                      <li>• <strong>code</strong> (required)</li>
+                      <li>• <strong>class_level</strong> (required: e.g., "SSS 1", "JSS 2")</li>
+                      <li>• <strong>subject_type</strong> (required: core/elective)</li>
+                      <li>• <strong>description</strong> (optional)</li>
                     </ul>
                   )}
                 </div>
 
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-all bg-gray-50 hover:bg-blue-50">
                   <input
                     type="file"
                     accept=".csv"
@@ -2183,23 +2201,25 @@ const SubjectManagementNew: React.FC = () => {
                     className="hidden"
                     id="csv-upload"
                   />
-                  <label htmlFor="csv-upload" className="cursor-pointer">
-                    <i className='bx bx-cloud-upload text-4xl text-gray-400 mb-2'></i>
-                    <p className="text-sm font-medium text-gray-700">
+                  <label htmlFor="csv-upload" className="cursor-pointer block">
+                    <div className="flex justify-center mb-3">
+                      <i className='bx bx-cloud-upload text-6xl text-gray-400'></i>
+                    </div>
+                    <p className="text-base font-semibold text-gray-800 mb-1">
                       {uploadFile ? uploadFile.name : 'Click to upload CSV'}
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">or drag and drop</p>
+                    <p className="text-sm text-gray-500">or drag and drop</p>
                   </label>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-3 pt-2">
                   <button
                     type="button"
                     onClick={() => {
                       setUploadModal(null);
                       setUploadFile(null);
                     }}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 font-medium text-sm transition-colors"
+                    className="flex-1 px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm transition-colors"
                   >
                     Cancel
                   </button>
@@ -2207,16 +2227,16 @@ const SubjectManagementNew: React.FC = () => {
                     type="button"
                     onClick={() => uploadModal && handleBulkUpload(uploadModal)}
                     disabled={!uploadFile || uploading}
-                    className="flex-1 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-md hover:shadow-md font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                    className="flex-1 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:shadow-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
                   >
                     {uploading ? (
                       <>
-                        <i className='bx bx-loader-alt bx-spin'></i>
+                        <i className='bx bx-loader-alt bx-spin text-lg'></i>
                         Uploading...
                       </>
                     ) : (
                       <>
-                        <i className='bx bx-upload'></i>
+                        <i className='bx bx-upload text-lg'></i>
                         Upload
                       </>
                     )}

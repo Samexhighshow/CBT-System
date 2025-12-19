@@ -370,11 +370,11 @@ class ExamController extends Controller
             return response()->json(['message' => 'Exam not found'], 404);
         }
 
-        // Only allow deletion of draft or cancelled exams and never if published
-        if ($exam->published || !in_array($exam->status, ['draft', 'cancelled'])) {
+        // Allow deletion of draft or cancelled exams regardless of published status
+        if (!in_array($exam->status, ['draft', 'cancelled'])) {
             return response()->json([
-                'message' => 'Only draft or cancelled exams can be deleted, and published exams are protected',
-                'errors' => ['status' => ['Cannot delete exam with status: ' . $exam->status]]
+                'message' => 'Only draft or cancelled exams can be deleted',
+                'errors' => ['status' => ['Cannot delete exam with status: ' . $exam->status . '. Current exams must be closed first.']]
             ], 422);
         }
 

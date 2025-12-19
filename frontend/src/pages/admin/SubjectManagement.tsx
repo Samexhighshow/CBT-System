@@ -173,8 +173,11 @@ const SubjectManagement: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
-                  <div className="flex justify-between items-center mb-2">
-                    <h2 className="text-xl font-semibold">Classes ({classes.length})</h2>
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-800">Classes</h2>
+                      <p className="text-xs text-gray-600">{classes.length} total classes</p>
+                    </div>
                     <Button variant="danger" disabled={selectedClassIds.length === 0} onClick={handleBatchDeleteClasses}>
                       Delete Selected ({selectedClassIds.length})
                     </Button>
@@ -190,37 +193,39 @@ const SubjectManagement: React.FC = () => {
                       <p className="text-gray-400 text-sm mt-1">Click "Add Class" to create one</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-2 py-3">
-                              <input type="checkbox" checked={Array.isArray(classes) && selectedClassIds.length === classes.length && classes.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllClasses(e.target.checked)} title="Select all classes" />
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Capacity</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {Array.isArray(classes) && classes.map((cls) => (
-                            <tr key={cls.id}>
-                              <td className="px-2 py-4">
-                                <input type="checkbox" checked={selectedClassIds.includes(cls.id)} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectOneClass(cls.id, e.target.checked)} title={`Select class ${cls.name}`} />
-                              </td>
-                              <td className="px-6 py-4 text-sm font-semibold">{cls.name}</td>
-                              <td className="px-6 py-4 text-sm">{cls.code}</td>
-                              <td className="px-6 py-4 text-sm">{Array.isArray(departments) && departments.find(d => d.id === cls.department_id)?.name || 'N/A'}</td>
-                              <td className="px-6 py-4 text-sm">{cls.capacity}</td>
-                              <td className="px-6 py-4 text-sm">
-                                <span className={`px-2 py-1 rounded text-xs ${cls.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{cls.is_active ? 'Active' : 'Inactive'}</span>
-                              </td>
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gradient-to-r from-blue-50 to-purple-50 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-3">
+                                <input type="checkbox" checked={Array.isArray(classes) && selectedClassIds.length === classes.length && classes.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllClasses(e.target.checked)} title="Select all classes" />
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Code</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Department</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Capacity</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {Array.isArray(classes) && classes.map((cls) => (
+                              <tr key={cls.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-3 py-4">
+                                  <input type="checkbox" checked={selectedClassIds.includes(cls.id)} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectOneClass(cls.id, e.target.checked)} title={`Select class ${cls.name}`} />
+                                </td>
+                                <td className="px-6 py-4 text-sm font-semibold text-gray-900">{cls.name}</td>
+                                <td className="px-6 py-4 text-sm text-gray-700">{cls.code}</td>
+                                <td className="px-6 py-4 text-sm text-gray-700">{Array.isArray(departments) && departments.find(d => d.id === cls.department_id)?.name || 'N/A'}</td>
+                                <td className="px-6 py-4 text-sm text-gray-700">{cls.capacity}</td>
+                                <td className="px-6 py-4 text-sm">
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${cls.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{cls.is_active ? 'Active' : 'Inactive'}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </Card>
@@ -279,7 +284,10 @@ const SubjectManagement: React.FC = () => {
                 </div>
               </div>
         <Card>
-          <h2 className="text-xl font-semibold mb-4">Departments ({Array.isArray(departments) ? departments.length : 0})</h2>
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-gray-800">Departments</h2>
+            <p className="text-xs text-gray-600">{Array.isArray(departments) ? departments.length : 0} total departments</p>
+          </div>
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <i className='bx bx-loader-alt bx-spin text-3xl text-gray-400'></i>
@@ -291,24 +299,31 @@ const SubjectManagement: React.FC = () => {
               <p className="text-gray-400 text-sm mt-1">Click "Add Department" to create one</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {departments.map((dept) => (
-                <div key={dept.id} className="border rounded p-3 hover:bg-gray-50">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-semibold">{dept.name}</h3>
-                      <p className="text-sm text-gray-600">Code: {dept.code}</p>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="max-h-96 overflow-y-auto">
+                <div className="space-y-1">
+                  {departments.map((dept) => (
+                    <div key={dept.id} className="border-b border-gray-100 p-4 hover:bg-blue-50 transition-colors flex justify-between items-center">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{dept.name}</h3>
+                        <p className="text-sm text-gray-600">Code: {dept.code}</p>
+                      </div>
+                      <button onClick={() => handleDeleteDepartment(dept.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete department">
+                        <i className='bx bx-trash text-lg'></i>
+                      </button>
                     </div>
-                    <button onClick={() => handleDeleteDepartment(dept.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           )}
         </Card>
         <Card>
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl font-semibold">Subjects ({subjects.length})</h2>
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">Subjects</h2>
+              <p className="text-xs text-gray-600">{subjects.length} total subjects</p>
+            </div>
             <Button variant="danger" disabled={selectedSubjectIds.length === 0} onClick={handleBatchDeleteSubjects}>
               Delete Selected ({selectedSubjectIds.length})
             </Button>
@@ -324,31 +339,33 @@ const SubjectManagement: React.FC = () => {
               <p className="text-gray-400 text-sm mt-1">Click "Add Subject" to create one</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-2 py-3">
-                      <input type="checkbox" checked={Array.isArray(subjects) && selectedSubjectIds.length === subjects.length && subjects.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllSubjects(e.target.checked)} title="Select all subjects" />
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {Array.isArray(subjects) && subjects.map((subject) => (
-                    <tr key={subject.id}>
-                      <td className="px-2 py-4">
-                        <input type="checkbox" checked={selectedSubjectIds.includes(subject.id)} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectOneSubject(subject.id, e.target.checked)} title={`Select subject ${subject.name}`} />
-                      </td>
-                      <td className="px-6 py-4 text-sm font-semibold">{subject.name}</td>
-                      <td className="px-6 py-4 text-sm">{subject.code}</td>
-                      <td className="px-6 py-4 text-sm">{subject.description}</td>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gradient-to-r from-green-50 to-emerald-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-3">
+                        <input type="checkbox" checked={Array.isArray(subjects) && selectedSubjectIds.length === subjects.length && subjects.length > 0} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectAllSubjects(e.target.checked)} title="Select all subjects" />
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Code</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Description</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {Array.isArray(subjects) && subjects.map((subject) => (
+                      <tr key={subject.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-4">
+                          <input type="checkbox" checked={selectedSubjectIds.includes(subject.id)} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSelectOneSubject(subject.id, e.target.checked)} title={`Select subject ${subject.name}`} />
+                        </td>
+                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">{subject.name}</td>
+                        <td className="px-6 py-4 text-sm text-gray-700">{subject.code}</td>
+                        <td className="px-6 py-4 text-sm text-gray-700">{subject.description}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </Card>
