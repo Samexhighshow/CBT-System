@@ -5,6 +5,9 @@ import useAuthStore from '../../store/authStore';
 import FooterMinimal from '../FooterMinimal';
 import { adminNavLinks, NavLinkConfig } from '../../config/adminNav';
 import { useRoleBasedNav } from '../../hooks/useRoleBasedNav';
+import { TeacherSubjectSelection, StudentSubjectSelection } from '../index';
+import { api } from '../../services/api';
+import { showSuccess } from '../../utils/alerts';
 
 const AdminLayout: React.FC = () => {
   const navigate = useNavigate();
@@ -13,6 +16,9 @@ const AdminLayout: React.FC = () => {
   const [isMainAdmin, setIsMainAdmin] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [allocationDropdownOpen, setAllocationDropdownOpen] = useState(false);
+  const [showTeacherSubjects, setShowTeacherSubjects] = useState(false);
+  const [showStudentSubjects, setShowStudentSubjects] = useState(false);
+  const [checkedFirstLogin, setCheckedFirstLogin] = useState(false);
   const { loading: navLoading, filterNavLinks } = useRoleBasedNav();
 
   useEffect(() => {
@@ -23,7 +29,47 @@ const AdminLayout: React.FC = () => {
     // Check if user has Main Admin role
     const hasMainAdminRole = user.roles?.some((role: any) => role.name === 'Main Admin');
     setIsMainAdmin(hasMainAdminRole || false);
+    
+    // Check if first login (needs subject selection)
+    checkFirstLogin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate, user]);
+
+  const checkFirstLogin = async () => {
+    if (checkedFirstLogin || !user) return;
+    
+    try {
+      const isTeacher = user.roles?.some((role: any) => role.name === 'Teacher');
+      const isStudent = user.roles?.some((role: any) => role.name === 'Student');
+      
+      if (isTeacher) {
+        // Check if teacher has subjects selected
+        const res = await api.get('/preferences/teacher/subjects');
+        if (!res.data?.teacher_subjects || res.data.teacher_subjects.length === 0) {
+          setShowTeacherSubjects(true);
+        }
+      } else if (isStudent) {
+        // Check if student has class/subjects selected
+        const res = await api.get('/preferences/student/subjects');
+        if (!res.data?.class_id || !res.data?.student_subjects || res.data.student_subjects.length === 0) {
+          setShowStudentSubjects(true);
+        }
+      }
+      
+      setCheckedFirstLogin(true);
+    } catch (err) {
+      console.error('Failed to check first login:', err);
+      setCheckedFirstLogin(true);
+    }
+  };
+
+  // Check first login for subject/class selection
+  useEffect(() => {
+    if (user && !checkedFirstLogin) {
+      checkFirstLogin();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, checkedFirstLogin]);
 
   // Close sidebar when route changes (mobile)
   useEffect(() => {
@@ -224,6 +270,26 @@ const AdminLayout: React.FC = () => {
       <div className="mt-auto">
         <FooterMinimal />
       </div>
+
+      {/* First Login Modals */}
+      {showTeacherSubjects && (
+        <TeacherSubjectSelection
+          onClose={() => setShowTeacherSubjects(false)}
+          onSave={() => {
+            setShowTeacherSubjects(false);
+            showSuccess('Subjects saved successfully');
+          }}
+        />
+      )}
+      {showStudentSubjects && (
+        <StudentSubjectSelection
+          onClose={() => setShowStudentSubjects(false)}
+          onSave={() => {
+            setShowStudentSubjects(false);
+            showSuccess('Class and subjects saved successfully');
+          }}
+        />
+      )}
     </div>
   );
 };
