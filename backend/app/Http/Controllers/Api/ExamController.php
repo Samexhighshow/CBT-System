@@ -14,6 +14,22 @@ use Carbon\Carbon;
 class ExamController extends Controller
 {
     /**
+     * Return questions for a given exam
+     */
+    public function getQuestions($id)
+    {
+        $exam = Exam::with(['questions.options'])->findOrFail($id);
+        $questionsQuery = $exam->questions()->with('options');
+        // Use a safe default order since some databases may not have order_index
+        $questions = $questionsQuery->orderBy('id')->get();
+
+        return response()->json([
+            'exam_id' => $exam->id,
+            'title' => $exam->title,
+            'questions' => $questions,
+        ]);
+    }
+    /**
      * Display a listing of exams with filters
      */
     public function index(Request $request)
@@ -203,13 +219,8 @@ class ExamController extends Controller
             return response()->json(['message' => 'Exam not found'], 404);
         }
 
-        // Closed exams cannot be edited
-        if (in_array($exam->status, ['completed'])) {
-            return response()->json([
-                'message' => 'Closed exams cannot be edited',
-                'errors' => ['status' => ['Exam is closed']]
-            ], 422);
-        }
+        // PHASE 8: Allow editing of all exams, including closed/completed
+        // Admin has full control to make corrections even after exam completion
 
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|required|string|max:255',
@@ -318,11 +329,13 @@ class ExamController extends Controller
             ], 422);
         }
 
-        // Publishing guard: must have valid time window
+        // PHASE 8: Allow unpublishing without status change
+        // Admin should be able to unpublish exam at any time (hide from students)
         $isPublishing = $newPublished || in_array($newStatus, ['scheduled', 'active', 'completed']);
         $start = $request->input('start_datetime', $exam->start_datetime ?? $exam->start_time);
         $end = $request->input('end_datetime', $exam->end_datetime ?? $exam->end_time);
 
+        // Only enforce time requirements when publishing (not when unpublishing)
         if ($isPublishing) {
             if (!$start || !$end) {
                 return response()->json([
@@ -360,9 +373,10 @@ class ExamController extends Controller
     }
 
     /**
-     * Remove the specified exam
+     * Remove the specified exam with confirmation
+     * PHASE 8: Require typing exam title for safety
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $exam = Exam::find($id);
 
@@ -370,17 +384,46 @@ class ExamController extends Controller
             return response()->json(['message' => 'Exam not found'], 404);
         }
 
-        // Allow deletion of draft or cancelled exams regardless of published status
-        if (!in_array($exam->status, ['draft', 'cancelled'])) {
+        // PHASE 8: Verify deletion by requiring exact title match
+        $validator = Validator::make($request->all(), [
+            'confirmation_title' => 'required|string'
+        ]);
+
+        if ($validator->fails()) {
             return response()->json([
-                'message' => 'Only draft or cancelled exams can be deleted',
-                'errors' => ['status' => ['Cannot delete exam with status: ' . $exam->status . '. Current exams must be closed first.']]
+                'message' => 'Confirmation required',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Allow bulk delete bypass with special keyword
+        $isBulkDelete = $request->confirmation_title === 'bulk_delete_bypass';
+        
+        if (!$isBulkDelete && $request->confirmation_title !== $exam->title) {
+            return response()->json([
+                'message' => 'Exam title does not match',
+                'errors' => ['confirmation_title' => ['The exam title you entered does not match. Please type exactly: ' . $exam->title]]
+            ], 422);
+        }
+
+        // Check for questions (additional safety)
+        $questionCount = $exam->questions()->count();
+        if ($questionCount > 0) {
+            return response()->json([
+                'message' => 'Cannot delete exam with questions',
+                'errors' => ['questions' => ["This exam has {$questionCount} questions. Please delete all questions first."]]
             ], 422);
         }
 
         $exam->delete();
 
-        return response()->json(['message' => 'Exam deleted successfully']);
+        return response()->json([
+            'message' => 'Exam deleted successfully',
+            'deleted_exam' => [
+                'id' => $exam->id,
+                'title' => $exam->title
+            ]
+        ]);
     }
 
     /**

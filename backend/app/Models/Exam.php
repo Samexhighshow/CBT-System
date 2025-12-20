@@ -88,6 +88,14 @@ class Exam extends Model
     }
 
     /**
+     * Get question pools for this exam (Phase 7)
+     */
+    public function questionPools()
+    {
+        return $this->hasMany(QuestionPool::class, 'exam_id');
+    }
+
+    /**
      * Get exam attempts
      */
     public function attempts(): HasMany
@@ -349,4 +357,300 @@ class Exam extends Model
     {
         return $query->where('subject_id', $subjectId);
     }
+
+    /**
+     * PHASE 4 VALIDATION HELPERS
+     */
+
+    /**
+     * Check if exam is closed (prevents adding/editing questions)
+     */
+    public function isClosed(): bool
+    {
+        return $this->status === 'closed' || $this->status === 'completed';
+    }
+
+    /**
+     * Check if exam is open for editing questions
+     */
+    public function isOpenForEditing(): bool
+    {
+        return !$this->isClosed() && in_array($this->status, ['draft', 'scheduled']);
+    }
+
+    /**
+     * Get the total marks for this exam
+     */
+    public function getTotalMarks(): float
+    {
+        return (float) $this->questions()->sum('marks');
+    }
+
+    /**
+     * Calculate the current total of question marks
+     */
+    public function getCurrentMarksTotal(): float
+    {
+        return $this->getTotalMarks();
+    }
+
+    /**
+     * Check if a new question's marks would exceed the exam total
+     */
+    public function canAddMarks(float $newMarks): bool
+    {
+        $currentTotal = $this->getTotalMarks();
+        
+        // If exam has no maximum marks limit, allow it
+        if (!isset($this->total_marks) || $this->total_marks === null) {
+            return true;
+        }
+
+        return ($currentTotal + $newMarks) <= $this->total_marks;
+    }
+
+    /**
+     * Get available marks remaining for the exam
+     */
+    public function getAvailableMarks(): float
+    {
+        if (!isset($this->total_marks) || $this->total_marks === null) {
+            return PHP_FLOAT_MAX;
+        }
+
+        return max(0, $this->total_marks - $this->getTotalMarks());
+    }
+
+    /**
+     * Validate if exam can accept a new question with given marks
+     */
+    public function validateQuestionAddition(float $marks): array
+    {
+        $errors = [];
+
+        // Check if exam is closed
+        if ($this->isClosed()) {
+            $errors[] = 'Cannot add questions to a closed exam';
+        }
+
+        // Check marks
+        if ($marks <= 0) {
+            $errors[] = 'Question marks must be greater than 0';
+        }
+
+        if (isset($this->total_marks) && $this->total_marks !== null) {
+            if (!$this->canAddMarks($marks)) {
+                $currentTotal = $this->getTotalMarks();
+                $errors[] = "Adding {$marks} marks would exceed exam total ({$currentTotal} + {$marks} > {$this->total_marks})";
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validate if exam can accept an updated question with new marks
+     */
+    public function validateQuestionUpdate(Question $question, float $newMarks): array
+    {
+        $errors = [];
+
+        // Check if exam is closed
+        if ($this->isClosed()) {
+            $errors[] = 'Cannot edit questions for a closed exam';
+        }
+
+        // Check marks
+        if ($newMarks <= 0) {
+            $errors[] = 'Question marks must be greater than 0';
+        }
+
+        if (isset($this->total_marks) && $this->total_marks !== null) {
+            $currentTotal = $this->getTotalMarks();
+            $marksDifference = $newMarks - $question->marks;
+            
+            if ($marksDifference > 0 && ($currentTotal + $marksDifference) > $this->total_marks) {
+                $errors[] = "Updating marks to {$newMarks} would exceed exam total ({$currentTotal} + {$marksDifference} > {$this->total_marks})";
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Get summary of exam questions and marks
+     */
+    public function getQuestionsSummary(): array
+    {
+        $allQuestions = $this->questions()->get();
+        
+        return [
+            'total_questions' => $allQuestions->count(),
+            'total_marks' => $this->getTotalMarks(),
+            'by_type' => $allQuestions->groupBy('question_type')->mapWithKeys(function ($questions, $type) {
+                return [
+                    $type => [
+                        'count' => $questions->count(),
+                        'marks' => $questions->sum('marks')
+                    ]
+                ];
+            })->toArray(),
+            'by_difficulty' => $allQuestions->groupBy('difficulty_level')->mapWithKeys(function ($questions, $level) {
+                return [
+                    $level => [
+                        'count' => $questions->count(),
+                        'marks' => $questions->sum('marks')
+                    ]
+                ];
+            })->toArray(),
+        ];
+    }
+
+    /**
+     * Validate entire exam structure before publishing
+     */
+    public function validateForPublishing(): array
+    {
+        $errors = [];
+
+        // Check if exam has questions
+        if ($this->questions()->count() === 0) {
+            $errors[] = 'Exam must have at least one question before publishing';
+        }
+
+        // Check if all questions are valid
+        foreach ($this->questions()->get() as $question) {
+            if (!empty($errors)) {
+                break; // Stop after first invalid question found
+            }
+        }
+
+        // Check if exam has duration set
+        if (!$this->duration_minutes || $this->duration_minutes <= 0) {
+            $errors[] = 'Exam duration must be set (greater than 0 minutes)';
+        }
+
+        // Check time window
+        if ($this->start_datetime && $this->end_datetime) {
+            if ($this->end_datetime <= $this->start_datetime) {
+                $errors[] = 'Exam end time must be after start time';
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * PHASE 5: Admin Actions Helper Methods
+     */
+
+    /**
+     * Get questions with options
+     */
+    public function questionsWithOptions()
+    {
+        return $this->questions()->with(['options'])->orderBy('order_index')->get();
+    }
+
+    /**
+     * Get exam statistics
+     */
+    public function getStatistics(): array
+    {
+        $questions = $this->questions()->get();
+
+        return [
+            'total_questions' => $questions->count(),
+            'total_marks' => $questions->sum('marks'),
+            'active_questions' => $questions->where('status', 'active')->count(),
+            'disabled_questions' => $questions->where('status', 'disabled')->count(),
+            'draft_questions' => $questions->where('status', 'draft')->count(),
+            'by_type' => $questions->groupBy('question_type')
+                ->map(fn($group) => [
+                    'count' => $group->count(),
+                    'marks' => $group->sum('marks')
+                ])->toArray(),
+        ];
+    }
+
+    /**
+     * Check if can delete a question
+     */
+    public function canDeleteQuestion(Question $question): bool
+    {
+        return !$this->isClosed();
+    }
+
+    /**
+     * Check if can edit a question
+     */
+    public function canEditQuestion(Question $question): bool
+    {
+        return !$this->isClosed();
+    }
+
+    /**
+     * Check if can duplicate a question
+     */
+    public function canDuplicateQuestion(Question $question): bool
+    {
+        return !$this->isClosed();
+    }
+
+    /**
+     * Get preview of question as student would see
+     */
+    public function previewQuestion(Question $question)
+    {
+        return [
+            'id' => $question->id,
+            'text' => $question->question_text,
+            'type' => $question->question_type,
+            'marks' => $question->marks,
+            'options' => $this->randomize_options 
+                ? $question->options->shuffle() 
+                : $question->options
+        ];
+    }
+
+    /**
+     * Get questions grouped by type
+     */
+    public function getQuestionsByType()
+    {
+        return $this->questions()
+            ->with(['options'])
+            ->get()
+            ->groupBy('question_type')
+            ->mapWithKeys(function ($questions, $type) {
+                return [
+                    $type => [
+                        'count' => $questions->count(),
+                        'marks' => $questions->sum('marks'),
+                        'questions' => $questions->values(),
+                    ]
+                ];
+            });
+    }
+
+    /**
+     * Get questions grouped by difficulty
+     */
+    public function getQuestionsByDifficulty()
+    {
+        return $this->questions()
+            ->with(['options'])
+            ->get()
+            ->groupBy('difficulty_level')
+            ->mapWithKeys(function ($questions, $level) {
+                return [
+                    $level ?? 'unset' => [
+                        'count' => $questions->count(),
+                        'marks' => $questions->sum('marks'),
+                        'questions' => $questions->values(),
+                    ]
+                ];
+            });
+    }
 }
+

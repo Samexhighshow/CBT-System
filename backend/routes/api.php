@@ -15,6 +15,9 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\SystemSettingController;
 use App\Http\Controllers\Api\ProfileController;
+// Phase 7 Controllers
+use App\Http\Controllers\Api\QuestionTagController;
+use App\Http\Controllers\Api\QuestionPoolController;
 use App\Http\Controllers\CbtQuestionImportController;
 use App\Http\Controllers\CbtExamController;
 use App\Http\Controllers\CbtResultsController;
@@ -98,10 +101,51 @@ Route::prefix('questions')->group(function () {
     Route::post('/', [QuestionController::class, 'store']);
     Route::put('/{id}', [QuestionController::class, 'update']);
     Route::delete('/{id}', [QuestionController::class, 'destroy']);
+    
+    // PHASE 3: Bulk operations
+    Route::post('/bulk-delete', [QuestionController::class, 'bulkDestroy']);
+    Route::post('/bulk-status', [QuestionController::class, 'bulkUpdateStatus']);
+    Route::get('/types/all', [QuestionController::class, 'getQuestionTypes']);
+    
+    // PHASE 3: CSV operations with support for all 14 types
     Route::post('/bulk', [QuestionController::class, 'bulkCreate']);
     Route::post('/import', [QuestionController::class, 'importQuestions']);
     Route::get('/template/download', [QuestionController::class, 'downloadTemplate']);
     Route::get('/export/csv', [QuestionController::class, 'exportQuestions']);
+    
+    // PHASE 5: Admin Actions
+    Route::post('/{id}/duplicate', [QuestionController::class, 'duplicate']);
+    Route::patch('/{id}/toggle-status', [QuestionController::class, 'toggleStatus']);
+    Route::get('/{id}/preview', [QuestionController::class, 'preview']);
+    Route::post('/reorder', [QuestionController::class, 'reorderQuestions']);
+    Route::get('/statistics/exam/{examId}', [QuestionController::class, 'getExamStatistics']);
+    Route::post('/group/by/{examId}', [QuestionController::class, 'groupQuestions']);
+});
+
+// PHASE 7: Question Tags
+Route::prefix('question-tags')->group(function () {
+    Route::get('/', [QuestionTagController::class, 'index']);
+    Route::get('/popular', [QuestionTagController::class, 'popular']);
+    Route::get('/category/{category}', [QuestionTagController::class, 'byCategory']);
+    Route::post('/', [QuestionTagController::class, 'store']);
+    Route::put('/{id}', [QuestionTagController::class, 'update']);
+    Route::delete('/{id}', [QuestionTagController::class, 'destroy']);
+    Route::get('/{id}/questions', [QuestionTagController::class, 'getQuestions']);
+    Route::post('/questions/{questionId}/attach', [QuestionTagController::class, 'attachToQuestion']);
+    Route::delete('/questions/{questionId}/tags/{tagId}', [QuestionTagController::class, 'detachFromQuestion']);
+});
+
+// PHASE 7: Question Pools
+Route::prefix('exams/{examId}/pools')->group(function () {
+    Route::get('/', [QuestionPoolController::class, 'index']);
+    Route::get('/active', [QuestionPoolController::class, 'active']);
+    Route::post('/', [QuestionPoolController::class, 'store']);
+    Route::put('/{poolId}', [QuestionPoolController::class, 'update']);
+    Route::delete('/{poolId}', [QuestionPoolController::class, 'destroy']);
+    Route::get('/{poolId}/stats', [QuestionPoolController::class, 'stats']);
+    Route::post('/{poolId}/draw', [QuestionPoolController::class, 'draw']);
+    Route::post('/{poolId}/assign', [QuestionPoolController::class, 'assignQuestions']);
+    Route::post('/{poolId}/remove', [QuestionPoolController::class, 'removeQuestions']);
 });
 
 // Subjects

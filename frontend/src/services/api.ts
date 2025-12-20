@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+// Prefer localhost for Windows dev environments; still allow env override
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 // Export base URL for use in components
 export const API_URL = API_BASE_URL;
@@ -12,7 +13,9 @@ const apiClient: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  withCredentials: true, // For cookie-based auth (Sanctum)
+  // In development, prefer Bearer tokens over cookies to simplify CORS
+  // If you need cookie-based auth later, flip this back to true and ensure CORS/Sanctum are configured
+  withCredentials: false,
 });
 
 // Request interceptor to add auth token

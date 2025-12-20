@@ -51,6 +51,11 @@ const ExamManagement: React.FC = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  
+  // PHASE 8: Delete confirmation modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [examToDelete, setExamToDelete] = useState<ExamRow | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
   // Modal and form state
   const [showExamModal, setShowExamModal] = useState(false);
@@ -155,13 +160,47 @@ const ExamManagement: React.FC = () => {
     if (!result.isConfirmed) return;
 
     try {
-      await Promise.all(selectedExams.map(id => api.delete(`/exams/${id}`)));
+      await Promise.all(selectedExams.map(id => api.delete(`/exams/${id}`, {
+        data: { confirmation_title: 'bulk_delete_bypass' }
+      })));
       showSuccess(`${selectedExams.length} exam(s) deleted successfully`);
       setSelectedExams([]);
       loadExams();
     } catch (error) {
       console.error('Bulk delete failed:', error);
       showError('Failed to delete some exams');
+    }
+  };
+
+  const handleDeleteExam = (exam: ExamRow) => {
+    setExamToDelete(exam);
+    setDeleteConfirmation('');
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!examToDelete) return;
+    
+    if (deleteConfirmation !== examToDelete.title) {
+      showError('Exam title does not match');
+      return;
+    }
+
+    try {
+      await api.delete(`/exams/${examToDelete.id}`, {
+        data: { confirmation_title: deleteConfirmation }
+      });
+      showSuccess('Exam deleted successfully');
+      setShowDeleteModal(false);
+      setExamToDelete(null);
+      setDeleteConfirmation('');
+      loadExams();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.errors?.confirmation_title?.[0] 
+        || error.response?.data?.errors?.questions?.[0]
+        || error.response?.data?.message 
+        || 'Failed to delete exam';
+      showError(errorMessage);
     }
   };
 
@@ -360,6 +399,21 @@ const ExamManagement: React.FC = () => {
       loadExams();
     } catch (error) {
       showError('Publish failed. Ensure time window and class/subject mapping are valid.');
+    }
+  };
+
+  const handleUnpublish = async (exam: ExamRow) => {
+    try {
+      await api.put(`/exams/${exam.id}`, {
+        published: false,
+        status: exam.status, // Keep current status, just unpublish
+        start_datetime: exam.start_datetime || exam.start_time,
+        end_datetime: exam.end_datetime || exam.end_time,
+      });
+      showSuccess('Exam unpublished - now hidden from students');
+      loadExams();
+    } catch (error) {
+      showError('Unpublish failed');
     }
   };
 
@@ -703,14 +757,24 @@ const ExamManagement: React.FC = () => {
                                   <span className="font-medium">View</span>
                                 </button>
                                 
-                                {/* Publish */}
-                                <button
-                                  onClick={() => handlePublish(exam)}
-                                  className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                                >
-                                  <i className='bx bx-upload text-green-500'></i>
-                                  <span className="font-medium">Publish</span>
-                                </button>
+                                {/* Publish/Unpublish - Show appropriate button based on published status */}
+                                {!exam.published ? (
+                                  <button
+                                    onClick={() => handlePublish(exam)}
+                                    className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                                  >
+                                    <i className='bx bx-upload text-green-500'></i>
+                                    <span className="font-medium">Publish</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleUnpublish(exam)}
+                                    className="w-full text-left px-4 py-3 text-sm text-orange-700 hover:bg-orange-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                                  >
+                                    <i className='bx bx-download text-orange-500'></i>
+                                    <span className="font-medium">Unpublish</span>
+                                  </button>
+                                )}
                                 
                                 {/* Close */}
                                 <button
@@ -756,15 +820,7 @@ const ExamManagement: React.FC = () => {
 
                             {/* Delete - Red */}
                             <button
-                              onClick={async () => {
-                                const result = await showDeleteConfirm(exam.title);
-                                if (result.isConfirmed) {
-                                  api.delete(`/exams/${exam.id}`).then(() => {
-                                    showSuccess('Exam deleted successfully');
-                                    loadExams();
-                                  }).catch(err => showError(err.response?.data?.message || 'Delete failed'));
-                                }
-                              }}
+                              onClick={() => handleDeleteExam(exam)}
                               className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200 transform hover:scale-110"
                               title="Delete exam"
                             >
@@ -925,7 +981,7 @@ const ExamManagement: React.FC = () => {
                       onChange={(e) => setExamForm({ ...examForm, subject_id: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                       required
-                      disabled={!examForm.class_id || subjects.length === 0 || editingExam?.published || editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
+                      disabled={!examForm.class_id || subjects.length === 0 || editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
                     >
                       <option value="">Select subject</option>
                       {subjects.map(subj => (
@@ -1022,8 +1078,8 @@ const ExamManagement: React.FC = () => {
         {/* Bulk Upload Modal */}
         {showUploadModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
-              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
                 <h3 className="text-xl font-bold text-gray-800">
                   Bulk Upload Exams
                 </h3>
@@ -1038,7 +1094,7 @@ const ExamManagement: React.FC = () => {
                 </button>
               </div>
 
-              <div className="px-6 py-6 space-y-5">
+              <div className="px-6 py-6 space-y-5 overflow-y-auto flex-1">
                 <div>
                   <p className="text-sm text-gray-700 mb-3 font-medium">
                     Upload a CSV file with the following columns:
@@ -1110,6 +1166,67 @@ const ExamManagement: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* PHASE 8: Delete Confirmation Modal */}
+      {showDeleteModal && examToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <i className='bx bx-error text-2xl text-red-600'></i>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Delete Exam</h3>
+                <p className="text-sm text-gray-600">This action cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800 mb-2">
+                <strong>Warning:</strong> You are about to delete:
+              </p>
+              <p className="font-semibold text-gray-900">{examToDelete.title}</p>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Type the exam title to confirm deletion:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder={examToDelete.title}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                autoFocus
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Type exactly: <code className="bg-gray-100 px-1 py-0.5 rounded">{examToDelete.title}</code>
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setExamToDelete(null);
+                  setDeleteConfirmation('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleteConfirmation !== examToDelete.title}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Delete Exam
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
