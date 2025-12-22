@@ -305,8 +305,10 @@ class ExamController extends Controller
         $newStatus = $request->input('status', $currentStatus);
         $newPublished = $request->has('published') ? $request->boolean('published') : $exam->published;
 
-        // Prevent reverting to draft once moved forward
-        if ($currentStatus !== 'draft' && $newStatus === 'draft') {
+        // Allow reverting to draft when unpublishing (published=false)
+        // But prevent reverting to draft if only changing status without unpublishing
+        $isUnpublishing = !$newPublished && $exam->published;
+        if ($currentStatus !== 'draft' && $newStatus === 'draft' && !$isUnpublishing) {
             return response()->json([
                 'message' => 'Cannot revert a non-draft exam back to draft',
                 'errors' => ['status' => ['Invalid lifecycle transition']]

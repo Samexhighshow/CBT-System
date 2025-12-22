@@ -4,6 +4,7 @@ import { Button, Card, SkeletonTable } from '../../components';
 import { api } from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import QuestionRandomization from './QuestionRandomization';
 
 /*
  * Admin Exam Management (Phase 5 UI)
@@ -56,6 +57,15 @@ const ExamManagement: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [examToDelete, setExamToDelete] = useState<ExamRow | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+
+  // Question Randomization modal
+  const [showRandomizationModal, setShowRandomizationModal] = useState(false);
+  const [selectedExamForRandomization, setSelectedExamForRandomization] = useState<number | null>(null);
+
+  // View exam detail modal
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingExam, setViewingExam] = useState<any>(null);
+  const [viewLoading, setViewLoading] = useState(false);
 
   // Modal and form state
   const [showExamModal, setShowExamModal] = useState(false);
@@ -406,18 +416,16 @@ const ExamManagement: React.FC = () => {
     try {
       await api.put(`/exams/${exam.id}`, {
         published: false,
-        status: exam.status, // Keep current status, just unpublish
-        start_datetime: exam.start_datetime || exam.start_time,
-        end_datetime: exam.end_datetime || exam.end_time,
+        status: 'draft', // Return to draft status when unpublishing
       });
-      showSuccess('Exam unpublished - now hidden from students');
+      showSuccess('Exam unpublished - moved back to draft');
       loadExams();
     } catch (error) {
       showError('Unpublish failed');
     }
   };
 
-  const handleClose = async (exam: ExamRow) => {
+  const handleClose = async (exam: ExamRow | any) => {
     try {
       await api.put(`/exams/${exam.id}`, {
         status: 'completed',
@@ -425,12 +433,13 @@ const ExamManagement: React.FC = () => {
       });
       showSuccess('Exam closed');
       loadExams();
+      setShowViewModal(false);
     } catch (error) {
       showError('Close failed');
     }
   };
 
-    const handleToggleResults = async (exam: ExamRow) => {
+    const handleToggleResults = async (exam: ExamRow | any) => {
       try {
         const newStatus = !exam.results_released;
         await api.post(`/exams/${exam.id}/toggle-results`, {
@@ -438,12 +447,26 @@ const ExamManagement: React.FC = () => {
         });
         showSuccess(newStatus ? 'Results released to students' : 'Results hidden from students');
         loadExams();
+        if (viewingExam?.id === exam.id) {
+          setViewingExam({ ...viewingExam, results_released: newStatus });
+        }
       } catch (error: any) {
         showError(error.response?.data?.message || 'Failed to update results visibility');
       }
     };
 
-  const handleView = (id: number) => navigate(`/admin/exams/${id}`);
+  const handleView = async (id: number) => {
+    try {
+      setViewLoading(true);
+      const response = await api.get(`/exams/${id}`);
+      setViewingExam(response.data);
+      setShowViewModal(true);
+    } catch (error) {
+      showError('Failed to load exam details');
+    } finally {
+      setViewLoading(false);
+    }
+  };
   const handleEdit = (exam: ExamRow) => {
     if (exam.status === 'completed' || exam.status === 'cancelled') {
       showError('Cannot edit closed or cancelled exams');
@@ -805,6 +828,18 @@ const ExamManagement: React.FC = () => {
                                 >
                                   <i className='bx bx-plus text-purple-500'></i>
                                   <span className="font-medium">Add Questions</span>
+                                </button>
+                                
+                                {/* Configure Randomization */}
+                                <button
+                                  onClick={() => {
+                                    setSelectedExamForRandomization(exam.id);
+                                    setShowRandomizationModal(true);
+                                  }}
+                                  className="w-full text-left px-4 py-3 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                                >
+                                  <i className='bx bx-shuffle text-indigo-500'></i>
+                                  <span className="font-medium">Configure Randomization</span>
                                 </button>
                                 
                                 {/* View Results */}
@@ -1223,6 +1258,379 @@ const ExamManagement: React.FC = () => {
               >
                 Delete Exam
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exam Detail View Modal - READ ONLY INFORMATION DISPLAY */}
+      {showViewModal && viewingExam && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header with gradient and exam title */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-white/20 rounded-lg p-3 backdrop-blur">
+                  <i className='bx bx-book-open text-3xl'></i>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">{viewingExam.title}</h2>
+                  <p className="text-blue-100 text-sm mt-1">{viewingExam.subject?.name || '—'} | {viewingExam.school_class?.name || '—'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  setViewingExam(null);
+                }}
+                className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+              >
+                <i className='bx bx-x text-3xl'></i>
+              </button>
+            </div>
+
+            {/* Scrollable content */}
+            <div className="overflow-y-auto flex-1 p-8 space-y-6">
+              {viewLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin">
+                    <i className='bx bx-loader-circle text-4xl text-blue-600'></i>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Status Section */}
+                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 border border-blue-200">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                      <i className='bx bx-shield text-blue-600'></i>Exam Status & Basic Information
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white rounded-lg p-4 border border-blue-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Current Status</p>
+                        <div className={`px-3 py-2 rounded-full text-sm font-semibold inline-flex items-center gap-2 ${
+                          viewingExam.status === 'draft' ? 'bg-gray-100 text-gray-700' :
+                          viewingExam.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
+                          viewingExam.status === 'active' ? 'bg-green-100 text-green-700' :
+                          viewingExam.status === 'completed' ? 'bg-purple-100 text-purple-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          <i className={`bx ${
+                            viewingExam.status === 'draft' ? 'bx-pencil' :
+                            viewingExam.status === 'scheduled' ? 'bx-calendar' :
+                            viewingExam.status === 'active' ? 'bx-play-circle' :
+                            viewingExam.status === 'completed' ? 'bx-check-circle' :
+                            'bx-x-circle'
+                          }`}></i>
+                          {viewingExam.status.charAt(0).toUpperCase() + viewingExam.status.slice(1)}
+                        </div>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-blue-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Published Status</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.published ? '✓ Published' : '✗ Not Published'}</p>
+                        <p className="text-xs text-gray-500 mt-1">{viewingExam.published ? 'Visible to students' : 'Hidden from students'}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-blue-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Results Visibility</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.results_released ? '✓ Released' : '✗ Hidden'}</p>
+                        <p className="text-xs text-gray-500 mt-1">{viewingExam.results_released ? 'Visible to students' : 'Hidden from students'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Schedule & Duration */}
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-200">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                      <i className='bx bx-calendar text-purple-600'></i>Schedule & Duration
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white rounded-lg p-4 border border-purple-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Duration</p>
+                        <p className="text-2xl font-bold text-purple-600">{viewingExam.duration_minutes}</p>
+                        <p className="text-xs text-gray-500 mt-1">minutes</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-purple-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Start Date & Time</p>
+                        <p className="text-sm font-bold text-gray-900">{formatDate(viewingExam.start_datetime || viewingExam.start_time)}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-purple-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">End Date & Time</p>
+                        <p className="text-sm font-bold text-gray-900">{formatDate(viewingExam.end_datetime || viewingExam.end_time)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Academic Information */}
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 border border-green-200">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                      <i className='bx bx-book text-green-600'></i>Academic Information
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white rounded-lg p-4 border border-green-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Class Level</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.school_class?.name || '—'}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-green-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Subject</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.subject?.name || '—'}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-green-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Allowed Attempts</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.allowed_attempts || '1'}</p>
+                        <p className="text-xs text-gray-500 mt-1">per student</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  {viewingExam.description && (
+                    <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
+                      <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <i className='bx bx-file-blank text-gray-600'></i>Description
+                      </h3>
+                      <p className="text-sm text-gray-700 leading-relaxed">{viewingExam.description}</p>
+                    </div>
+                  )}
+
+                  {/* Question Rules - What IS Allowed */}
+                  <div className="bg-gradient-to-r from-green-50 via-emerald-50 to-teal-50 rounded-xl p-6 border border-green-300 border-2">
+                    <h3 className="text-lg font-bold text-green-800 mb-4 flex items-center gap-2">
+                      <i className='bx bx-check-circle text-green-600'></i>What IS Allowed
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Shuffle Questions */}
+                      <div className={`rounded-lg p-4 border-l-4 flex items-start gap-3 ${
+                        viewingExam.shuffle_questions 
+                          ? 'bg-green-100 border-l-green-500' 
+                          : 'bg-gray-100 border-l-gray-400'
+                      }`}>
+                        <div className="flex-shrink-0 mt-1">
+                          {viewingExam.shuffle_questions ? (
+                            <i className='bx bx-check-circle text-2xl text-green-600'></i>
+                          ) : (
+                            <i className='bx bx-x-circle text-2xl text-gray-400'></i>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">Questions are {viewingExam.shuffle_questions ? 'SHUFFLED' : 'NOT shuffled'}</p>
+                          <p className="text-xs text-gray-700 mt-1">
+                            {viewingExam.shuffle_questions 
+                              ? '✓ Questions appear in random order for each student'
+                              : '✗ Questions appear in the same order for all students'
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Randomize Options */}
+                      <div className={`rounded-lg p-4 border-l-4 flex items-start gap-3 ${
+                        viewingExam.randomize_options 
+                          ? 'bg-green-100 border-l-green-500' 
+                          : 'bg-gray-100 border-l-gray-400'
+                      }`}>
+                        <div className="flex-shrink-0 mt-1">
+                          {viewingExam.randomize_options ? (
+                            <i className='bx bx-check-circle text-2xl text-green-600'></i>
+                          ) : (
+                            <i className='bx bx-x-circle text-2xl text-gray-400'></i>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">Options are {viewingExam.randomize_options ? 'RANDOMIZED' : 'NOT randomized'}</p>
+                          <p className="text-xs text-gray-700 mt-1">
+                            {viewingExam.randomize_options 
+                              ? '✓ Answer options appear in different positions for each student'
+                              : '✗ Answer options appear in the same position for all students'
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Navigation Mode */}
+                      <div className="bg-green-100 border-l-4 border-l-green-500 rounded-lg p-4 flex items-start gap-3">
+                        <div className="flex-shrink-0 mt-1">
+                          <i className='bx bx-check-circle text-2xl text-green-600'></i>
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">Navigation Mode: {viewingExam.navigation_mode || 'Free'}</p>
+                          <p className="text-xs text-gray-700 mt-1">
+                            {viewingExam.navigation_mode === 'linear' 
+                              ? '✓ Students must answer questions in order (cannot skip back)'
+                              : '✓ Students can navigate freely between all questions'
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Seat Numbering */}
+                      {viewingExam.seat_numbering && (
+                        <div className="bg-green-100 border-l-4 border-l-green-500 rounded-lg p-4 flex items-start gap-3">
+                          <div className="flex-shrink-0 mt-1">
+                            <i className='bx bx-check-circle text-2xl text-green-600'></i>
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-semibold text-gray-800">Seat Numbering: {viewingExam.seat_numbering}</p>
+                            <p className="text-xs text-gray-700 mt-1">
+                              {viewingExam.seat_numbering === 'row_major'
+                                ? '✓ Seating assigned row by row'
+                                : '✓ Seating assigned column by column'
+                              }
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Questions Information */}
+                  <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-blue-100 text-sm font-semibold">Total Questions in Exam</p>
+                        <p className="text-5xl font-bold mt-2">{viewingExam.metadata?.question_count || '0'}</p>
+                        <p className="text-blue-200 text-sm mt-2">questions ready for students</p>
+                      </div>
+                      <div className="text-7xl opacity-20">
+                        <i className='bx bx-help-circle'></i>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Key Restrictions - What is NOT Allowed */}
+                  <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-red-50 rounded-xl p-6 border border-amber-300 border-2">
+                    <h3 className="text-lg font-bold text-amber-900 mb-4 flex items-center gap-2">
+                      <i className='bx bx-info-circle text-amber-600'></i>Important Restrictions & Rules
+                    </h3>
+                    <div className="space-y-3">
+                      {/* Attempt restrictions */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-l-amber-500 flex items-start gap-3">
+                        <i className='bx bx-lock text-xl text-amber-600 flex-shrink-0 mt-1'></i>
+                        <div>
+                          <p className="font-semibold text-gray-800">Attempt Restrictions</p>
+                          <p className="text-sm text-gray-700 mt-1">Students are LIMITED to <span className="font-bold text-amber-700">{viewingExam.allowed_attempts || '1'} attempt(s)</span> only. Once used, they cannot retake the exam.</p>
+                        </div>
+                      </div>
+
+                      {/* Time restriction */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-l-amber-500 flex items-start gap-3">
+                        <i className='bx bx-time text-xl text-amber-600 flex-shrink-0 mt-1'></i>
+                        <div>
+                          <p className="font-semibold text-gray-800">Time Window</p>
+                          <p className="text-sm text-gray-700 mt-1">Exam is available ONLY between <span className="font-bold">{formatDate(viewingExam.start_datetime || viewingExam.start_time)}</span> and <span className="font-bold">{formatDate(viewingExam.end_datetime || viewingExam.end_time)}</span></p>
+                        </div>
+                      </div>
+
+                      {/* Publication restriction */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-l-amber-500 flex items-start gap-3">
+                        <i className='bx bx-eye text-xl text-amber-600 flex-shrink-0 mt-1'></i>
+                        <div>
+                          <p className="font-semibold text-gray-800">Visibility Status</p>
+                          <p className="text-sm text-gray-700 mt-1">
+                            {viewingExam.published 
+                              ? '✓ Exam IS visible to students'
+                              : '✗ Exam is NOT visible to students (hidden/unpublished)'
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Results restriction */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-l-amber-500 flex items-start gap-3">
+                        <i className='bx bx-eye-off text-xl text-amber-600 flex-shrink-0 mt-1'></i>
+                        <div>
+                          <p className="font-semibold text-gray-800">Results Visibility</p>
+                          <p className="text-sm text-gray-700 mt-1">
+                            {viewingExam.results_released 
+                              ? '✓ Results ARE visible to students'
+                              : '✗ Results are NOT visible to students (hidden by admin)'
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Navigation restriction */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-l-amber-500 flex items-start gap-3">
+                        <i className='bx bx-navigation text-xl text-amber-600 flex-shrink-0 mt-1'></i>
+                        <div>
+                          <p className="font-semibold text-gray-800">Navigation Restriction</p>
+                          <p className="text-sm text-gray-700 mt-1">
+                            {viewingExam.navigation_mode === 'linear'
+                              ? '✗ Students CANNOT go back to previous questions (linear mode)'
+                              : '✓ Students CAN navigate between all questions freely'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Info Box */}
+                  <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border border-indigo-200">
+                    <h3 className="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2">
+                      <i className='bx bx-info-circle text-indigo-600'></i>Quick Summary
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-gray-600"><strong>Exam Type:</strong> {viewingExam.status.charAt(0).toUpperCase() + viewingExam.status.slice(1)}</p>
+                        <p className="text-gray-600 mt-2"><strong>For:</strong> {viewingExam.school_class?.name || '—'} ({viewingExam.subject?.name || '—'})</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600"><strong>Complexity:</strong> {viewingExam.metadata?.question_count || '0'} questions in {viewingExam.duration_minutes} minutes</p>
+                        <p className="text-gray-600 mt-2"><strong>Student Impact:</strong> {viewingExam.shuffle_questions && viewingExam.randomize_options ? 'Questions & options randomized' : 'Standard delivery'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer with close button only */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-6 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  setViewingExam(null);
+                }}
+                className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:shadow-lg font-medium text-sm transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Question Randomization Modal */}
+      {showRandomizationModal && selectedExamForRandomization && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <i className='bx bx-shuffle text-3xl'></i>
+                <div>
+                  <h2 className="text-2xl font-bold">Question Randomization</h2>
+                  <p className="text-indigo-100 text-sm mt-1">Configure intelligent question selection and distribution</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowRandomizationModal(false);
+                  setSelectedExamForRandomization(null);
+                }}
+                className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+                title="Close"
+              >
+                <i className='bx bx-x text-3xl'></i>
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-6">
+              <QuestionRandomization 
+                examId={selectedExamForRandomization}
+                onClose={() => {
+                  setShowRandomizationModal(false);
+                  setSelectedExamForRandomization(null);
+                  loadExams(); // Refresh exam list
+                }}
+              />
             </div>
           </div>
         </div>

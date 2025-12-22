@@ -36,7 +36,19 @@ class Exam extends Model
         'shuffle_questions',
         'seat_numbering',
         'enforce_adjacency_rules',
-        'allocation_config'
+        'allocation_config',
+        // Question randomization fields
+        'question_selection_mode',
+        'total_questions_to_serve',
+        'shuffle_question_order',
+        'shuffle_option_order',
+        'question_distribution',
+        'difficulty_distribution',
+        'marks_distribution',
+        'topic_filters',
+        'question_reuse_policy',
+        'questions_locked',
+        'questions_locked_at',
     ];
 
     protected $casts = [
@@ -53,6 +65,14 @@ class Exam extends Model
         'randomize_questions' => 'boolean',
         'randomize_options' => 'boolean',
         'allowed_attempts' => 'integer',
+        // Question randomization casts
+        'difficulty_distribution' => 'array',
+        'marks_distribution' => 'array',
+        'topic_filters' => 'array',
+        'shuffle_question_order' => 'boolean',
+        'shuffle_option_order' => 'boolean',
+        'questions_locked' => 'boolean',
+        'questions_locked_at' => 'datetime',
     ];
 
     /**
@@ -93,6 +113,14 @@ class Exam extends Model
     public function questionPools()
     {
         return $this->hasMany(QuestionPool::class, 'exam_id');
+    }
+
+    /**
+     * Get question selections for this exam
+     */
+    public function questionSelections()
+    {
+        return $this->hasMany(ExamQuestionSelection::class, 'exam_id');
     }
 
     /**

@@ -111,6 +111,33 @@ export const examApi = {
   getAvailable: () => {
     return api.get<{ data: Exam[] }>('/exams/available');
   },
+
+  // Question Randomization API
+  getRandomizationStats: (examId: number) => {
+    return api.get(`/exams/${examId}/randomization/stats`);
+  },
+
+  updateRandomizationSettings: (examId: number, data: any) => {
+    return api.put(`/exams/${examId}/randomization`, data);
+  },
+
+  previewRandomization: (examId: number) => {
+    return api.get(`/exams/${examId}/randomization/preview`);
+  },
+
+  lockQuestions: (examId: number) => {
+    return api.post(`/exams/${examId}/randomization/lock`);
+  },
+
+  unlockQuestions: (examId: number) => {
+    return api.post(`/exams/${examId}/randomization/unlock`);
+  },
+
+  getStudentSelection: (examId: number, studentId?: number, userId?: number) => {
+    return api.get(`/exams/${examId}/randomization/selection`, {
+      params: { student_id: studentId, user_id: userId }
+    });
+  },
 };
 
 // Question API

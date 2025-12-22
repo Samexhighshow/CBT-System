@@ -30,6 +30,7 @@ use App\Http\Controllers\StudentImportController;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\Api\HallController;
 use App\Http\Controllers\Api\AllocationController;
+use App\Http\Controllers\Api\ExamQuestionRandomizationController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -89,6 +90,14 @@ Route::prefix('exams')->group(function () {
     
     // Duplicate exam
     Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
+    
+    // Question randomization and selection
+    Route::put('/{id}/randomization', [ExamQuestionRandomizationController::class, 'updateRandomizationSettings']);
+    Route::get('/{id}/randomization/preview', [ExamQuestionRandomizationController::class, 'previewSelection']);
+    Route::post('/{id}/randomization/lock', [ExamQuestionRandomizationController::class, 'lockQuestions']);
+    Route::post('/{id}/randomization/unlock', [ExamQuestionRandomizationController::class, 'unlockQuestions']);
+    Route::get('/{id}/randomization/stats', [ExamQuestionRandomizationController::class, 'getRandomizationStats']);
+    Route::get('/{id}/randomization/selection', [ExamQuestionRandomizationController::class, 'getStudentSelection']);
     
     // Offline exam support
     Route::get('/{id}/download', [OfflineExamController::class, 'downloadExam']);
