@@ -21,6 +21,9 @@ class Exam extends Model
         'class_level', 
         'department', 
         'duration_minutes',
+        // Assessment structure fields
+        'assessment_type',
+        'assessment_weight',
         'allowed_attempts',
         'randomize_questions',
         'randomize_options',

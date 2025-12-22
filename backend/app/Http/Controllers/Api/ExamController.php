@@ -79,6 +79,9 @@ class ExamController extends Controller
             'class_level_id' => 'nullable|exists:school_classes,id',
             'subject_id' => 'required|exists:subjects,id',
             'duration_minutes' => 'required|integer|min:1|max:300',
+            // Assessment structure fields
+            'assessment_type' => ['required', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
+            'assessment_weight' => 'nullable|integer|min:1|max:100',
             'allowed_attempts' => 'nullable|integer|min:1|max:10',
             'randomize_questions' => 'nullable|boolean',
             'randomize_options' => 'nullable|boolean',
@@ -166,6 +169,7 @@ class ExamController extends Controller
         // Create the exam (rules and scope only, no questions/answers)
         $examData = $request->only([
             'title', 'description', 'duration_minutes',
+            'assessment_type', 'assessment_weight',
             'allowed_attempts', 'randomize_questions', 'randomize_options', 'navigation_mode',
             'start_datetime', 'end_datetime', 'start_time', 'end_time',
             'status', 'published', 'shuffle_questions', 'seat_numbering', 'enforce_adjacency_rules', 'metadata'
@@ -229,6 +233,9 @@ class ExamController extends Controller
             'class_level_id' => 'nullable|exists:school_classes,id',
             'subject_id' => 'sometimes|required|exists:subjects,id',
             'duration_minutes' => 'sometimes|required|integer|min:1|max:300',
+            // Assessment structure fields
+            'assessment_type' => ['sometimes', 'required', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
+            'assessment_weight' => 'nullable|integer|min:1|max:100',
             'allowed_attempts' => 'nullable|integer|min:1|max:10',
             'randomize_questions' => 'nullable|boolean',
             'randomize_options' => 'nullable|boolean',
@@ -357,6 +364,7 @@ class ExamController extends Controller
         // Update exam fields
         $exam->fill($request->only([
             'title', 'description', 'class_id', 'class_level_id', 'subject_id', 'duration_minutes',
+            'assessment_type', 'assessment_weight',
             'allowed_attempts', 'randomize_questions', 'randomize_options', 'navigation_mode',
             'start_datetime', 'end_datetime', 'start_time', 'end_time', 'status', 'published', 'results_released',
             'shuffle_questions', 'seat_numbering', 'enforce_adjacency_rules', 'metadata'

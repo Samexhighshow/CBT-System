@@ -2276,6 +2276,10 @@ code {
   --tw-gradient-to: #f0fdfa var(--tw-gradient-to-position);
 }
 
+.to-amber-50 {
+  --tw-gradient-to: #fffbeb var(--tw-gradient-to-position);
+}
+
 .bg-clip-text {
   -webkit-background-clip: text;
           background-clip: text;

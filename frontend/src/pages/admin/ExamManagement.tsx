@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, SkeletonTable } from '../../components';
 import { api } from '../../services/api';
@@ -13,12 +13,15 @@ import QuestionRandomization from './QuestionRandomization';
  */
 
 type ExamStatus = 'draft' | 'scheduled' | 'active' | 'completed' | 'cancelled';
+type AssessmentType = 'CA Test' | 'Midterm Test' | 'Final Exam' | 'Quiz';
 
 interface ExamRow {
   id: number;
   title: string;
   status: ExamStatus;
   duration_minutes: number;
+  assessment_type?: AssessmentType;
+  assessment_weight?: number;
   start_datetime?: string;
   end_datetime?: string;
   start_time?: string;
@@ -49,6 +52,7 @@ const ExamManagement: React.FC = () => {
   const [page, setPage] = useState<number>(1);
   const [selectedExams, setSelectedExams] = useState<number[]>([]);
   const [classLevelFilter, setClassLevelFilter] = useState<string>('');
+  const [assessmentTypeFilter, setAssessmentTypeFilter] = useState<string>('');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -78,10 +82,31 @@ const ExamManagement: React.FC = () => {
     class_id: '',
     subject_id: '',
     duration_minutes: 60,
+    assessment_type: '' as AssessmentType | '',
+    assessment_weight: '',
     start_datetime: '',
     end_datetime: '',
     instructions: '',
   });
+
+  // Deduplicate class levels by name; prefer currently selected class id if available
+  const uniqueClassLevels = useMemo(() => {
+    if (!classes || classes.length === 0) return [] as Array<{ id: number; name: string }>;
+    const byName = new Map<string, Array<{ id: number; name: string }>>();
+    for (const cls of classes) {
+      const list = byName.get(cls.name);
+      if (list) list.push(cls); else byName.set(cls.name, [cls]);
+    }
+    const selectedId = Number(examForm.class_id);
+    const result: Array<{ id: number; name: string }> = [];
+    byName.forEach((list, name) => {
+      const preferred = list.find(c => c.id === selectedId) || list[0];
+      result.push(preferred);
+    });
+    // Keep stable ordering by name
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
+  }, [classes, examForm.class_id]);
 
   const handleDownloadSampleCSV = () => {
     const csvContent = 'title,description,class_id,subject_id,duration_minutes,start_datetime,end_datetime,instructions,status\n' +
@@ -243,6 +268,8 @@ const ExamManagement: React.FC = () => {
       class_id: '',
       subject_id: '',
       duration_minutes: 60,
+      assessment_type: '',
+      assessment_weight: '',
       start_datetime: '',
       end_datetime: '',
       instructions: '',
@@ -263,6 +290,8 @@ const ExamManagement: React.FC = () => {
       class_id: exam.school_class?.id?.toString() || '',
       subject_id: exam.subject?.id?.toString() || '',
       duration_minutes: exam.duration_minutes,
+      assessment_type: exam.assessment_type || '',
+      assessment_weight: exam.assessment_weight?.toString() || '',
       start_datetime: exam.start_datetime || exam.start_time || '',
       end_datetime: exam.end_datetime || exam.end_time || '',
       instructions: '',
@@ -295,6 +324,8 @@ const ExamManagement: React.FC = () => {
         class_id: Number(examForm.class_id),
         subject_id: Number(examForm.subject_id),
         duration_minutes: examForm.duration_minutes,
+        assessment_type: examForm.assessment_type,
+        assessment_weight: examForm.assessment_weight ? Number(examForm.assessment_weight) : null,
         start_datetime: examForm.start_datetime || null,
         end_datetime: examForm.end_datetime || null,
         instructions: examForm.instructions,
@@ -346,7 +377,8 @@ const ExamManagement: React.FC = () => {
     );
     const isInactive = exam.status === 'completed' || exam.status === 'cancelled';
     const matchesClassLevel = classLevelFilter ? exam.school_class?.name === classLevelFilter : true;
-    return matchesSearch && (showInactive ? true : !isInactive) && matchesClassLevel;
+    const matchesAssessmentType = assessmentTypeFilter ? exam.assessment_type === assessmentTypeFilter : true;
+    return matchesSearch && (showInactive ? true : !isInactive) && matchesClassLevel && matchesAssessmentType;
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -659,10 +691,25 @@ const ExamManagement: React.FC = () => {
                     ))}
                   </select>
                 </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] text-gray-600">Assessment:</span>
+                  <select
+                    value={assessmentTypeFilter}
+                    onChange={(e) => { setAssessmentTypeFilter(e.target.value); setPage(1); }}
+                    className="px-2 py-1 border border-gray-300 rounded-md text-xs"
+                  >
+                    <option value="">All Types</option>
+                    <option value="CA Test">CA Test</option>
+                    <option value="Midterm Test">Midterm Test</option>
+                    <option value="Final Exam">Final Exam</option>
+                    <option value="Quiz">Quiz</option>
+                  </select>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
                     setClassLevelFilter('');
+                    setAssessmentTypeFilter('');
                     setSearchTerm('');
                     setSortBy('title-asc');
                     setPage(1);
@@ -689,6 +736,7 @@ const ExamManagement: React.FC = () => {
                     />
                   </th>
                   <th className="px-3 py-2 text-left font-semibold">Exam Title</th>
+                  <th className="px-3 py-2 text-left font-semibold">Assessment</th>
                   <th className="px-3 py-2 text-left font-semibold">Class Level</th>
                   <th className="px-3 py-2 text-left font-semibold">Subject</th>
                   <th className="px-3 py-2 text-left font-semibold">Duration</th>
@@ -707,7 +755,7 @@ const ExamManagement: React.FC = () => {
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                      <td colSpan={11} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
+                      <td colSpan={12} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
                   </tr>
                 ) : (
                   paged.map((exam) => {
@@ -731,6 +779,20 @@ const ExamManagement: React.FC = () => {
                           />
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-900">{exam.title}</td>
+                        <td className="px-3 py-2">
+                          {exam.assessment_type ? (
+                            <span className={`px-2 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap ${
+                              exam.assessment_type === 'CA Test' ? 'bg-blue-100 text-blue-700' :
+                              exam.assessment_type === 'Midterm Test' ? 'bg-purple-100 text-purple-700' :
+                              exam.assessment_type === 'Final Exam' ? 'bg-red-100 text-red-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {exam.assessment_type}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.school_class?.name || '—'}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.subject?.name || '—'}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.duration_minutes} mins</td>
@@ -1000,7 +1062,7 @@ const ExamManagement: React.FC = () => {
                       disabled={editingExam?.published || editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
                     >
                       <option value="">Select class level</option>
-                      {classes.map(cls => (
+                      {uniqueClassLevels.map(cls => (
                         <option key={cls.id} value={cls.id}>{cls.name}</option>
                       ))}
                     </select>
@@ -1043,6 +1105,46 @@ const ExamManagement: React.FC = () => {
                     disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
                   />
                   <p className="text-xs text-gray-500 mt-1">How long students have to complete the exam</p>
+                </div>
+
+                {/* Assessment Structure Fields */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Assessment Type *
+                    </label>
+                    <select
+                      value={examForm.assessment_type}
+                      onChange={(e) => setExamForm({ ...examForm, assessment_type: e.target.value as AssessmentType })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      required
+                      disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
+                    >
+                      <option value="">Select assessment type</option>
+                      <option value="CA Test">CA Test</option>
+                      <option value="Midterm Test">Midterm Test</option>
+                      <option value="Final Exam">Final Exam</option>
+                      <option value="Quiz">Quiz</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Type of assessment for result calculation</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Assessment Weight (Optional)
+                    </label>
+                    <input
+                      type="number"
+                      value={examForm.assessment_weight}
+                      onChange={(e) => setExamForm({ ...examForm, assessment_weight: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      min="1"
+                      max="100"
+                      placeholder="e.g., 40"
+                      disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Weight % (e.g., CA=40, Final=60)</p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1333,6 +1435,43 @@ const ExamManagement: React.FC = () => {
                         <p className="text-xs text-gray-600 font-semibold mb-2">Results Visibility</p>
                         <p className="text-sm font-bold text-gray-900">{viewingExam.results_released ? '✓ Released' : '✗ Hidden'}</p>
                         <p className="text-xs text-gray-500 mt-1">{viewingExam.results_released ? 'Visible to students' : 'Hidden from students'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Assessment Information */}
+                  <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-6 border border-orange-200">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                      <i className='bx bx-trophy text-orange-600'></i>Assessment Structure
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-white rounded-lg p-4 border border-orange-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Assessment Type</p>
+                        {viewingExam.assessment_type ? (
+                          <div className={`px-3 py-2 rounded-lg text-sm font-semibold inline-flex items-center gap-2 ${
+                            viewingExam.assessment_type === 'CA Test' ? 'bg-blue-100 text-blue-700' :
+                            viewingExam.assessment_type === 'Midterm Test' ? 'bg-purple-100 text-purple-700' :
+                            viewingExam.assessment_type === 'Final Exam' ? 'bg-red-100 text-red-700' :
+                            'bg-green-100 text-green-700'
+                          }`}>
+                            <i className='bx bx-clipboard'></i>
+                            {viewingExam.assessment_type}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-400">Not specified</p>
+                        )}
+                        <p className="text-xs text-gray-500 mt-2">Type of assessment for result calculation</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-orange-100">
+                        <p className="text-xs text-gray-600 font-semibold mb-2">Assessment Weight</p>
+                        {viewingExam.assessment_weight ? (
+                          <>
+                            <p className="text-3xl font-bold text-orange-600">{viewingExam.assessment_weight}%</p>
+                            <p className="text-xs text-gray-500 mt-1">Weight in final grade calculation</p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-gray-400">Not specified</p>
+                        )}
                       </div>
                     </div>
                   </div>
