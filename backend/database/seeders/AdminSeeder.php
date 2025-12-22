@@ -14,9 +14,14 @@ class AdminSeeder extends Seeder
             ['email' => 'admin@cbtsystem.local'],
             [
                 'name' => 'Administrator',
-                'password' => Hash::make('admin123456')
+                'password' => Hash::make('admin123456'),
+                'email_verified_at' => now(),
             ]
         );
+
+        if (is_null($admin->email_verified_at)) {
+            $admin->forceFill(['email_verified_at' => now()])->save();
+        }
 
         if (!$admin->hasRole('Admin')) {
             $admin->assignRole('Admin');
