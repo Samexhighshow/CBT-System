@@ -18,6 +18,14 @@ class QuestionTag extends Model
         'question_count',
     ];
 
+    /**
+     * Questions with this tag
+     */
+    public function questions(): BelongsToMany
+    {
+        return $this->belongsToMany(QuestionBank::class, 'question_tag', 'question_tag_id', 'question_id');
+    }
+
     protected $casts = [
         'question_count' => 'integer',
     ];

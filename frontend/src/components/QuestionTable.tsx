@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 
+interface Subject {
+  id: number;
+  name: string;
+}
+
 interface Question {
   id: number;
   question_text: string;
@@ -9,17 +14,24 @@ interface Question {
   status?: string;
   section_name?: string;
   order_index?: number;
+  subject_id?: number;
+  class_level?: string;
+  subject?: Subject;
+  options?: any[];
+  instructions?: string;
 }
 
 interface QuestionTableProps {
   questions: Question[];
   selectedIds: Set<number>;
   onSelectChange: (id: number, selected: boolean) => void;
+  onSelectAll?: (selected: boolean) => void;
   onEdit: (question: Question) => void;
   onDelete: (id: number) => void;
   onDuplicate: (id: number) => void;
   onToggleStatus: (id: number) => void;
   onPreview: (id: number) => void;
+  onVersionHistory?: (id: number) => void;
   isLoading?: boolean;
 }
 
@@ -60,11 +72,13 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
   questions,
   selectedIds,
   onSelectChange,
+  onSelectAll,
   onEdit,
   onDelete,
   onDuplicate,
   onToggleStatus,
   onPreview,
+  onVersionHistory,
   isLoading = false,
 }) => {
   const [contextMenuId, setContextMenuId] = useState<number | null>(null);
@@ -77,51 +91,55 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
   };
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    questions.forEach((q) => {
-      onSelectChange(q.id, e.target.checked);
-    });
+    if (onSelectAll) {
+      onSelectAll(e.target.checked);
+    } else {
+      questions.forEach((q) => {
+        onSelectChange(q.id, e.target.checked);
+      });
+    }
   };
 
   const allSelected = questions.length > 0 && questions.every((q) => selectedIds.has(q.id));
 
   return (
     <>
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-              <tr>
-                <th className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={handleSelectAll}
-                    className="rounded border-gray-300 cursor-pointer"
-                  />
-                </th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-700">#</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-700 min-w-64">
-                  Question
-                </th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-700">Type</th>
-                <th className="px-3 py-2 text-center font-semibold text-gray-700">Marks</th>
-                <th className="px-3 py-2 text-center font-semibold text-gray-700">Difficulty</th>
-                <th className="px-3 py-2 text-center font-semibold text-gray-700">Status</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-700">Section</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {questions.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
-                    <div className="flex flex-col items-center gap-2">
-                      <i className='bx bx-inbox text-4xl text-gray-300'></i>
-                      <p>No questions found</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
+      <table className="min-w-full text-xs border-collapse bg-white">
+        <thead>
+          <tr className="bg-gray-50 text-gray-700 border-b">
+            <th className="px-3 py-2 w-10">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={handleSelectAll}
+                className="w-4 h-4 cursor-pointer"
+              />
+            </th>
+            <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">QID</th>
+            <th className="px-3 py-2 text-left font-semibold">
+              Question
+            </th>
+            <th className="px-3 py-2 text-left font-semibold">Type</th>
+            <th className="px-3 py-2 text-left font-semibold">Subject</th>
+            <th className="px-3 py-2 text-left font-semibold">Class</th>
+            <th className="px-3 py-2 text-center font-semibold">Marks</th>
+            <th className="px-3 py-2 text-center font-semibold">Difficulty</th>
+            <th className="px-3 py-2 text-center font-semibold">Status</th>
+            <th className="px-3 py-2 text-left font-semibold">Used In</th>
+            <th className="px-3 py-2 text-left font-semibold">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {questions.length === 0 ? (
+            <tr>
+              <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
+                <div className="flex flex-col items-center gap-2">
+                  <i className='bx bx-inbox text-4xl text-gray-300'></i>
+                  <p>No questions found</p>
+                </div>
+              </td>
+            </tr>
+          ) : (
                 questions.map((question, index) => (
                   <tr
                     key={question.id}
@@ -140,13 +158,13 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                       />
                     </td>
 
-                    {/* Question Number */}
-                    <td className="px-3 py-2 text-gray-600 font-medium">
-                      {question.order_index || index + 1}
+                    {/* QID - Question ID */}
+                    <td className="px-3 py-2 text-gray-600 font-semibold whitespace-nowrap">
+                      #{question.id}
                     </td>
 
                     {/* Question Text */}
-                    <td className="px-3 py-2 text-gray-900 max-w-xs">
+                    <td className="px-3 py-2 text-gray-900 max-w-sm">
                       <div className="truncate text-sm hover:text-blue-600 cursor-help" title={question.question_text}>
                         {question.question_text.substring(0, 80)}
                         {question.question_text.length > 80 ? '...' : ''}
@@ -158,6 +176,16 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                       <span className="inline-block bg-gray-100 px-2 py-1 rounded text-xs font-medium">
                         {formatQuestionType(question.question_type)}
                       </span>
+                    </td>
+
+                    {/* Subject */}
+                    <td className="px-3 py-2 text-gray-600 text-sm">
+                      {question.subject?.name || (question as any).subject_name || '-'}
+                    </td>
+
+                    {/* Class Level */}
+                    <td className="px-3 py-2 text-gray-600 text-sm whitespace-nowrap">
+                      {question.class_level || '-'}
                     </td>
 
                     {/* Marks */}
@@ -183,48 +211,80 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                       </span>
                     </td>
 
-                    {/* Section */}
+                    {/* Used In */}
                     <td className="px-3 py-2 text-gray-600 text-sm">
-                      {question.section_name || '-'}
+                      <span className="text-xs text-gray-500">-</span>
                     </td>
 
                     {/* Actions */}
                     <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => onPreview(question.id)}
-                          title="Preview"
-                          className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-blue-600"
-                        >
-                          <i className='bx bx-eye'></i>
-                        </button>
-                        <button
-                          onClick={() => onDuplicate(question.id)}
-                          title="Duplicate"
-                          className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-green-600"
-                        >
-                          <i className='bx bx-copy'></i>
-                        </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {/* Edit - Blue */}
                         <button
                           onClick={() => onEdit(question)}
+                          className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200 transform hover:scale-110"
                           title="Edit"
-                          className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-blue-600"
                         >
-                          <i className='bx bx-pencil'></i>
+                          <i className='bx bx-edit text-base'></i>
                         </button>
-                        <button
-                          onClick={() => onToggleStatus(question.id)}
-                          title="Toggle Status"
-                          className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-yellow-600"
-                        >
-                          <i className='bx bx-toggle-right'></i>
-                        </button>
+
+                        {/* Dropdown Menu */}
+                        <div className="relative group">
+                          <button
+                            className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200 transform hover:scale-110"
+                            title="More actions"
+                          >
+                            <i className='bx bx-dots-vertical-rounded text-base'></i>
+                          </button>
+                          
+                          {/* Dropdown menu - shows on hover */}
+                          <div className="absolute right-0 bottom-full mb-1 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
+                            {/* View/Preview */}
+                            <button
+                              onClick={() => onPreview(question.id)}
+                              className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                            >
+                              <i className='bx bx-show text-blue-500'></i>
+                              <span className="font-medium">Preview</span>
+                            </button>
+                            
+                            {onVersionHistory && (
+                              <button
+                                onClick={() => onVersionHistory(question.id)}
+                                className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                              >
+                                <i className='bx bx-history text-purple-500'></i>
+                                <span className="font-medium">View History</span>
+                              </button>
+                            )}
+                            
+                            {/* Duplicate */}
+                            <button
+                              onClick={() => onDuplicate(question.id)}
+                              className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                            >
+                              <i className='bx bx-copy text-green-500'></i>
+                              <span className="font-medium">Duplicate</span>
+                            </button>
+                            
+                            {/* Toggle Status */}
+                            <button
+                              onClick={() => onToggleStatus(question.id)}
+                              className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
+                            >
+                              <i className='bx bx-toggle-right text-amber-500'></i>
+                              <span className="font-medium">Toggle Status</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Delete - Red */}
                         <button
                           onClick={() => onDelete(question.id)}
+                          className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200 transform hover:scale-110"
                           title="Delete"
-                          className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-red-600"
                         >
-                          <i className='bx bx-trash'></i>
+                          <i className='bx bx-trash text-base'></i>
                         </button>
                       </div>
                     </td>
@@ -233,8 +293,6 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
               )}
             </tbody>
           </table>
-        </div>
-      </div>
 
       {/* Context Menu */}
       {contextMenuId && (

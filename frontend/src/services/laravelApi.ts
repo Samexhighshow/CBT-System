@@ -167,6 +167,64 @@ export const questionApi = {
   },
 };
 
+// Question Bank API (independent of exams)
+export const bankApi = {
+  listQuestions: (params?: {
+    q?: string;
+    subject_id?: number;
+    class_level?: string;
+    question_type?: string;
+    status?: string;
+    difficulty?: string;
+    page?: number;
+    per_page?: number;
+  }) => api.get('/bank/questions', { params }),
+
+  getQuestion: (id: number) => api.get(`/bank/questions/${id}`),
+
+  createQuestion: (data: any) => api.post('/bank/questions', data),
+
+  updateQuestion: (id: number, data: any) => api.put(`/bank/questions/${id}`, data),
+
+  deleteQuestion: (id: number) => api.delete(`/bank/questions/${id}`),
+
+  bulkStatus: (ids: number[], status: string) => api.post('/bank/questions/bulk-status', { ids, status }),
+
+  bulkDelete: (ids: number[]) => api.post('/bank/questions/bulk-delete', { ids }),
+
+  duplicate: (id: number) => api.post(`/bank/questions/${id}/duplicate`),
+
+  export: (params?: any) => api.get('/bank/questions/export', { params, responseType: 'blob' }),
+
+  stats: () => api.get('/bank/questions/stats'),
+
+  // Import CSV/Excel
+  import: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/bank/questions/import', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  // Versions
+  listVersions: (id: number) => api.get(`/bank/questions/${id}/versions`),
+  compareVersions: (id: number, from: number, to: number) => api.get(`/bank/questions/${id}/versions/compare`, { params: { from, to } }),
+  revertVersion: (id: number, version: number) => api.post(`/bank/questions/${id}/versions/${version}/revert`),
+
+  // Workflow
+  archive: (id: number) => api.post(`/bank/questions/${id}/archive`),
+  submitForReview: (id: number) => api.post(`/bank/questions/${id}/submit-for-review`),
+  approve: (id: number) => api.post(`/bank/questions/${id}/approve`),
+
+  tags: {
+    list: (params?: { q?: string; page?: number; per_page?: number }) => api.get('/bank/tags', { params }),
+    create: (data: { name: string; description?: string }) => api.post('/bank/tags', data),
+    update: (id: number, data: { name?: string; description?: string }) => api.put(`/bank/tags/${id}`, data),
+    delete: (id: number) => api.delete(`/bank/tags/${id}`),
+  },
+};
+
 // Subject API
 export const subjectApi = {
   getAll: () => {
@@ -265,6 +323,7 @@ const apiServices = {
   students: studentApi,
   exams: examApi,
   questions: questionApi,
+  bank: bankApi,
   subjects: subjectApi,
   departments: departmentApi,
   results: resultsApi,

@@ -99,7 +99,7 @@ class ClassController extends Controller
      */
     public function show(string $id)
     {
-        $class = SchoolClass::with('students')
+        $class = SchoolClass::with('students', 'subjects')
             ->withCount('students')
             ->findOrFail($id);
 

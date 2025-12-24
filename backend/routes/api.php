@@ -31,6 +31,7 @@ use App\Http\Controllers\BackupController;
 use App\Http\Controllers\Api\HallController;
 use App\Http\Controllers\Api\AllocationController;
 use App\Http\Controllers\Api\ExamQuestionRandomizationController;
+use App\Http\Controllers\Api\BankQuestionController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -304,6 +305,36 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/trigger', [BackupController::class, 'triggerBackup']);
         Route::get('/list', [BackupController::class, 'listBackups']);
         Route::post('/clean', [BackupController::class, 'cleanBackups']);
+    });
+
+    // Question Bank (independent from exams)
+    Route::prefix('bank')->group(function () {
+        Route::prefix('questions')->group(function () {
+            Route::get('/', [BankQuestionController::class, 'index']);
+            Route::get('/stats', [BankQuestionController::class, 'stats']);
+            Route::get('/export', [BankQuestionController::class, 'export']);
+            Route::post('/import', [BankQuestionController::class, 'import']);
+            Route::get('/{id}', [BankQuestionController::class, 'show']);
+            Route::post('/', [BankQuestionController::class, 'store']);
+            Route::post('/{id}/duplicate', [BankQuestionController::class, 'duplicate']);
+            Route::post('/{id}/archive', [BankQuestionController::class, 'archive']);
+            Route::post('/{id}/submit-for-review', [BankQuestionController::class, 'submitForReview']);
+            Route::post('/{id}/approve', [BankQuestionController::class, 'approve']);
+            Route::get('/{id}/versions', [BankQuestionController::class, 'versions']);
+            Route::get('/{id}/versions/compare', [BankQuestionController::class, 'compareVersions']);
+            Route::post('/{id}/versions/{version}/revert', [BankQuestionController::class, 'revertVersion']);
+            Route::put('/{id}', [BankQuestionController::class, 'update']);
+            Route::delete('/{id}', [BankQuestionController::class, 'destroy']);
+            Route::post('/bulk-status', [BankQuestionController::class, 'bulkStatus']);
+            Route::post('/bulk-delete', [BankQuestionController::class, 'bulkDelete']);
+        });
+
+        Route::prefix('tags')->group(function () {
+            Route::get('/', [BankQuestionController::class, 'tagsIndex']);
+            Route::post('/', [BankQuestionController::class, 'tagsStore']);
+            Route::put('/{id}', [BankQuestionController::class, 'tagsUpdate']);
+            Route::delete('/{id}', [BankQuestionController::class, 'tagsDestroy']);
+        });
     });
     
     // Two-Factor Authentication with recovery codes

@@ -25,6 +25,7 @@ interface SectionGroupProps {
   onDuplicate: (id: number) => void;
   onToggleStatus: (id: number) => void;
   onPreview: (id: number) => void;
+  onVersionHistory?: (id: number) => void;
 }
 
 const getDifficultyColor = (difficulty?: string) => {
@@ -69,6 +70,7 @@ export const SectionGroup: React.FC<SectionGroupProps> = ({
   onDuplicate,
   onToggleStatus,
   onPreview,
+  onVersionHistory,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -122,6 +124,18 @@ export const SectionGroup: React.FC<SectionGroupProps> = ({
       {isExpanded && (
         <div className="border border-t-0 border-gray-200 bg-white">
           <table className="w-full text-xs">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-3 py-2 w-8"></th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700 w-8">#</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700">Question</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700">Type</th>
+                <th className="px-3 py-2 text-center font-semibold text-gray-700 w-12">Marks</th>
+                <th className="px-3 py-2 text-center font-semibold text-gray-700">Difficulty</th>
+                <th className="px-3 py-2 text-center font-semibold text-gray-700">Status</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-700">Actions</th>
+              </tr>
+            </thead>
             <tbody>
               {section.questions.map((question, index) => (
                 <tr
@@ -185,41 +199,73 @@ export const SectionGroup: React.FC<SectionGroupProps> = ({
 
                   {/* Actions */}
                   <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => onPreview(question.id)}
-                        title="Preview"
-                        className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-blue-600"
-                      >
-                        <i className='bx bx-eye'></i>
-                      </button>
-                      <button
-                        onClick={() => onDuplicate(question.id)}
-                        title="Duplicate"
-                        className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-green-600"
-                      >
-                        <i className='bx bx-copy'></i>
-                      </button>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {/* Edit - Blue */}
                       <button
                         onClick={() => onEdit(question)}
+                        className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200 transform hover:scale-110"
                         title="Edit"
-                        className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-blue-600"
                       >
-                        <i className='bx bx-pencil'></i>
+                        <i className='bx bx-edit text-base'></i>
                       </button>
-                      <button
-                        onClick={() => onToggleStatus(question.id)}
-                        title="Toggle Status"
-                        className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-yellow-600"
-                      >
-                        <i className='bx bx-toggle-right'></i>
-                      </button>
+
+                      {/* Dropdown Menu */}
+                      <div className="relative group">
+                        <button
+                          className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200 transform hover:scale-110"
+                          title="More actions"
+                        >
+                          <i className='bx bx-dots-vertical-rounded text-base'></i>
+                        </button>
+                        
+                        {/* Dropdown menu - shows on hover */}
+                        <div className="absolute right-0 bottom-full mb-1 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
+                          {/* View/Preview */}
+                          <button
+                            onClick={() => onPreview(question.id)}
+                            className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                          >
+                            <i className='bx bx-show text-blue-500'></i>
+                            <span className="font-medium">Preview</span>
+                          </button>
+                          
+                          {onVersionHistory && (
+                            <button
+                              onClick={() => onVersionHistory(question.id)}
+                              className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                            >
+                              <i className='bx bx-history text-purple-500'></i>
+                              <span className="font-medium">View History</span>
+                            </button>
+                          )}
+                          
+                          {/* Duplicate */}
+                          <button
+                            onClick={() => onDuplicate(question.id)}
+                            className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                          >
+                            <i className='bx bx-copy text-green-500'></i>
+                            <span className="font-medium">Duplicate</span>
+                          </button>
+                          
+                          {/* Toggle Status */}
+                          <button
+                            onClick={() => onToggleStatus(question.id)}
+                            className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
+                          >
+                            <i className='bx bx-toggle-right text-amber-500'></i>
+                            <span className="font-medium">Toggle Status</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Delete - Red */}
                       <button
                         onClick={() => onDelete(question.id)}
+                        className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200 transform hover:scale-110"
                         title="Delete"
-                        className="p-1 hover:bg-gray-200 rounded transition-colors text-gray-600 hover:text-red-600"
                       >
-                        <i className='bx bx-trash'></i>
+                        <i className='bx bx-trash text-base'></i>
                       </button>
                     </div>
                   </td>
