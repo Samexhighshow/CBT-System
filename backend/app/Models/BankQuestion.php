@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class BankQuestion extends Model
 {
@@ -53,11 +54,9 @@ class BankQuestion extends Model
      */
     public function getUsageCountAttribute()
     {
-        // TODO: Implement when exam_questions has bank_question_id foreign key
-        // return DB::table('exam_questions')
-        //     ->where('bank_question_id', $this->id)
-        //     ->distinct('exam_id')
-        //     ->count('exam_id');
-        return 0;
+        return (int) DB::table('exam_questions')
+            ->where('bank_question_id', $this->id)
+            ->distinct('exam_id')
+            ->count('exam_id');
     }
 }

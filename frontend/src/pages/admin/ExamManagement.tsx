@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, SkeletonTable } from '../../components';
 import { api } from '../../services/api';
@@ -51,6 +52,8 @@ const ExamManagement: React.FC = () => {
   const [perPage, setPerPage] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
   const [selectedExams, setSelectedExams] = useState<number[]>([]);
+  // Floating row actions menu state
+  const [openRowMenu, setOpenRowMenu] = useState<{ exam: ExamRow, top: number, left: number } | null>(null);
   const [classLevelFilter, setClassLevelFilter] = useState<string>('');
   const [assessmentTypeFilter, setAssessmentTypeFilter] = useState<string>('');
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -70,6 +73,15 @@ const ExamManagement: React.FC = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingExam, setViewingExam] = useState<any>(null);
   const [viewLoading, setViewLoading] = useState(false);
+
+  // Exam ↔ Questions linking state
+  const [examQuestions, setExamQuestions] = useState<any[]>([]);
+  const [examQuestionsLoading, setExamQuestionsLoading] = useState(false);
+  const [showManageQuestions, setShowManageQuestions] = useState(false);
+  const [bankQuestions, setBankQuestions] = useState<any[]>([]);
+  const [bankQLoading, setBankQLoading] = useState(false);
+  const [selectedBankQIds, setSelectedBankQIds] = useState<number[]>([]);
+  const manageSubjectIdRef = useRef<number | null>(null);
 
   // Modal and form state
   const [showExamModal, setShowExamModal] = useState(false);
@@ -471,6 +483,23 @@ const ExamManagement: React.FC = () => {
     }
   };
 
+  const openActionsMenu = (exam: ExamRow, ev: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 224; // approximate menu width
+    const menuHeight = 320; // approximate menu height for placement calc
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+    // Prefer opening ABOVE the trigger; if not enough space, open below.
+    let top = rect.top - menuHeight - 12;
+    if (top < 8) top = Math.min(rect.bottom + 8, viewportH - menuHeight - 8);
+    // Keep within viewport horizontally (prefer right-aligned to trigger)
+    let left = Math.max(8, rect.right - menuWidth);
+    if (left + menuWidth > viewportW - 8) left = viewportW - menuWidth - 8;
+    setOpenRowMenu({ exam, top, left });
+  };
+
+  const closeActionsMenu = () => setOpenRowMenu(null);
+
     const handleToggleResults = async (exam: ExamRow | any) => {
       try {
         const newStatus = !exam.results_released;
@@ -492,11 +521,14 @@ const ExamManagement: React.FC = () => {
       setViewLoading(true);
       const response = await api.get(`/exams/${id}`);
       setViewingExam(response.data);
+      // fetch assigned questions via dedicated endpoint
+      await loadExamQuestions(id);
       setShowViewModal(true);
     } catch (error) {
       showError('Failed to load exam details');
     } finally {
       setViewLoading(false);
+      setExamQuestionsLoading(false);
     }
   };
   const handleEdit = (exam: ExamRow) => {
@@ -521,6 +553,142 @@ const ExamManagement: React.FC = () => {
         {exam.status}
       </span>
     );
+  };
+
+  // ------- Exam ↔ Question helpers -------
+  const loadExamQuestions = async (examId: number) => {
+    try {
+      setExamQuestionsLoading(true);
+      const res = await api.get(`/exams/${examId}/questions/assigned`);
+      const items = (res.data || []).map((x: any) => ({
+        ...x,
+        bank_question: x.bank_question || x.bankQuestion || x.bank_question_id ? x.bank_question : undefined,
+      }));
+      setExamQuestions(items);
+    } catch (e) {
+      // ignore errors but keep UI responsive
+    } finally {
+      setExamQuestionsLoading(false);
+    }
+  };
+
+  const openManageQuestions = async () => {
+    setShowManageQuestions(true);
+    setSelectedBankQIds([]);
+    manageSubjectIdRef.current = (viewingExam?.subject?.id || (viewingExam as any)?.subject_id) ?? null;
+    await loadBankQuestions('');
+  };
+
+  const openManageForExam = async (exam: ExamRow) => {
+    setViewingExam(exam);
+    setShowViewModal(false);
+    setSelectedBankQIds([]);
+    setShowManageQuestions(true);
+    const subjId = (exam as any)?.subject?.id ?? (exam as any)?.subject_id ?? null;
+    manageSubjectIdRef.current = subjId;
+    await loadBankQuestions('', subjId ?? undefined);
+  };
+
+  const loadBankQuestions = async (search: string, subjectIdOverride?: number) => {
+    try {
+      setBankQLoading(true);
+      const params: any = { status: 'Active', per_page: 20 };
+      const subjectId = subjectIdOverride ?? manageSubjectIdRef.current ?? (viewingExam?.subject?.id || (viewingExam as any)?.subject_id);
+      if (subjectId) params.subject_id = subjectId;
+      if (search) params.q = search;
+      const res = await api.get('/bank/questions', { params });
+      let items = res.data?.data || res.data || [];
+      
+      // Filter out questions already added to the exam
+      const addedQuestionIds = new Set(examQuestions.map(eq => eq.bank_question_id));
+      items = items.filter((q: any) => !addedQuestionIds.has(q.id));
+      
+      setBankQuestions(items);
+    } catch (e) {
+      setBankQuestions([]);
+    } finally {
+      setBankQLoading(false);
+    }
+  };
+
+  // basic debounce for search
+  let searchDebounceTimer: any;
+  const debounceFetchBank = (text: string) => {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => loadBankQuestions(text), 400);
+  };
+
+  const toggleSelectAllBank = (checked: boolean) => {
+    if (checked) setSelectedBankQIds(bankQuestions.map((q) => q.id)); else setSelectedBankQIds([]);
+  };
+  const toggleSelectBank = (id: number, checked: boolean) => {
+    setSelectedBankQIds((prev) => checked ? Array.from(new Set([...prev, id])) : prev.filter(x => x !== id));
+  };
+
+  const addSelectedToExam = async () => {
+    if (!viewingExam) return;
+    try {
+      const items = selectedBankQIds.map((id) => ({ bank_question_id: id }));
+      const res = await api.post(`/exams/${viewingExam.id}/questions`, { items });
+      const warnings = res.data?.warnings || [];
+      showSuccess('Questions added');
+      if (warnings.length) {
+        const msg = warnings.map((w: any) => `#${w.id}: ${w.status}`).join(', ');
+        showError(`Added with warnings: ${msg}`);
+      }
+      setShowManageQuestions(false);
+      await loadExamQuestions(viewingExam.id);
+    } catch (e: any) {
+      const archived = e.response?.data?.errors?.archived;
+      const subjectMismatch = e.response?.data?.errors?.subject_mismatch;
+      if (archived && Array.isArray(archived)) {
+        showError(`Cannot add archived question(s): ${archived.join(', ')}`);
+      } else if (subjectMismatch && Array.isArray(subjectMismatch)) {
+        showError(`Subject mismatch question(s): ${subjectMismatch.join(', ')}. Only questions for '${viewingExam.subject?.name}' are allowed.`);
+      } else {
+        showError(e.response?.data?.message || 'Failed to add questions');
+      }
+    }
+  };
+
+  const moveQuestion = async (eqId: number, delta: number) => {
+    const list = [...examQuestions];
+    const idx = list.findIndex(x => x.id === eqId);
+    if (idx < 0) return;
+    const target = idx + delta;
+    if (target < 0 || target >= list.length) return;
+    // swap order_index in UI
+    const a = list[idx];
+    const b = list[target];
+    const tmp = a.order_index; a.order_index = b.order_index; b.order_index = tmp;
+    list[idx] = b; list[target] = a;
+    setExamQuestions(list);
+    try {
+      await api.post(`/exams/${viewingExam.id}/questions/reorder`, {
+        items: list.map((x, i) => ({ id: x.id, order_index: i + 1 }))
+      });
+    } catch (e) { /* ignore */ }
+  };
+
+  const handleLocalMarksChange = (eqId: number, value: number) => {
+    setExamQuestions((prev) => prev.map(q => q.id === eqId ? { ...q, marks_override: value } : q));
+  };
+
+  const saveMarksOverride = async (eqId: number, value: number) => {
+    try {
+      await api.patch(`/exams/${viewingExam.id}/questions/${eqId}`, { marks_override: value });
+      showSuccess('Marks updated');
+    } catch (e) { /* ignore */ }
+  };
+
+  const removeExamQuestion = async (eqId: number) => {
+    if (!viewingExam) return;
+    try {
+      await api.delete(`/exams/${viewingExam.id}/questions/${eqId}`);
+      setExamQuestions((prev) => prev.filter(q => q.id !== eqId));
+    } catch (e) {
+      showError('Failed to remove question');
+    }
   };
 
   return (
@@ -822,98 +990,14 @@ const ExamManagement: React.FC = () => {
                               <i className='bx bx-edit text-base'></i>
                             </button>
 
-                            {/* Dropdown Menu */}
-                            <div className="relative group">
-                              <button
-                                className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200 transform hover:scale-110"
-                                title="More actions"
-                              >
-                                <i className='bx bx-dots-vertical-rounded text-base'></i>
-                              </button>
-                              
-                              {/* Dropdown menu - shows on hover */}
-                              <div className="absolute right-0 bottom-full mb-1 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
-                                {/* View */}
-                                <button
-                                  onClick={() => handleView(exam.id)}
-                                  className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                                >
-                                  <i className='bx bx-show text-blue-500'></i>
-                                  <span className="font-medium">View</span>
-                                </button>
-                                
-                                {/* Publish/Unpublish - Show appropriate button based on published status */}
-                                {!exam.published ? (
-                                  <button
-                                    onClick={() => handlePublish(exam)}
-                                    className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                                  >
-                                    <i className='bx bx-upload text-green-500'></i>
-                                    <span className="font-medium">Publish</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => handleUnpublish(exam)}
-                                    className="w-full text-left px-4 py-3 text-sm text-orange-700 hover:bg-orange-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                                  >
-                                    <i className='bx bx-download text-orange-500'></i>
-                                    <span className="font-medium">Unpublish</span>
-                                  </button>
-                                )}
-                                
-                                {/* Close */}
-                                <button
-                                  onClick={() => handleClose(exam)}
-                                  className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                                >
-                                  <i className='bx bx-lock text-amber-500'></i>
-                                  <span className="font-medium">Close</span>
-                                </button>
-                                
-                                {/* Release/Hide Results */}
-                                <button
-                                  onClick={() => handleToggleResults(exam)}
-                                  className={`w-full text-left px-4 py-3 text-sm flex items-center gap-3 border-b border-gray-100 transition-colors ${
-                                    exam.results_released
-                                      ? 'text-red-700 hover:bg-red-50'
-                                      : 'text-green-700 hover:bg-green-50'
-                                  }`}
-                                >
-                                  <i className={`bx text-base ${exam.results_released ? 'bx-hide text-red-500' : 'bx-show text-green-500'}`}></i>
-                                  <span className="font-medium">{exam.results_released ? 'Hide Results' : 'Release Results'}</span>
-                                </button>
-                                
-                                {/* Add Questions */}
-                                <button
-                                  onClick={() => navigate(`/admin/questions?examId=${exam.id}`)}
-                                  className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                                >
-                                  <i className='bx bx-plus text-purple-500'></i>
-                                  <span className="font-medium">Add Questions</span>
-                                </button>
-                                
-                                {/* Configure Randomization */}
-                                <button
-                                  onClick={() => {
-                                    setSelectedExamForRandomization(exam.id);
-                                    setShowRandomizationModal(true);
-                                  }}
-                                  className="w-full text-left px-4 py-3 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                                >
-                                  <i className='bx bx-shuffle text-indigo-500'></i>
-                                  <span className="font-medium">Configure Randomization</span>
-                                </button>
-                                
-                                {/* View Results */}
-                                <button
-                                  onClick={() => navigate(`/admin/results?examId=${exam.id}`)}
-                                  className="w-full text-left px-4 py-3 text-sm text-cyan-700 hover:bg-cyan-50 flex items-center gap-3 transition-colors"
-                                >
-                                  <i className='bx bx-bar-chart-alt-2 text-cyan-500'></i>
-                                  <span className="font-medium">View Results</span>
-                                </button>
-                              </div>
-                            </div>
+                            {/* Floating Actions Menu trigger (uses body portal to avoid clipping) */}
+                            <button
+                              onClick={(ev) => openActionsMenu(exam, ev)}
+                              className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200 transform hover:scale-110"
+                              title="More actions"
+                            >
+                              <i className='bx bx-dots-vertical-rounded text-base'></i>
+                            </button>
 
                             {/* Delete - Red */}
                             <button
@@ -977,6 +1061,80 @@ const ExamManagement: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Body-portal row actions menu */}
+        {openRowMenu && createPortal(
+          <div className="fixed inset-0 z-[9999]" onClick={closeActionsMenu}>
+            <div
+              className="absolute w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+              style={{ top: openRowMenu.top, left: openRowMenu.left }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => { handleView(openRowMenu.exam.id); closeActionsMenu(); }}
+                className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+              >
+                <i className='bx bx-show text-blue-500'></i>
+                <span className="font-medium">View</span>
+              </button>
+              {!openRowMenu.exam.published ? (
+                <button
+                  onClick={() => { handlePublish(openRowMenu.exam); closeActionsMenu(); }}
+                  className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                >
+                  <i className='bx bx-upload text-green-500'></i>
+                  <span className="font-medium">Publish</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => { handleUnpublish(openRowMenu.exam); closeActionsMenu(); }}
+                  className="w-full text-left px-4 py-3 text-sm text-orange-700 hover:bg-orange-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                >
+                  <i className='bx bx-download text-orange-500'></i>
+                  <span className="font-medium">Unpublish</span>
+                </button>
+              )}
+              <button
+                onClick={() => { handleClose(openRowMenu.exam); closeActionsMenu(); }}
+                className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+              >
+                <i className='bx bx-lock text-amber-500'></i>
+                <span className="font-medium">Close</span>
+              </button>
+              <button
+                onClick={() => { handleToggleResults(openRowMenu.exam as any); closeActionsMenu(); }}
+                className={`w-full text-left px-4 py-3 text-sm flex items-center gap-3 border-b border-gray-100 transition-colors ${
+                  openRowMenu.exam.results_released ? 'text-red-700 hover:bg-red-50' : 'text-green-700 hover:bg-green-50'
+                }`}
+              >
+                <i className={`bx text-base ${openRowMenu.exam.results_released ? 'bx-hide text-red-500' : 'bx-show text-green-500'}`}></i>
+                <span className="font-medium">{openRowMenu.exam.results_released ? 'Hide Results' : 'Release Results'}</span>
+              </button>
+              <button
+                onClick={async () => { await openManageForExam(openRowMenu.exam); closeActionsMenu(); }}
+                className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+              >
+                <i className='bx bx-plus text-purple-500'></i>
+                <span className="font-medium">Add Questions</span>
+              </button>
+              <button
+                onClick={() => { setSelectedExamForRandomization(openRowMenu.exam.id); setShowRandomizationModal(true); closeActionsMenu(); }}
+                className="w-full text-left px-4 py-3 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+              >
+                <i className='bx bx-shuffle text-indigo-500'></i>
+                <span className="font-medium">Configure Randomization</span>
+              </button>
+              <button
+                onClick={() => { navigate(`/admin/results?examId=${openRowMenu.exam.id}`); closeActionsMenu(); }}
+                className="w-full text-left px-4 py-3 text-sm text-cyan-700 hover:bg-cyan-50 flex items-center gap-3 transition-colors"
+              >
+                <i className='bx bx-bar-chart-alt-2 text-cyan-500'></i>
+                <span className="font-medium">View Results</span>
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
         {/* Exam Modal */}
         {showExamModal && (
@@ -1625,13 +1783,89 @@ const ExamManagement: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-blue-100 text-sm font-semibold">Total Questions in Exam</p>
-                        <p className="text-5xl font-bold mt-2">{viewingExam.metadata?.question_count || '0'}</p>
+                        <p className="text-5xl font-bold mt-2">{examQuestions.length}</p>
                         <p className="text-blue-200 text-sm mt-2">questions ready for students</p>
                       </div>
                       <div className="text-7xl opacity-20">
                         <i className='bx bx-help-circle'></i>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Questions Tab (simple list) */}
+                  <div className="bg-white rounded-xl p-6 border border-gray-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <i className='bx bx-list-ul text-blue-600'></i>
+                        Questions
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openManageQuestions()}
+                          className="px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-sm font-medium hover:shadow-md"
+                          disabled={viewingExam.status === 'completed' || viewingExam.status === 'cancelled'}
+                        >
+                          <i className='bx bx-plus mr-1'></i>Add Questions
+                        </button>
+                      </div>
+                    </div>
+                    {examQuestionsLoading ? (
+                      <div className="py-6 text-center text-gray-500">Loading questions…</div>
+                    ) : examQuestions.length === 0 ? (
+                      <div className="py-6 text-center text-gray-500">No questions assigned yet</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-600 border-b">
+                              <th className="py-2 pr-3">#</th>
+                              <th className="py-2 pr-3">Question</th>
+                              <th className="py-2 pr-3">Type</th>
+                              <th className="py-2 pr-3">Difficulty</th>
+                              <th className="py-2 pr-3">Version</th>
+                              <th className="py-2 pr-3">Marks</th>
+                              <th className="py-2 pr-3">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {examQuestions.map((eq, idx) => (
+                              <tr key={eq.id} className="border-b last:border-0">
+                                <td className="py-2 pr-3 text-gray-700">{eq.order_index}</td>
+                                <td className="py-2 pr-3 max-w-[320px] truncate" title={eq.bank_question?.question_text || ''}>
+                                  {eq.bank_question?.question_text || '—'}
+                                </td>
+                                <td className="py-2 pr-3">{eq.bank_question?.question_type || '—'}</td>
+                                <td className="py-2 pr-3">{eq.bank_question?.difficulty || '—'}</td>
+                                <td className="py-2 pr-3">v{eq.version_number || 1}</td>
+                                <td className="py-2 pr-3">
+                                  <input
+                                    type="number"
+                                    className="w-20 px-2 py-1 border rounded"
+                                    value={eq.marks_override ?? eq.bank_question?.marks ?? 0}
+                                    min={0}
+                                    onChange={(e) => handleLocalMarksChange(eq.id, Number(e.target.value))}
+                                    onBlur={(e) => saveMarksOverride(eq.id, Number(e.target.value))}
+                                  />
+                                </td>
+                                <td className="py-2 pr-3">
+                                  <div className="flex items-center gap-2">
+                                    <button className="px-2 py-1 rounded bg-gray-100" onClick={() => moveQuestion(eq.id, -1)} title="Move up">
+                                      <i className='bx bx-up-arrow-alt'></i>
+                                    </button>
+                                    <button className="px-2 py-1 rounded bg-gray-100" onClick={() => moveQuestion(eq.id, 1)} title="Move down">
+                                      <i className='bx bx-down-arrow-alt'></i>
+                                    </button>
+                                    <button className="px-2 py-1 rounded bg-red-50 text-red-600" onClick={() => removeExamQuestion(eq.id)} title="Remove">
+                                      <i className='bx bx-trash'></i>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
 
                   {/* Key Restrictions - What is NOT Allowed */}
@@ -1732,6 +1966,101 @@ const ExamManagement: React.FC = () => {
                 className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:shadow-lg font-medium text-sm transition-all"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Questions Modal */}
+      {showManageQuestions && viewingExam && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <i className='bx bx-plus-circle text-2xl'></i>
+                <div>
+                  <h3 className="text-xl font-bold">Add Questions to Exam</h3>
+                  <p className="text-blue-100 text-xs">Selecting from Question Bank</p>
+                </div>
+              </div>
+              <button className="text-white/90 hover:bg-white/20 rounded p-2" onClick={() => setShowManageQuestions(false)}>
+                <i className='bx bx-x text-2xl'></i>
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1">
+              {/* Selection warnings */}
+              {(() => {
+                const selectedNonActive = bankQuestions.filter(q => selectedBankQIds.includes(q.id) && q.status !== 'Active');
+                if (selectedNonActive.length === 0) return null;
+                return (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded">
+                    <p className="text-xs text-amber-800 font-semibold flex items-center gap-2">
+                      <i className='bx bx-error-circle'></i>
+                      {selectedNonActive.length} selected question(s) are not Active: {selectedNonActive.map(q=>`#${q.id} (${q.status})`).join(', ')}
+                    </p>
+                    <p className="text-[11px] text-amber-700 mt-1">They will be added but flagged; consider approving or activating them.</p>
+                  </div>
+                );
+              })()}
+              <div className="mb-4 flex items-center gap-2">
+                <input
+                  placeholder="Search question text…"
+                  className="px-3 py-2 border rounded w-full max-w-md"
+                  onChange={(e) => debounceFetchBank(e.target.value)}
+                />
+                <button className="px-3 py-2 border rounded" onClick={() => loadBankQuestions('')}>Refresh</button>
+              </div>
+              {bankQLoading ? (
+                <div className="py-8 text-center text-gray-500">Loading bank questions…</div>
+              ) : (
+                <div className="overflow-x-auto border rounded">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-600 bg-gray-50">
+                        <th className="p-2"><input type="checkbox" onChange={(e)=>toggleSelectAllBank(e.target.checked)} /></th>
+                        <th className="p-2">Question</th>
+                        <th className="p-2">Type</th>
+                        <th className="p-2">Difficulty</th>
+                        <th className="p-2">Marks</th>
+                        <th className="p-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bankQuestions.map((q) => (
+                        <tr key={q.id} className="border-t">
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedBankQIds.includes(q.id)}
+                              onChange={(e)=> toggleSelectBank(q.id, e.target.checked)}
+                              disabled={q.status === 'Archived'}
+                            />
+                          </td>
+                          <td className="p-2 max-w-[360px] truncate" title={q.question_text}>{q.question_text}</td>
+                          <td className="p-2">{q.question_type}</td>
+                          <td className="p-2">{q.difficulty}</td>
+                          <td className="p-2">{q.marks}</td>
+                          <td className="p-2">
+                            {q.status === 'Active' ? (
+                              <span className="px-2 py-1 text-[11px] rounded bg-green-100 text-green-700">Active</span>
+                            ) : q.status === 'Archived' ? (
+                              <span className="px-2 py-1 text-[11px] rounded bg-gray-100 text-gray-600">Archived</span>
+                            ) : (
+                              <span className="px-2 py-1 text-[11px] rounded bg-amber-100 text-amber-700">{q.status}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="p-5 border-t bg-gray-50 flex justify-end gap-2">
+              <button className="px-4 py-2 border rounded" onClick={()=>setShowManageQuestions(false)}>Cancel</button>
+              <button className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded" disabled={selectedBankQIds.length===0} onClick={addSelectedToExam}>
+                <i className='bx bx-upload mr-1'></i> Add Selected ({selectedBankQIds.length})
               </button>
             </div>
           </div>

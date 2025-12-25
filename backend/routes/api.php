@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\HallController;
 use App\Http\Controllers\Api\AllocationController;
 use App\Http\Controllers\Api\ExamQuestionRandomizationController;
 use App\Http\Controllers\Api\BankQuestionController;
+use App\Http\Controllers\Api\ExamQuestionController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -335,6 +336,16 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{id}', [BankQuestionController::class, 'tagsUpdate']);
             Route::delete('/{id}', [BankQuestionController::class, 'tagsDestroy']);
         });
+    });
+
+    // Exam ↔ Question linking
+    Route::prefix('exams/{exam}/questions')->group(function () {
+        // Use a distinct listing endpoint to avoid conflict with ExamController@getQuestions
+        Route::get('/assigned', [ExamQuestionController::class, 'index']);
+        Route::post('/', [ExamQuestionController::class, 'store']); // bulk add
+        Route::post('/reorder', [ExamQuestionController::class, 'reorder']);
+        Route::patch('/{question}', [ExamQuestionController::class, 'update']);
+        Route::delete('/{question}', [ExamQuestionController::class, 'destroy']);
     });
     
     // Two-Factor Authentication with recovery codes

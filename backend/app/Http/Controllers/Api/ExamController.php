@@ -64,6 +64,23 @@ class ExamController extends Controller
 
         $exams = $query->orderBy('created_at', 'desc')->paginate(15);
 
+        // Attach live question_count metadata from exam_questions
+        $ids = $exams->getCollection()->pluck('id')->all();
+        if (!empty($ids)) {
+            $counts = \DB::table('exam_questions')
+                ->select('exam_id', \DB::raw('COUNT(*) as cnt'))
+                ->whereIn('exam_id', $ids)
+                ->groupBy('exam_id')
+                ->pluck('cnt', 'exam_id');
+
+            $exams->getCollection()->transform(function ($exam) use ($counts) {
+                $exam->metadata = array_merge((array)($exam->metadata ?? []), [
+                    'question_count' => (int) ($counts[$exam->id] ?? 0)
+                ]);
+                return $exam;
+            });
+        }
+
         return response()->json($exams);
     }
 
@@ -208,6 +225,12 @@ class ExamController extends Controller
         if (!$exam) {
             return response()->json(['message' => 'Exam not found'], 404);
         }
+
+        // Attach live question_count metadata
+        $count = \DB::table('exam_questions')->where('exam_id', $exam->id)->count();
+        $exam->metadata = array_merge((array)($exam->metadata ?? []), [
+            'question_count' => (int) $count
+        ]);
 
         return response()->json($exam);
     }
