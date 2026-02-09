@@ -22,13 +22,26 @@ class AuthController extends Controller
             'password' => 'required|string'
         ]);
 
-        if (! Auth::attempt($credentials)) {
+        if (!Auth::attempt($credentials)) {
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
         $user = $request->user();
-        
-        // Check if email is verified
+
+        // Check if email is verified (only if NOT the first user/admin who is auto-verified? 
+        // Actually, logic: If Main Admin -> allow. If Other Role -> allow. If No Role -> block.
+        // We can skip email verification check if user has Main Admin role, or keep it.
+        // But the requirement says "first user... skips email verification". We did markEmailAsVerified() in store(), so hasVerifiedEmail() will be true.
+
+        // Block login if user has NO roles (Pending Approval)
+        if ($user->roles->isEmpty()) {
+            Auth::logout();
+            return response()->json([
+                'message' => 'Your account is pending administrator approval.',
+                'pending_approval' => true
+            ], 403);
+        }
+
         if (!$user->hasVerifiedEmail()) {
             Auth::logout();
             return response()->json([
@@ -69,7 +82,7 @@ class AuthController extends Controller
     {
         $user = User::findOrFail($id);
         $request->validate(['hash' => 'required']);
-        if (! hash_equals((string) $request->hash, sha1($user->getEmailForVerification()))) {
+        if (!hash_equals((string) $request->hash, sha1($user->getEmailForVerification()))) {
             return response()->json(['message' => 'Invalid verification link'], 422);
         }
 
@@ -118,7 +131,7 @@ class AuthController extends Controller
     {
         $request->validate(['email' => 'required|email']);
         $user = User::where('email', $request->email)->first();
-        if (! $user) {
+        if (!$user) {
             return response()->json(['message' => 'If the email exists, an OTP will be sent']);
         }
         $length = (int) env('OTP_LENGTH', 6);
@@ -145,7 +158,7 @@ class AuthController extends Controller
         ]);
 
         $record = PasswordResetCode::where('email', $request->email)->where('code', $request->code)->first();
-        if (! $record) {
+        if (!$record) {
             return response()->json(['message' => 'Invalid code'], 422);
         }
         if ($record->used_at) {

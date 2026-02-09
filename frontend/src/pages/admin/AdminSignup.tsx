@@ -9,15 +9,48 @@ const AdminSignup: React.FC = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [passportPicture, setPassportPicture] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    if (password !== confirmPassword) {
+      showError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+
     try {
-      await axios.post(`${process.env.REACT_APP_API_URL}/admin/signup`, { name, email, password });
-      await showSuccess('Application submitted successfully! Main Admin will review and assign your role.');
-      navigate('/admin-login');
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('email', email);
+      formData.append('password', password);
+      formData.append('phone_number', phoneNumber);
+      if (passportPicture) {
+        formData.append('passport_picture', passportPicture);
+      }
+
+      const response = await axios.post(`${process.env.REACT_APP_API_URL}/admin/signup`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (response.data.token) {
+        // Auto-login (First Admin)
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        showSuccess(response.data.message);
+        navigate('/admin/dashboard');
+      } else {
+        // Pending Approval
+        showSuccess(response.data.message);
+        navigate('/admin-login');
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to submit application';
       showError(msg);
@@ -43,7 +76,7 @@ const AdminSignup: React.FC = () => {
             label="Full Name"
             type="text"
             value={name}
-            onChange={e=>setName(e.target.value)}
+            onChange={e => setName(e.target.value)}
             placeholder="Your full name"
             required
             fullWidth
@@ -52,17 +85,52 @@ const AdminSignup: React.FC = () => {
             label="Email Address"
             type="email"
             value={email}
-            onChange={e=>setEmail(e.target.value)}
+            onChange={e => setEmail(e.target.value)}
             placeholder="your.email@example.com"
             required
             fullWidth
           />
           <Input
+            label="Phone Number"
+            type="tel"
+            value={phoneNumber}
+            onChange={e => setPhoneNumber(e.target.value)}
+            placeholder="+1234567890"
+            required
+            fullWidth
+          />
+          <div className="mb-4">
+            <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="passport">
+              Passport Picture
+            </label>
+            <input
+              id="passport"
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  setPassportPicture(e.target.files[0]);
+                }
+              }}
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-100"
+              required
+            />
+          </div>
+          <Input
             label="Password"
             type="password"
             value={password}
-            onChange={e=>setPassword(e.target.value)}
+            onChange={e => setPassword(e.target.value)}
             placeholder="Choose a strong password"
+            required
+            fullWidth
+          />
+          <Input
+            label="Confirm Password"
+            type="password"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            placeholder="Confirm your password"
             required
             fullWidth
           />

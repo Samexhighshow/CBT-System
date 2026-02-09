@@ -18,7 +18,7 @@ class UserController extends Controller
         }
 
         $perPage = $request->input('limit', 15);
-        $users = $query->orderBy('id','desc')->paginate($perPage);
+        $users = $query->orderBy('id', 'desc')->paginate($perPage);
 
         return response()->json([
             'data' => $users->items(),
@@ -33,38 +33,64 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
-        // Admin signup applicant (no role yet, not verified)
+        // Admin signup applicant
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8'
+            'password' => 'required|string|min:8',
+            'phone_number' => 'required|string|max:20',
+            'passport_picture' => 'required|image|max:2048' // Max 2MB
         ]);
+
+        // Handle file upload
+        $profilePicturePath = null;
+        if ($request->hasFile('passport_picture')) {
+            $file = $request->file('passport_picture');
+            // Store in public/profile_pictures or similar
+            $filename = time() . '_' . $file->getClientOriginalName();
+            $file->move(public_path('uploads/profile_pictures'), $filename);
+            $profilePicturePath = 'uploads/profile_pictures/' . $filename;
+        }
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
+            'phone_number' => $validated['phone_number'],
+            'profile_picture' => $profilePicturePath,
         ]);
 
-        // Check if this is the first admin user
+        // Check if this is the first admin user (now count is 1 inclusive of this new user)
         $isFirstAdmin = User::count() === 1;
-        
+
         if ($isFirstAdmin) {
             // Auto-verify and assign Main Admin role to first user
             $user->markEmailAsVerified();
             $user->assignRole('Main Admin');
             $message = 'First admin account created successfully with Main Admin privileges';
-        } else {
-            // Try to send verification email (don't fail if mail server not configured)
-            try {
-                $user->sendEmailVerificationNotification();
-            } catch (\Exception $e) {
-                Log::warning('Failed to send verification email: ' . $e->getMessage());
-            }
-            $message = 'Admin application submitted successfully';
-        }
+            $token = $user->createToken('api')->plainTextToken; // Create token for immediate login
 
-        return response()->json(['message' => $message, 'user' => $user, 'is_first_admin' => $isFirstAdmin], 201);
+            return response()->json([
+                'message' => $message,
+                'user' => $user,
+                'is_first_admin' => true,
+                'token' => $token
+            ], 201);
+        } else {
+            // Send pending approval email
+            try {
+                \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\AdminApprovalPending($user));
+            } catch (\Exception $e) {
+                Log::warning('Failed to send pending approval email: ' . $e->getMessage());
+            }
+            $message = 'Account created. Pending administrator approval.';
+
+            return response()->json([
+                'message' => $message,
+                'user' => $user,
+                'is_first_admin' => false
+            ], 201);
+        }
     }
 
     public function getTeachers()

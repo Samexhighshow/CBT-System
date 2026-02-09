@@ -4,14 +4,15 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
     public function up(): void
     {
-        Schema::rename('classes', 'school_classes');
+        if (!Schema::hasTable('school_classes') && Schema::hasTable('classes')) {
+            Schema::rename('classes', 'school_classes');
+        }
     }
 
     /**
@@ -19,6 +20,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::rename('school_classes', 'classes');
+        if (!Schema::hasTable('classes') && Schema::hasTable('school_classes')) {
+            Schema::rename('school_classes', 'classes');
+        }
     }
 };

@@ -64,7 +64,7 @@ Route::prefix('students')->group(function () {
     Route::get('/{id}/exams', [StudentController::class, 'getExams']);
     Route::get('/{id}/results', [StudentController::class, 'getResults']);
     Route::get('/{id}/statistics', [StudentController::class, 'getStatistics']);
-    
+
     // Bulk operations
     Route::post('/import', [StudentBulkController::class, 'importCsv']);
     Route::get('/export', [StudentBulkController::class, 'exportCsv']);
@@ -78,21 +78,21 @@ Route::prefix('exams')->group(function () {
     Route::post('/', [ExamController::class, 'store']);
     Route::put('/{id}', [ExamController::class, 'update']);
     Route::delete('/{id}', [ExamController::class, 'destroy']);
-    
+
     // PHASE 1: Access control check
     Route::get('/{id}/check-access', [ExamController::class, 'checkAccess']);
-    
-        // PHASE 8: Results visibility control
-        Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility']);
-    
+
+    // PHASE 8: Results visibility control
+    Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility']);
+
     Route::post('/{id}/start', [ExamController::class, 'startExam']);
     Route::post('/{id}/submit', [ExamController::class, 'submitExam']);
     Route::get('/{id}/questions', [ExamController::class, 'getQuestions']);
     Route::get('/{id}/statistics', [ExamController::class, 'getStatistics']);
-    
+
     // Duplicate exam
     Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
-    
+
     // Question randomization and selection
     Route::put('/{id}/randomization', [ExamQuestionRandomizationController::class, 'updateRandomizationSettings']);
     Route::get('/{id}/randomization/preview', [ExamQuestionRandomizationController::class, 'previewSelection']);
@@ -100,7 +100,7 @@ Route::prefix('exams')->group(function () {
     Route::post('/{id}/randomization/unlock', [ExamQuestionRandomizationController::class, 'unlockQuestions']);
     Route::get('/{id}/randomization/stats', [ExamQuestionRandomizationController::class, 'getRandomizationStats']);
     Route::get('/{id}/randomization/selection', [ExamQuestionRandomizationController::class, 'getStudentSelection']);
-    
+
     // Offline exam support
     Route::get('/{id}/download', [OfflineExamController::class, 'downloadExam']);
 });
@@ -112,18 +112,18 @@ Route::prefix('questions')->group(function () {
     Route::post('/', [QuestionController::class, 'store']);
     Route::put('/{id}', [QuestionController::class, 'update']);
     Route::delete('/{id}', [QuestionController::class, 'destroy']);
-    
+
     // PHASE 3: Bulk operations
     Route::post('/bulk-delete', [QuestionController::class, 'bulkDestroy']);
     Route::post('/bulk-status', [QuestionController::class, 'bulkUpdateStatus']);
     Route::get('/types/all', [QuestionController::class, 'getQuestionTypes']);
-    
+
     // PHASE 3: CSV operations with support for all 14 types
     Route::post('/bulk', [QuestionController::class, 'bulkCreate']);
     Route::post('/import', [QuestionController::class, 'importQuestions']);
     Route::get('/template/download', [QuestionController::class, 'downloadTemplate']);
     Route::get('/export/csv', [QuestionController::class, 'exportQuestions']);
-    
+
     // PHASE 5: Admin Actions
     Route::post('/{id}/duplicate', [QuestionController::class, 'duplicate']);
     Route::patch('/{id}/toggle-status', [QuestionController::class, 'toggleStatus']);
@@ -187,7 +187,7 @@ Route::prefix('departments')->group(function () {
 Route::prefix('classes')->group(function () {
     Route::get('/', [\App\Http\Controllers\Api\ClassController::class, 'index']);
     Route::get('/{id}', [\App\Http\Controllers\Api\ClassController::class, 'show']);
-    
+
     // Protected endpoints
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [\App\Http\Controllers\Api\ClassController::class, 'store']);
@@ -247,7 +247,7 @@ Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
     Route::post('/picture', [ProfileController::class, 'updatePicture']);
     Route::delete('/picture', [ProfileController::class, 'removePicture']);
     Route::post('/password', [ProfileController::class, 'changePassword']);
-    
+
     // Two-Factor Authentication
     Route::get('/2fa/status', [ProfileController::class, 'get2FAStatus']);
     Route::post('/2fa/google/setup', [ProfileController::class, 'setupGoogle2FA']);
@@ -263,7 +263,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/roles', [RoleController::class, 'listRoles']);
     Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
-    
+
     // Import questions to a subject
     Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
 
@@ -283,24 +283,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/cbt/results/subject/{subject}', [CbtResultsController::class, 'subjectSummary']);
     // All results with filters
     Route::get('/cbt/results', [CbtResultsController::class, 'allResults']);
-    
+
     // CBT Subjects management
     Route::get('/cbt/subjects', [CbtSubjectController::class, 'index']);
     Route::post('/cbt/subjects', [CbtSubjectController::class, 'store']);
     Route::post('/cbt/subjects/assign-teacher', [CbtSubjectController::class, 'assignTeacher']);
     Route::get('/cbt/teachers/{teacher}/subjects', [CbtSubjectController::class, 'teacherSubjects']);
     Route::post('/cbt/teachers/self-assign', [CbtSubjectController::class, 'selfAssignSubjects']);
-    
+
     // Activity Logs (Admin only)
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
     Route::get('/activity-logs/stats', [ActivityLogController::class, 'stats']);
     Route::delete('/activity-logs/cleanup', [ActivityLogController::class, 'cleanup']);
-    
+
     // Offline exam sync
     Route::post('/offline/sync', [OfflineExamController::class, 'syncSubmission']);
     Route::post('/offline/batch-sync', [OfflineExamController::class, 'batchSync']);
     Route::post('/offline/check-status', [OfflineExamController::class, 'checkSyncStatus']);
-    
+
     // Backup management (Admin only)
     Route::middleware('role:admin')->prefix('backups')->group(function () {
         Route::post('/trigger', [BackupController::class, 'triggerBackup']);
@@ -347,12 +347,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{question}', [ExamQuestionController::class, 'update']);
         Route::delete('/{question}', [ExamQuestionController::class, 'destroy']);
     });
-    
+
     // Two-Factor Authentication with recovery codes
     Route::post('/two-factor/setup', [ProfileController::class, 'setupGoogle2FA']);
     Route::post('/two-factor/verify', [ProfileController::class, 'verifyGoogle2FA']);
     Route::post('/two-factor/recovery-codes', [ProfileController::class, 'generateRecoveryCodes']);
-    
+
     // Hall Management
     Route::prefix('halls')->group(function () {
         Route::get('/', [HallController::class, 'index']);
@@ -364,7 +364,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/assign-teachers', [HallController::class, 'assignTeachers']);
         Route::get('/{id}/grid-layout', [HallController::class, 'getGridLayout']);
     });
-    
+
     // Allocation Management
     Route::prefix('allocations')->group(function () {
         Route::get('/exam/{examId}', [AllocationController::class, 'index']);
