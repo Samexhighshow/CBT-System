@@ -6,6 +6,8 @@ use Tests\TestCase;
 use App\Models\User;
 use App\Models\Exam;
 use App\Models\Subject;
+use App\Models\SchoolClass;
+use Spatie\Permission\Models\Role;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class ExamManagementTest extends TestCase
@@ -16,18 +18,24 @@ class ExamManagementTest extends TestCase
     public function admin_can_create_exam()
     {
         $admin = User::factory()->create();
-        $admin->assignRole('admin');
+        $role = Role::firstOrCreate(['name' => 'Admin', 'guard_name' => 'web']);
+        $admin->assignRole($role);
         $token = $admin->createToken('test-token')->plainTextToken;
 
-        $subject = Subject::factory()->create();
+        $class = SchoolClass::factory()->create();
+        $subject = Subject::factory()->create([
+            'class_id' => $class->id,
+            'class_level' => $class->name,
+        ]);
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson('/api/exams', [
                 'title' => 'Test Exam',
                 'subject_id' => $subject->id,
-                'duration' => 60,
-                'total_marks' => 100,
-                'pass_mark' => 40,
+                'class_id' => $class->id,
+                'duration_minutes' => 60,
+                'assessment_type' => 'Quiz',
+                'assessment_weight' => 10,
                 'start_time' => now()->addDay()->toDateTimeString(),
                 'end_time' => now()->addDays(2)->toDateTimeString(),
             ]);
@@ -48,7 +56,8 @@ class ExamManagementTest extends TestCase
     public function exam_can_be_duplicated()
     {
         $admin = User::factory()->create();
-        $admin->assignRole('admin');
+        $role = Role::firstOrCreate(['name' => 'Admin', 'guard_name' => 'web']);
+        $admin->assignRole($role);
         $token = $admin->createToken('test-token')->plainTextToken;
 
         $exam = Exam::factory()->create(['title' => 'Original Exam']);

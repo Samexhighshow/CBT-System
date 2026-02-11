@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateQuestionRequest;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\Exam;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
@@ -859,7 +860,11 @@ class QuestionController extends Controller
      */
     public function preview(Request $request, $id)
     {
-        $question = Question::with(['options', 'exam'])->findOrFail($id);
+        try {
+            $question = Question::with(['options', 'exam'])->findOrFail($id);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['message' => 'Question not found'], 404);
+        }
 
         // Optionally randomize options if enabled in exam
         $options = $question->options;

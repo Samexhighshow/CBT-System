@@ -5,6 +5,8 @@ namespace Tests\Feature\Api;
 use Tests\TestCase;
 use App\Models\Exam;
 use App\Models\Question;
+use App\Models\SchoolClass;
+use App\Models\Subject;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class QuestionValidationTest extends TestCase
@@ -16,15 +18,22 @@ class QuestionValidationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
+        $class = SchoolClass::factory()->create();
+        $subject = Subject::factory()->create([
+            'class_id' => $class->id,
+            'class_level' => $class->name,
+        ]);
+
         // Create a test exam
-        $this->exam = Exam::create([
+        $this->exam = Exam::factory()->create([
             'title' => 'Test Exam',
             'description' => 'Test Description',
-            'subject_id' => 1,
-            'class_id' => 1,
+            'subject_id' => $subject->id,
+            'class_id' => $class->id,
+            'class_level_id' => $class->id,
+            'class_level' => $class->name,
             'duration_minutes' => 60,
-            'total_marks' => 100,
             'status' => 'draft',
             'published' => false,
         ]);

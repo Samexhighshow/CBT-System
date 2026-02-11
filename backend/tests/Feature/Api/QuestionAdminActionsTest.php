@@ -7,6 +7,7 @@ use App\Models\Exam;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\User;
+use Spatie\Permission\Models\Role;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 
@@ -20,9 +21,11 @@ class QuestionAdminActionsTest extends TestCase
     public function setUp(): void
     {
         parent::setUp();
-        
-        $this->user = User::factory()->create(['role' => 'admin']);
-        $this->exam = Exam::factory()->create(['created_by' => $this->user->id]);
+
+        $role = Role::firstOrCreate(['name' => 'Admin', 'guard_name' => 'web']);
+        $this->user = User::factory()->create();
+        $this->user->assignRole($role);
+        $this->exam = Exam::factory()->create();
     }
 
     /**
@@ -53,7 +56,7 @@ class QuestionAdminActionsTest extends TestCase
             ->postJson("/api/questions/{$question->id}/duplicate");
 
         // Assertions
-        $response->assertStatus(201);
+        $this->assertSame(201, $response->getStatusCode(), $response->getContent());
         $response->assertJsonStructure([
             'message',
             'question' => ['id', 'exam_id', 'question_text', 'status'],
@@ -81,7 +84,7 @@ class QuestionAdminActionsTest extends TestCase
     public function test_cannot_duplicate_question_if_exam_closed(): void
     {
         $closedExam = Exam::factory()
-            ->create(['status' => 'closed', 'created_by' => $this->user->id]);
+            ->create(['status' => 'closed']);
 
         $question = Question::factory()
             ->for($closedExam)
@@ -91,7 +94,7 @@ class QuestionAdminActionsTest extends TestCase
             ->postJson("/api/questions/{$question->id}/duplicate");
 
         $response->assertStatus(422);
-        $response->assertJsonPath('message', 'Cannot duplicate questions from a closed exam');
+        $response->assertJsonPath('message', 'Cannot duplicate questions for a closed exam');
     }
 
     /**
@@ -132,7 +135,7 @@ class QuestionAdminActionsTest extends TestCase
     public function test_cannot_toggle_status_if_exam_closed(): void
     {
         $closedExam = Exam::factory()
-            ->create(['status' => 'closed', 'created_by' => $this->user->id]);
+            ->create(['status' => 'closed']);
 
         $question = Question::factory()
             ->for($closedExam)
@@ -173,7 +176,7 @@ class QuestionAdminActionsTest extends TestCase
     public function test_cannot_delete_question_if_exam_closed(): void
     {
         $closedExam = Exam::factory()
-            ->create(['status' => 'closed', 'created_by' => $this->user->id]);
+            ->create(['status' => 'closed']);
 
         $question = Question::factory()
             ->for($closedExam)
@@ -225,7 +228,7 @@ class QuestionAdminActionsTest extends TestCase
     public function test_cannot_reorder_questions_if_exam_closed(): void
     {
         $closedExam = Exam::factory()
-            ->create(['status' => 'closed', 'created_by' => $this->user->id]);
+            ->create(['status' => 'closed']);
 
         $questions = Question::factory(3)
             ->for($closedExam)
@@ -322,7 +325,7 @@ class QuestionAdminActionsTest extends TestCase
     public function test_cannot_bulk_delete_if_exam_closed(): void
     {
         $closedExam = Exam::factory()
-            ->create(['status' => 'closed', 'created_by' => $this->user->id]);
+            ->create(['status' => 'closed']);
 
         $questions = Question::factory(3)
             ->for($closedExam)
@@ -369,7 +372,7 @@ class QuestionAdminActionsTest extends TestCase
     public function test_cannot_bulk_update_status_if_exam_closed(): void
     {
         $closedExam = Exam::factory()
-            ->create(['status' => 'closed', 'created_by' => $this->user->id]);
+            ->create(['status' => 'closed']);
 
         $questions = Question::factory(3)
             ->for($closedExam)
@@ -432,7 +435,7 @@ class QuestionAdminActionsTest extends TestCase
             ->create([
                 'question_type' => 'multiple_choice_single',
                 'marks' => 5,
-                'difficulty' => 'easy'
+                'difficulty_level' => 'easy'
             ]);
 
         Question::factory(2)
@@ -440,7 +443,7 @@ class QuestionAdminActionsTest extends TestCase
             ->create([
                 'question_type' => 'essay',
                 'marks' => 10,
-                'difficulty' => 'hard'
+                'difficulty_level' => 'hard'
             ]);
 
         $response = $this->actingAs($this->user)
