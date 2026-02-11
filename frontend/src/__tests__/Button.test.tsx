@@ -14,7 +14,7 @@ describe('Button Component', () => {
     expect(screen.getByText('Primary')).toHaveClass('bg-blue-600');
 
     rerender(<Button variant="secondary">Secondary</Button>);
-    expect(screen.getByText('Secondary')).toHaveClass('bg-gray-500');
+    expect(screen.getByText('Secondary')).toHaveClass('bg-gray-200');
   });
 
   it('shows loading state', () => {

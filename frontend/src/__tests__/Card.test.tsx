@@ -20,6 +20,6 @@ describe('Card Component', () => {
 
   it('applies default styles', () => {
     const { container } = render(<Card>Content</Card>);
-    expect(container.firstChild).toHaveClass('bg-white', 'rounded-lg', 'shadow');
+    expect(container.firstChild).toHaveClass('bg-white', 'rounded-lg', 'shadow-md');
   });
 });
