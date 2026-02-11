@@ -244,6 +244,14 @@ class QuestionController extends Controller
         
         // Get exam and validate it's open for editing
         $exam = $question->exam;
+
+        // Check if exam is closed - this should always be validated
+        if ($exam->isClosed()) {
+            return response()->json([
+                'message' => 'Cannot update question in a closed exam',
+                'errors' => ['exam_id' => ['Cannot edit questions for a closed exam']]
+            ], 422);
+        }
         
         // Validate if marks are being changed
         if (isset($validated['marks']) && $validated['marks'] != $question->marks) {
@@ -251,7 +259,7 @@ class QuestionController extends Controller
             if (!empty($examErrors)) {
                 return response()->json([
                     'message' => 'Cannot update question marks',
-                    'errors' => $examErrors
+                    'errors' => ['exam_id' => $examErrors]
                 ], 422);
             }
         }
@@ -811,7 +819,7 @@ class QuestionController extends Controller
     /**
      * Reorder questions within an exam
      */
-    public function reorderQuestions(Request $request, $examId)
+    public function reorderQuestions(Request $request)
     {
         $request->validate([
             'questions' => ['required', 'array'],
@@ -819,6 +827,15 @@ class QuestionController extends Controller
             'questions.*.order' => ['required', 'integer', 'min:0'],
         ]);
 
+        // Get exam_id from first question
+        $firstQuestion = Question::find($request->questions[0]['id']);
+        if (!$firstQuestion) {
+            return response()->json([
+                'message' => 'Question not found',
+            ], 404);
+        }
+        $examId = $firstQuestion->exam_id;
+        
         $exam = Exam::findOrFail($examId);
 
         // Check if exam is closed

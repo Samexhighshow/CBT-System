@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Tests\TestCase;
 use App\Models\User;
+use Spatie\Permission\Models\Role;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class AuthenticationTest extends TestCase
@@ -13,10 +14,16 @@ class AuthenticationTest extends TestCase
     /** @test */
     public function user_can_login_with_valid_credentials()
     {
+        // Create admin role
+        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'password' => bcrypt('password123'),
         ]);
+        
+        // Assign a role so the user can login
+        $user->assignRole('admin');
 
         $response = $this->postJson('/api/auth/login', [
             'email' => 'test@example.com',

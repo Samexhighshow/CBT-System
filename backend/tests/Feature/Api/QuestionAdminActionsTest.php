@@ -145,7 +145,7 @@ class QuestionAdminActionsTest extends TestCase
             ->patchJson("/api/questions/{$question->id}/toggle-status");
 
         $response->assertStatus(422);
-        $response->assertJsonPath('message', 'Cannot change question status for a closed exam');
+        $response->assertJsonPath('message', 'Cannot modify questions in a closed exam');
     }
 
     /**
@@ -164,7 +164,7 @@ class QuestionAdminActionsTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJsonPath('message', 'Question deleted successfully');
-        $response->assertJsonPath('deleted_id', $questionId);
+        $response->assertJsonPath('deleted_id', (string)$questionId);
 
         // Verify deletion
         $this->assertNull(Question::find($questionId));

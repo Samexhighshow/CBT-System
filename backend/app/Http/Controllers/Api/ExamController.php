@@ -211,6 +211,10 @@ class ExamController extends Controller
 
         return response()->json([
             'message' => 'Exam created successfully',
+            'id' => $exam->id,
+            'title' => $exam->title,
+            'subject_id' => $exam->subject_id,
+            'class_id' => $exam->class_id,
             'exam' => $exam->load(['subject', 'schoolClass'])
         ], 201);
     }

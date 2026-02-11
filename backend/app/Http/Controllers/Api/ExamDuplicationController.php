@@ -21,7 +21,7 @@ class ExamDuplicationController extends Controller
         try {
             // Create new exam
             $newExam = Exam::create([
-                'title' => $originalExam->title . ' (Copy)',
+                'title' => $request->input('title', $originalExam->title . ' (Copy)'),
                 'description' => $originalExam->description,
                 'subject_id' => $originalExam->subject_id,
                 'class_level' => $originalExam->class_level,
@@ -64,7 +64,7 @@ class ExamDuplicationController extends Controller
             return response()->json([
                 'message' => 'Exam duplicated successfully',
                 'exam' => $newExam->load('questions.options'),
-            ]);
+            ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();

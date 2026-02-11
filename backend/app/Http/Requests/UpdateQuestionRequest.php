@@ -21,10 +21,10 @@ class UpdateQuestionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'exam_id' => ['required', 'integer', 'exists:exams,id'],
-            'question_text' => ['required', 'string', 'min:10', 'max:5000'],
-            'question_type' => ['required', 'in:multiple_choice_single,multiple_choice_multiple,true_false,short_answer,essay,fill_blank,matching,ordering,image_based,audio_based,passage,case_study,calculation,practical'],
-            'marks' => ['required', 'numeric', 'min:0.5', 'max:100'],
+            'exam_id' => ['nullable', 'integer', 'exists:exams,id'],
+            'question_text' => ['nullable', 'string', 'min:10', 'max:5000'],
+            'question_type' => ['nullable', 'in:multiple_choice_single,multiple_choice_multiple,true_false,short_answer,essay,fill_blank,matching,ordering,image_based,audio_based,passage,case_study,calculation,practical'],
+            'marks' => ['nullable', 'numeric', 'min:0.5', 'max:100'],
             
             // Optional fields based on question type
             'max_words' => ['nullable', 'integer', 'min:10', 'max:5000'],
