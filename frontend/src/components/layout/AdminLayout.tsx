@@ -92,8 +92,8 @@ const AdminLayout: React.FC = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col w-full">
       {/* Top Navigation Bar - Desktop */}
       <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full sticky top-0 z-40">
-        <div className="w-full px-3 md:px-4 lg:px-6">
-          <div className="flex justify-between items-center h-14 max-w-full">
+        <div className="app-shell">
+          <div className="flex justify-between items-center h-14">
             {/* Left Section: Logo + Desktop Nav */}
             <div className="flex items-center space-x-2 flex-1">
               {/* Mobile Hamburger */}
