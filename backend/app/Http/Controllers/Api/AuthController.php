@@ -22,8 +22,21 @@ class AuthController extends Controller
             'password' => 'required|string'
         ]);
 
+        // Check if user exists
+        $user = User::where('email', $credentials['email'])->first();
+        
+        if (!$user) {
+            return response()->json([
+                'message' => 'No account found with this email address.',
+                'error_type' => 'email_not_found'
+            ], 401);
+        }
+
         if (!Auth::attempt($credentials)) {
-            return response()->json(['message' => 'Invalid credentials'], 401);
+            return response()->json([
+                'message' => 'Incorrect password. Please check your password and try again.',
+                'error_type' => 'invalid_password'
+            ], 401);
         }
 
         $user = $request->user();

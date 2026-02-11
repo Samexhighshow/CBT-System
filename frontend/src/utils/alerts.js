@@ -1,7 +1,21 @@
 import Swal from 'sweetalert2';
 
-// Custom theme colors: blue (#2563eb), green (#16a34a), red (#dc2626)
-// Background: white, Text: gray-800 (#1f2937)
+// Dark theme colors matching the new UI
+// Background: slate-800 (#1e293b), Text: gray-100 (#f3f4f6)
+// Accent: emerald-500 (#10b981), Error: red-500 (#ef4444), Warning: amber-500 (#f59e0b)
+
+// Custom dark theme base config
+const darkThemeConfig = {
+  background: '#1e293b', // slate-800
+  color: '#f3f4f6', // gray-100
+  customClass: {
+    popup: 'dark-swal-popup',
+    title: 'dark-swal-title',
+    htmlContainer: 'dark-swal-content',
+    confirmButton: 'dark-swal-confirm',
+    cancelButton: 'dark-swal-cancel',
+  },
+};
 
 // Success alert
 export const showSuccess = (message, title = 'Success!') => {
@@ -9,11 +23,11 @@ export const showSuccess = (message, title = 'Success!') => {
     icon: 'success',
     title,
     text: message,
-    confirmButtonColor: '#16a34a', // green-600
-    background: '#ffffff',
-    color: '#1f2937', // gray-800
+    confirmButtonColor: '#10b981', // emerald-500
+    ...darkThemeConfig,
     timer: 2500,
     timerProgressBar: true,
+    iconColor: '#10b981',
   });
 };
 
@@ -23,9 +37,9 @@ export const showError = (message, title = 'Error!') => {
     icon: 'error',
     title,
     text: message,
-    confirmButtonColor: '#dc2626', // red-600
-    background: '#ffffff',
-    color: '#1f2937',
+    confirmButtonColor: '#ef4444', // red-500
+    ...darkThemeConfig,
+    iconColor: '#ef4444',
   });
 };
 
@@ -35,9 +49,9 @@ export const showWarning = (message, title = 'Warning!') => {
     icon: 'warning',
     title,
     text: message,
-    confirmButtonColor: '#2563eb', // blue-600
-    background: '#ffffff',
-    color: '#1f2937',
+    confirmButtonColor: '#f59e0b', // amber-500
+    ...darkThemeConfig,
+    iconColor: '#f59e0b',
   });
 };
 
@@ -47,9 +61,9 @@ export const showInfo = (message, title = 'Info') => {
     icon: 'info',
     title,
     text: message,
-    confirmButtonColor: '#2563eb', // blue-600
-    background: '#ffffff',
-    color: '#1f2937',
+    confirmButtonColor: '#3b82f6', // blue-500
+    ...darkThemeConfig,
+    iconColor: '#3b82f6',
   });
 };
 
@@ -60,12 +74,12 @@ export const showConfirm = (message, title = 'Are you sure?') => {
     title,
     text: message,
     showCancelButton: true,
-    confirmButtonColor: '#2563eb', // blue-600
-    cancelButtonColor: '#dc2626', // red-600
+    confirmButtonColor: '#10b981', // emerald-500
+    cancelButtonColor: '#64748b', // slate-500
     confirmButtonText: 'Yes, proceed!',
     cancelButtonText: 'Cancel',
-    background: '#ffffff',
-    color: '#1f2937',
+    ...darkThemeConfig,
+    iconColor: '#3b82f6',
   });
 };
 
@@ -76,12 +90,12 @@ export const showDeleteConfirm = (itemName = 'this item') => {
     title: 'Delete Confirmation',
     text: `Are you sure you want to delete ${itemName}? This action cannot be undone.`,
     showCancelButton: true,
-    confirmButtonColor: '#dc2626', // red-600
-    cancelButtonColor: '#6b7280', // gray-500
+    confirmButtonColor: '#ef4444', // red-500
+    cancelButtonColor: '#64748b', // slate-500
     confirmButtonText: 'Yes, delete it!',
     cancelButtonText: 'Cancel',
-    background: '#ffffff',
-    color: '#1f2937',
+    ...darkThemeConfig,
+    iconColor: '#ef4444',
   });
 };
 
@@ -91,8 +105,7 @@ export const showLoading = (message = 'Processing...') => {
     title: message,
     allowOutsideClick: false,
     allowEscapeKey: false,
-    background: '#ffffff',
-    color: '#1f2937',
+    ...darkThemeConfig,
     didOpen: () => {
       Swal.showLoading();
     },
@@ -106,14 +119,22 @@ export const closeLoading = () => {
 
 // Toast notification (non-blocking)
 export const showToast = (message, icon = 'success') => {
+  const iconColors = {
+    success: '#10b981',
+    error: '#ef4444',
+    warning: '#f59e0b',
+    info: '#3b82f6',
+  };
+
   const Toast = Swal.mixin({
     toast: true,
     position: 'top-end',
     showConfirmButton: false,
     timer: 3000,
     timerProgressBar: true,
-    background: '#ffffff',
-    color: '#1f2937',
+    background: '#1e293b',
+    color: '#f3f4f6',
+    iconColor: iconColors[icon] || '#10b981',
     didOpen: (toast) => {
       toast.addEventListener('mouseenter', Swal.stopTimer);
       toast.addEventListener('mouseleave', Swal.resumeTimer);
@@ -133,10 +154,9 @@ export const showInput = (title, inputType = 'text', inputLabel = '') => {
     input: inputType,
     inputLabel,
     showCancelButton: true,
-    confirmButtonColor: '#2563eb', // blue-600
-    cancelButtonColor: '#6b7280', // gray-500
-    background: '#ffffff',
-    color: '#1f2937',
+    confirmButtonColor: '#10b981', // emerald-500
+    cancelButtonColor: '#64748b', // slate-500
+    ...darkThemeConfig,
     inputValidator: (value) => {
       if (!value) {
         return 'You need to enter something!';

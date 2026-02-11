@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\File;
 
 class UserController extends Controller
 {
@@ -39,16 +40,21 @@ class UserController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'phone_number' => 'required|string|max:20',
-            'passport_picture' => 'required|image|max:2048' // Max 2MB
+            'passport_picture' => 'nullable|image|max:2048' // Max 2MB, optional
         ]);
 
         // Handle file upload
         $profilePicturePath = null;
         if ($request->hasFile('passport_picture')) {
             $file = $request->file('passport_picture');
-            // Store in public/profile_pictures or similar
-            $filename = time() . '_' . $file->getClientOriginalName();
-            $file->move(public_path('uploads/profile_pictures'), $filename);
+            $uploadDir = public_path('uploads/profile_pictures');
+
+            if (!File::exists($uploadDir)) {
+                File::makeDirectory($uploadDir, 0755, true);
+            }
+
+            $filename = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
+            $file->move($uploadDir, $filename);
             $profilePicturePath = 'uploads/profile_pictures/' . $filename;
         }
 

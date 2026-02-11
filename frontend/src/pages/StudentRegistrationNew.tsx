@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Button, Input, Card, Alert } from '../components';
 import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
@@ -41,6 +40,57 @@ interface Step3Data {
   password: string;
   password_confirmation: string;
 }
+
+// Custom dark-themed input component
+const DarkInput: React.FC<{
+  label: string;
+  type?: string;
+  name?: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  required?: boolean;
+}> = ({ label, type = 'text', name, value, onChange, placeholder, required }) => (
+  <div className="flex flex-col gap-1.5">
+    <label className="text-xs font-medium text-gray-300">
+      {label} {required && <span className="text-emerald-400">*</span>}
+    </label>
+    <input
+      type={type}
+      name={name}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      required={required}
+      className="w-full px-3 py-2.5 bg-slate-700/50 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm"
+    />
+  </div>
+);
+
+// Custom dark-themed select component
+const DarkSelect: React.FC<{
+  label: string;
+  name: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  required?: boolean;
+  children: React.ReactNode;
+}> = ({ label, name, value, onChange, required, children }) => (
+  <div className="flex flex-col gap-1.5">
+    <label className="text-xs font-medium text-gray-300">
+      {label} {required && <span className="text-emerald-400">*</span>}
+    </label>
+    <select
+      name={name}
+      value={value}
+      onChange={onChange}
+      required={required}
+      className="w-full px-3 py-2.5 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm appearance-none cursor-pointer"
+    >
+      {children}
+    </select>
+  </div>
+);
 
 const StudentRegistrationForm: React.FC = () => {
   const navigate = useNavigate();
@@ -106,7 +156,6 @@ const StudentRegistrationForm: React.FC = () => {
     } catch (err: any) {
       const errorMsg = err.response?.data?.message || 'Failed to load classes';
       setError(errorMsg);
-      console.error('Fetch classes error:', err);
     } finally {
       setLoadingClasses(false);
     }
@@ -118,7 +167,6 @@ const StudentRegistrationForm: React.FC = () => {
       const response = await axios.get(`${API_URL}/departments`);
       setDepartments(response.data.data || response.data);
     } catch (err: any) {
-      console.error('Fetch departments error:', err);
       setDepartments([]);
     } finally {
       setLoadingDepartments(false);
@@ -144,97 +192,38 @@ const StudentRegistrationForm: React.FC = () => {
   };
 
   const validateStep1 = (): boolean => {
-    if (!step1Data.first_name.trim()) {
-      setError('Please enter your first name');
-      return false;
-    }
-    if (!step1Data.last_name.trim()) {
-      setError('Please enter your last name');
-      return false;
-    }
-    if (!email.trim()) {
-      setError('Please enter your email address');
-      return false;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Please enter a valid email address');
-      return false;
-    }
-    if (!step1Data.date_of_birth) {
-      setError('Please select your date of birth');
-      return false;
-    }
-    if (!step1Data.gender) {
-      setError('Please select your gender');
-      return false;
-    }
-    if (!step1Data.class_id) {
-      setError('Please select a class');
-      return false;
-    }
-    if (requiresDepartment && !step1Data.department_id) {
-      setError('Please select a department');
-      return false;
-    }
+    if (!step1Data.first_name.trim()) { setError('Please enter your first name'); return false; }
+    if (!step1Data.last_name.trim()) { setError('Please enter your last name'); return false; }
+    if (!email.trim()) { setError('Please enter your email address'); return false; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email address'); return false; }
+    if (!step1Data.date_of_birth) { setError('Please select your date of birth'); return false; }
+    if (!step1Data.gender) { setError('Please select your gender'); return false; }
+    if (!step1Data.class_id) { setError('Please select a class'); return false; }
+    if (requiresDepartment && !step1Data.department_id) { setError('Please select a department'); return false; }
     return true;
   };
 
   const validateStep2 = (): boolean => {
-    if (!step2Data.guardian_first_name.trim()) {
-      setError('Please enter guardian first name');
-      return false;
-    }
-    if (!step2Data.guardian_last_name.trim()) {
-      setError('Please enter guardian last name');
-      return false;
-    }
-    if (!step2Data.guardian_relationship.trim()) {
-      setError('Please enter relationship with guardian');
-      return false;
-    }
-    if (!step2Data.guardian_phone.trim()) {
-      setError('Please enter guardian phone number');
-      return false;
-    }
-    if (!/^[0-9+\-\s()]{10,}$/.test(step2Data.guardian_phone)) {
-      setError('Please enter a valid phone number');
-      return false;
-    }
-    if (!step2Data.guardian_gender) {
-      setError('Please select guardian gender');
-      return false;
-    }
-    if (!step2Data.address.trim()) {
-      setError('Please enter residential address');
-      return false;
-    }
+    if (!step2Data.guardian_first_name.trim()) { setError('Please enter guardian first name'); return false; }
+    if (!step2Data.guardian_last_name.trim()) { setError('Please enter guardian last name'); return false; }
+    if (!step2Data.guardian_relationship.trim()) { setError('Please enter relationship with guardian'); return false; }
+    if (!step2Data.guardian_phone.trim()) { setError('Please enter guardian phone number'); return false; }
+    if (!/^[0-9+\-\s()]{10,}$/.test(step2Data.guardian_phone)) { setError('Please enter a valid phone number'); return false; }
+    if (!step2Data.guardian_gender) { setError('Please select guardian gender'); return false; }
+    if (!step2Data.address.trim()) { setError('Please enter residential address'); return false; }
     return true;
   };
 
   const validateStep3 = (): boolean => {
-    if (!step3Data.password) {
-      setError('Please enter a password');
-      return false;
-    }
-    if (step3Data.password.length < 8) {
-      setError('Password must be at least 8 characters long');
-      return false;
-    }
-    if (step3Data.password !== step3Data.password_confirmation) {
-      setError('Passwords do not match');
-      return false;
-    }
+    if (!step3Data.password) { setError('Please enter a password'); return false; }
+    if (step3Data.password.length < 8) { setError('Password must be at least 8 characters long'); return false; }
+    if (step3Data.password !== step3Data.password_confirmation) { setError('Passwords do not match'); return false; }
     return true;
   };
 
   const handleNextStep = () => {
-    if (currentStep === 1 && validateStep1()) {
-      setCurrentStep(2);
-      window.scrollTo(0, 0);
-    } else if (currentStep === 2 && validateStep2()) {
-      setCurrentStep(3);
-      window.scrollTo(0, 0);
-    }
+    if (currentStep === 1 && validateStep1()) { setCurrentStep(2); window.scrollTo(0, 0); }
+    else if (currentStep === 2 && validateStep2()) { setCurrentStep(3); window.scrollTo(0, 0); }
   };
 
   const handlePrevStep = () => {
@@ -245,7 +234,6 @@ const StudentRegistrationForm: React.FC = () => {
 
   const handleFinalSubmit = async () => {
     if (!validateStep3()) return;
-
     setLoading(true);
     setError('');
 
@@ -270,127 +258,122 @@ const StudentRegistrationForm: React.FC = () => {
       };
 
       const response = await axios.post(`${API_URL}/students`, payload);
-
-      const generatedRegNumber = response.data.registration_number ||
-                                 response.data.student?.registration_number ||
-                                 response.data.student?.id;
-
+      const generatedRegNumber = response.data.registration_number || response.data.student?.registration_number || response.data.student?.id;
       setRegistrationNumber(generatedRegNumber);
       setShowSuccess(true);
-
     } catch (err: any) {
-      const errorMsg = err.response?.data?.message ||
-                      err.response?.data?.error ||
-                      'Registration failed. Please try again.';
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Registration failed. Please try again.';
       setError(errorMsg);
-      console.error('Registration error:', err.response?.data);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLoginRedirect = () => {
-    navigate('/student-login');
-  };
+  const handleLoginRedirect = () => navigate('/student-login');
 
   // Success Screen
   if (showSuccess && registrationNumber) {
     return (
-      <div className="min-h-screen w-full bg-gradient-to-br from-green-50 via-white to-blue-50 flex items-center justify-center py-3 px-3">
-        <Card className="w-full max-w-sm shadow-lg p-3">
+      <div className="min-h-screen w-full bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-slate-800/70 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/50 p-8">
           <div className="text-center">
-            <div className="mb-2">
-              <div className="mx-auto w-11 h-11 bg-green-100 rounded-full flex items-center justify-center shadow">
-                <i className='bx bx-check text-xl text-green-600'></i>
-              </div>
+            <div className="mx-auto w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
             </div>
-            <h1 className="text-lg md:text-xl font-bold text-gray-900 mb-1">Registration Successful!</h1>
-            <p className="text-gray-600 mb-2.5 text-xs">Your account has been created successfully.</p>
+            <h1 className="text-2xl font-bold text-white mb-2">Registration Successful!</h1>
+            <p className="text-gray-400 mb-6">Your account has been created successfully.</p>
 
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded p-2.5 mb-2.5">
-              <p className="text-xs text-gray-700 mb-0.5 font-medium">Your Registration Number:</p>
-              <p className="text-lg md:text-xl font-bold text-blue-600 mb-1.5 select-all tracking-wide">{registrationNumber}</p>
-              <p className="text-xs text-gray-600">
-                <i className='bx bx-envelope text-xs'></i> Sent to: <strong>{email}</strong>
+            <div className="bg-slate-700/50 border border-emerald-500/30 rounded-xl p-5 mb-5">
+              <p className="text-sm text-gray-300 mb-1">Your Registration Number:</p>
+              <p className="text-2xl font-bold text-emerald-400 mb-2 select-all tracking-wider">{registrationNumber}</p>
+              <p className="text-xs text-gray-500">Sent to: <span className="text-gray-300">{email}</span></p>
+            </div>
+
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
+              <p className="text-sm text-amber-300">
+                Use your <strong>Registration Number</strong> and <strong>Password</strong> to login
               </p>
             </div>
 
-            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded p-2 mb-2.5">
-              <p className="text-xs text-yellow-800 font-medium">
-                <i className='bx bx-key text-xs'></i> Use your <strong>Registration Number</strong> and <strong>Password</strong> to login
-              </p>
-            </div>
-
-            <Button onClick={handleLoginRedirect} fullWidth className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-1.5 rounded text-xs transition-all duration-300 shadow">
+            <button onClick={handleLoginRedirect} className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg">
               Proceed to Login
-            </Button>
-
-            <p className="mt-2.5 text-xs text-gray-500">
-              <i className='bx bx-save text-xs'></i> Save your registration number for future reference
-            </p>
+            </button>
           </div>
-        </Card>
+        </div>
       </div>
     );
   }
 
+  // Progress Steps
   const renderProgressSteps = () => (
-    <div className="mb-3">
-      {/* Step Circles with Lines */}
-      <div className="relative flex items-center justify-center mb-2">
-        <div className="absolute inset-x-0 top-1/2 h-px bg-gray-200 -translate-y-1/2"></div>
-        <div className="relative flex justify-between w-full max-w-xs mx-auto px-4">
-          {[
-            { num: 1, label: 'Student', icon: 'bx-user' },
-            { num: 2, label: 'Guardian', icon: 'bx-group' },
-            { num: 3, label: 'Security', icon: 'bx-shield-alt' }
-          ].map((step) => (
-            <div key={step.num} className="flex flex-col items-center">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs transition-all duration-300 ${
-                currentStep >= step.num
-                  ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md ring-4 ring-blue-100'
-                  : 'bg-white text-gray-400 border-2 border-gray-200'
+    <div className="mb-6">
+      <div className="relative flex items-center justify-between max-w-xs mx-auto">
+        {/* Progress Line */}
+        <div className="absolute left-0 right-0 top-5 h-0.5 bg-slate-700" />
+        <div className="absolute left-0 top-5 h-0.5 bg-emerald-500 transition-all duration-500" style={{ width: `${((currentStep - 1) / 2) * 100}%` }} />
+
+        {[
+          { num: 1, label: 'Student', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+          { num: 2, label: 'Guardian', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
+          { num: 3, label: 'Security', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' }
+        ].map((step) => (
+          <div key={step.num} className="relative flex flex-col items-center z-10">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${currentStep >= step.num
+                ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30'
+                : 'bg-slate-700 text-gray-500 border border-slate-600'
               }`}>
-                {currentStep > step.num ? (
-                  <i className='bx bx-check text-base'></i>
-                ) : (
-                  step.num
-                )}
-              </div>
-              <div className={`mt-1.5 text-center transition-colors duration-300 ${
-                currentStep === step.num ? 'text-blue-600' : 'text-gray-500'
-              }`}>
-                <i className={`bx ${step.icon} text-sm block mb-0.5`}></i>
-                <span className="text-xs font-medium">{step.label}</span>
-              </div>
+              {currentStep > step.num ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={step.icon} />
+                </svg>
+              )}
             </div>
-          ))}
-        </div>
+            <span className={`mt-2 text-xs font-medium ${currentStep >= step.num ? 'text-emerald-400' : 'text-gray-500'}`}>
+              {step.label}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-3 px-3">
-      <div className="max-w-xl mx-auto">
+    <div className="min-h-screen w-full bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900 py-6 px-4">
+      {/* Subtle Background Elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-600 rounded-full mix-blend-multiply filter blur-3xl opacity-5" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-teal-600 rounded-full mix-blend-multiply filter blur-3xl opacity-5" />
+      </div>
+
+      <div className="relative max-w-2xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-3">
-          <div className="inline-block mb-1">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center shadow">
-              <i className='bx bx-book-open text-white text-base'></i>
-            </div>
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-xl shadow-lg mb-3">
+            <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 14l9-5-9-5-9 5 9 5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+            </svg>
           </div>
-          <h1 className="text-lg md:text-xl font-bold text-gray-900">Student Registration</h1>
-          <p className="text-gray-600 text-xs mt-0.5">Complete all steps to create your account</p>
+          <h1 className="text-2xl font-bold text-white">Student Registration</h1>
+          <p className="text-gray-400 text-sm mt-1">Complete all steps to create your account</p>
         </div>
 
         {/* Main Card */}
-        <Card className="shadow-lg border-0 p-2.5 md:p-3">
+        <div className="bg-slate-800/70 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-700/50 p-6">
+          {/* Error Alert */}
           {error && (
-            <div className="mb-2.5 p-2 bg-red-50 border-l-4 border-red-500 rounded">
-              <div className="flex items-center">
-                <i className='bx bx-error-circle text-red-500 text-base mr-1.5'></i>
-                <span className="text-red-700 text-xs font-medium">{error}</span>
+            <div className="mb-5 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-red-300 text-sm">{error}</span>
               </div>
             </div>
           )}
@@ -399,171 +382,110 @@ const StudentRegistrationForm: React.FC = () => {
 
           {/* Step 1: Student Profile */}
           {currentStep === 1 && (
-            <div className="space-y-2.5">
-              {/* Section Header */}
-              <div className="pb-2 border-b border-gray-200">
-                <h2 className="text-sm md:text-base font-bold text-gray-900 flex items-center">
-                  <i className='bx bx-user-circle text-blue-600 text-base mr-1'></i>
+            <div className="space-y-5">
+              <div className="pb-3 border-b border-slate-700">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
                   Student Profile
                 </h2>
-                <p className="text-gray-600 mt-0.5 text-xs">Enter your basic information</p>
+                <p className="text-gray-400 text-sm mt-1">Enter your basic information</p>
               </div>
 
-              {/* Name Section */}
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-2.5 rounded border border-blue-100">
-                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                  <i className='bx bx-id-card text-blue-600 mr-1 text-sm'></i>
+              {/* Full Name Section */}
+              <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+                <h3 className="text-sm font-medium text-emerald-400 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                  </svg>
                   Full Name
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <Input
-                    label="First Name"
-                    type="text"
-                    name="first_name"
-                    value={step1Data.first_name}
-                    onChange={handleStep1Change}
-                    placeholder="John"
-                    required
-                    fullWidth
-                  />
-                  <Input
-                    label="Last Name"
-                    type="text"
-                    name="last_name"
-                    value={step1Data.last_name}
-                    onChange={handleStep1Change}
-                    placeholder="Doe"
-                    required
-                    fullWidth
-                  />
-                  <Input
-                    label="Middle Name (Optional)"
-                    type="text"
-                    name="middle_name"
-                    value={step1Data.middle_name}
-                    onChange={handleStep1Change}
-                    placeholder="James"
-                    fullWidth
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <DarkInput label="First Name" name="first_name" value={step1Data.first_name} onChange={handleStep1Change} placeholder="John" required />
+                  <DarkInput label="Last Name" name="last_name" value={step1Data.last_name} onChange={handleStep1Change} placeholder="Doe" required />
+                  <DarkInput label="Middle Name" name="middle_name" value={step1Data.middle_name} onChange={handleStep1Change} placeholder="James (Optional)" />
                 </div>
               </div>
 
-              {/* Contact Information */}
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-2.5 rounded border border-green-100">
-                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                  <i className='bx bx-envelope text-green-600 mr-1 text-sm'></i>
+              {/* Email Section */}
+              <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+                <h3 className="text-sm font-medium text-emerald-400 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
                   Contact Information
                 </h3>
-                <Input
-                  label="Email Address"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError('');
-                  }}
-                  placeholder="your.email@example.com"
-                  required
-                  fullWidth
-                />
+                <DarkInput label="Email Address" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(''); }} placeholder="your.email@example.com" required />
               </div>
 
-              {/* Personal Details */}
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-2.5 rounded border border-purple-100">
-                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                  <i className='bx bx-calendar text-purple-600 mr-1 text-sm'></i>
+              {/* Personal Details Section */}
+              <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+                <h3 className="text-sm font-medium text-emerald-400 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
                   Personal Details
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <Input
-                    label="Date of Birth"
-                    type="date"
-                    name="date_of_birth"
-                    value={step1Data.date_of_birth}
-                    onChange={handleStep1Change}
-                    required
-                    fullWidth
-                  />
-                  <div className="flex flex-col gap-1.5 w-full">
-                    <label className="text-xs font-semibold text-gray-700">Gender *</label>
-                    <select
-                      name="gender"
-                      value={step1Data.gender}
-                      onChange={handleStep1Change}
-                      required
-                      className="px-2 py-1.5 border-2 border-gray-300 rounded text-xs transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent hover:border-purple-300"
-                    >
-                      <option value="">Select Gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <DarkInput label="Date of Birth" type="date" name="date_of_birth" value={step1Data.date_of_birth} onChange={handleStep1Change} required />
+                  <DarkSelect label="Gender" name="gender" value={step1Data.gender} onChange={handleStep1Change} required>
+                    <option value="">Select Gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </DarkSelect>
                 </div>
               </div>
 
-              {/* Academic Information */}
-              <div className="bg-gradient-to-br from-orange-50 to-yellow-50 p-2.5 rounded border border-orange-100">
-                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                  <i className='bx bx-book text-orange-600 mr-1 text-sm'></i>
+              {/* Academic Information Section */}
+              <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+                <h3 className="text-sm font-medium text-emerald-400 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
                   Academic Information
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1.5 w-full">
-                    <label className="text-xs font-semibold text-gray-700">Class Level *</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-gray-300">Class Level <span className="text-emerald-400">*</span></label>
                     {loadingClasses ? (
-                      <div className="text-xs text-blue-600 py-1.5">
-                        <i className='bx bx-loader-alt animate-spin mr-2'></i>
+                      <div className="flex items-center gap-2 text-emerald-400 py-2.5 text-sm">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
                         Loading classes...
                       </div>
                     ) : classes.length === 0 ? (
-                      <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                        <i className='bx bx-error'></i> No classes available
+                      <div className="text-sm text-red-400 bg-red-500/10 p-3 rounded-lg border border-red-500/30">
+                        No classes available
                       </div>
                     ) : (
-                      <select
-                        name="class_id"
-                        value={step1Data.class_id}
-                        onChange={handleStep1Change}
-                        required
-                        className="px-4 py-3 border-2 border-gray-300 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent hover:border-orange-300"
-                      >
+                      <select name="class_id" value={step1Data.class_id} onChange={handleStep1Change} required className="w-full px-3 py-2.5 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm">
                         <option value="">Select Class</option>
                         {classes.map((cls) => (
-                          <option key={cls.id} value={cls.id}>
-                            {cls.name} {cls.code && `(${cls.code})`}
-                          </option>
+                          <option key={cls.id} value={cls.id}>{cls.name} {cls.code && `(${cls.code})`}</option>
                         ))}
                       </select>
                     )}
                   </div>
-
-                  {/* Conditional Department Field */}
                   {requiresDepartment && (
-                    <div className="flex flex-col gap-2 w-full">
-                      <label className="text-sm font-semibold text-gray-700">Department *</label>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-gray-300">Department <span className="text-emerald-400">*</span></label>
                       {loadingDepartments ? (
-                        <div className="text-sm text-blue-600 py-3">
-                          <i className='bx bx-loader-alt animate-spin mr-2'></i>
-                          Loading departments...
-                        </div>
-                      ) : departments.length === 0 ? (
-                        <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                          <i className='bx bx-error'></i> No departments available
+                        <div className="flex items-center gap-2 text-emerald-400 py-2.5 text-sm">
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Loading...
                         </div>
                       ) : (
-                        <select
-                          name="department_id"
-                          value={step1Data.department_id}
-                          onChange={handleStep1Change}
-                          required
-                          className="px-4 py-3 border-2 border-gray-300 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent hover:border-orange-300"
-                        >
+                        <select name="department_id" value={step1Data.department_id} onChange={handleStep1Change} required className="w-full px-3 py-2.5 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm">
                           <option value="">Select Department</option>
                           {departments.map((dept) => (
-                            <option key={dept.id} value={dept.id}>
-                              {dept.name}
-                            </option>
+                            <option key={dept.id} value={dept.id}>{dept.name}</option>
                           ))}
                         </select>
                       )}
@@ -572,231 +494,150 @@ const StudentRegistrationForm: React.FC = () => {
                 </div>
               </div>
 
-              {/* Navigation Buttons */}
-              <div className="flex justify-end gap-2 pt-2.5 border-t border-gray-200">
-                <Link to="/student-login">
-                  <Button variant="outline" className="px-3 py-1.5 rounded text-xs font-semibold hover:bg-gray-100 transition-colors">
-                    <i className='bx bx-left-arrow-alt mr-1 text-sm'></i>
-                    Cancel
-                  </Button>
+              {/* Navigation */}
+              <div className="flex justify-between pt-4 border-t border-slate-700">
+                <Link to="/student-login" className="px-5 py-2.5 text-gray-400 hover:text-white border border-slate-600 hover:border-slate-500 rounded-lg transition-all text-sm font-medium">
+                  Cancel
                 </Link>
-                <Button 
-                  onClick={handleNextStep} 
-                  disabled={loadingClasses}
-                  className="px-3 py-1.5 rounded text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white disabled:opacity-50 transition-all"
-                >
-                  Next
-                  <i className='bx bx-right-arrow-alt ml-1 text-sm'></i>
-                </Button>
+                <button onClick={handleNextStep} disabled={loadingClasses} className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-medium rounded-lg hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-all flex items-center gap-2 text-sm">
+                  Next Step
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
               </div>
             </div>
           )}
 
           {/* Step 2: Guardian Profile */}
           {currentStep === 2 && (
-            <div className="space-y-2.5">
-              {/* Section Header */}
-              <div className="pb-2 border-b border-gray-200">
-                <h2 className="text-sm md:text-base font-bold text-gray-900 flex items-center">
-                  <i className='bx bx-group text-green-600 text-base mr-1'></i>
+            <div className="space-y-5">
+              <div className="pb-3 border-b border-slate-700">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
                   Guardian Profile
                 </h2>
-                <p className="text-gray-600 mt-0.5 text-xs">Tell us about your guardian/parent</p>
+                <p className="text-gray-400 text-sm mt-1">Tell us about your guardian/parent</p>
               </div>
 
-              {/* Guardian Name Section */}
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-2.5 rounded border border-green-100">
-                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                  <i className='bx bx-id-card text-green-600 mr-1 text-sm'></i>
-                  Guardian Name
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <Input
-                    label="Guardian First Name"
-                    type="text"
-                    name="guardian_first_name"
-                    value={step2Data.guardian_first_name}
-                    onChange={handleStep2Change}
-                    placeholder="John"
-                    required
-                    fullWidth
-                  />
-                  <Input
-                    label="Guardian Last Name"
-                    type="text"
-                    name="guardian_last_name"
-                    value={step2Data.guardian_last_name}
-                    onChange={handleStep2Change}
-                    placeholder="Doe"
-                    required
-                    fullWidth
-                  />
+              {/* Guardian Name */}
+              <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+                <h3 className="text-sm font-medium text-emerald-400 mb-3">Guardian Name</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <DarkInput label="First Name" name="guardian_first_name" value={step2Data.guardian_first_name} onChange={handleStep2Change} placeholder="John" required />
+                  <DarkInput label="Last Name" name="guardian_last_name" value={step2Data.guardian_last_name} onChange={handleStep2Change} placeholder="Doe" required />
                 </div>
               </div>
 
-              {/* Guardian Details Section */}
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-2.5 rounded border border-blue-100">
-                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                  <i className='bx bx-info-circle text-blue-600 mr-1 text-sm'></i>
-                  Guardian Details
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <Input
-                    label="Relationship"
-                    type="text"
-                    name="guardian_relationship"
-                    value={step2Data.guardian_relationship}
-                    onChange={handleStep2Change}
-                    placeholder="e.g., Father, Mother, Uncle, Aunt"
-                    required
-                    fullWidth
-                  />
-                  <Input
-                    label="Guardian Phone Number"
-                    type="tel"
-                    name="guardian_phone"
-                    value={step2Data.guardian_phone}
-                    onChange={handleStep2Change}
-                    placeholder="+234 8012345678"
-                    required
-                    fullWidth
-                  />
+              {/* Guardian Details */}
+              <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+                <h3 className="text-sm font-medium text-emerald-400 mb-3">Guardian Details</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <DarkInput label="Relationship" name="guardian_relationship" value={step2Data.guardian_relationship} onChange={handleStep2Change} placeholder="e.g., Father, Mother" required />
+                  <DarkInput label="Phone Number" type="tel" name="guardian_phone" value={step2Data.guardian_phone} onChange={handleStep2Change} placeholder="+234 8012345678" required />
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                  <div className="flex flex-col gap-1.5 w-full">
-                    <label className="text-xs font-semibold text-gray-700">Guardian Gender *</label>
-                    <select
-                      name="guardian_gender"
-                      value={step2Data.guardian_gender}
-                      onChange={handleStep2Change}
-                      required
-                      className="px-2 py-1.5 border-2 border-gray-300 rounded text-xs transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:border-blue-300"
-                    >
-                      <option value="">Select Gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <Input
-                    label="Residential Address"
-                    type="text"
-                    name="address"
-                    value={step2Data.address}
-                    onChange={handleStep2Change}
-                    placeholder="123 Main Street, City"
-                    required
-                    fullWidth
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <DarkSelect label="Gender" name="guardian_gender" value={step2Data.guardian_gender} onChange={handleStep2Change} required>
+                    <option value="">Select Gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </DarkSelect>
+                  <DarkInput label="Address" name="address" value={step2Data.address} onChange={handleStep2Change} placeholder="123 Main Street, City" required />
                 </div>
               </div>
 
-              {/* Navigation Buttons */}
-              <div className="flex justify-between gap-2 pt-2.5 border-t border-gray-200">
-                <Button 
-                  onClick={handlePrevStep}
-                  variant="outline"
-                  className="px-3 py-1.5 rounded text-xs font-semibold hover:bg-gray-100 transition-colors"
-                >
-                  <i className='bx bx-left-arrow-alt mr-1 text-sm'></i>
+              {/* Navigation */}
+              <div className="flex justify-between pt-4 border-t border-slate-700">
+                <button onClick={handlePrevStep} className="px-5 py-2.5 text-gray-400 hover:text-white border border-slate-600 hover:border-slate-500 rounded-lg transition-all text-sm font-medium flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
                   Back
-                </Button>
-                <Button 
-                  onClick={handleNextStep}
-                  className="px-3 py-1.5 rounded text-xs font-semibold bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white transition-all"
-                >
-                  Next
-                  <i className='bx bx-right-arrow-alt ml-1 text-sm'></i>
-                </Button>
+                </button>
+                <button onClick={handleNextStep} className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-medium rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center gap-2 text-sm">
+                  Next Step
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
               </div>
             </div>
           )}
 
-          {/* Step 3: Security Setup */}
+          {/* Step 3: Security */}
           {currentStep === 3 && (
-            <div className="space-y-2.5">
-              {/* Section Header */}
-              <div className="pb-2 border-b border-gray-200">
-                <h2 className="text-sm md:text-base font-bold text-gray-900 flex items-center">
-                  <i className='bx bx-shield-alt text-purple-600 text-base mr-1'></i>
+            <div className="space-y-5">
+              <div className="pb-3 border-b border-slate-700">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
                   Security Setup
                 </h2>
-                <p className="text-gray-600 mt-0.5 text-xs">Create a strong password for your account</p>
+                <p className="text-gray-400 text-sm mt-1">Create a strong password for your account</p>
               </div>
 
-              {/* Password Section */}
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-2.5 rounded border border-purple-100">
-                <h3 className="text-xs md:text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                  <i className='bx bx-lock-alt text-purple-600 mr-1 text-sm'></i>
-                  Create Password
-                </h3>
-                <div className="space-y-2">
-                  <Input
-                    label="Password"
-                    type="password"
-                    name="password"
-                    value={step3Data.password}
-                    onChange={handleStep3Change}
-                    placeholder="Enter a strong password"
-                    required
-                    fullWidth
-                  />
-                  <Input
-                    label="Confirm Password"
-                    type="password"
-                    name="password_confirmation"
-                    value={step3Data.password_confirmation}
-                    onChange={handleStep3Change}
-                    placeholder="Confirm your password"
-                    required
-                    fullWidth
-                  />
+              <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+                <h3 className="text-sm font-medium text-emerald-400 mb-3">Create Password</h3>
+                <div className="space-y-4">
+                  <DarkInput label="Password" type="password" name="password" value={step3Data.password} onChange={handleStep3Change} placeholder="Enter a strong password" required />
+                  <DarkInput label="Confirm Password" type="password" name="password_confirmation" value={step3Data.password_confirmation} onChange={handleStep3Change} placeholder="Confirm your password" required />
 
-                  {/* Password Requirements */}
-                  <div className="bg-white rounded p-2 border border-gray-200">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">Password Requirements:</p>
-                    <ul className="space-y-0.5 text-xs text-gray-600">
-                      <li className={step3Data.password.length >= 8 ? 'text-green-600' : 'text-gray-600'}>
-                        <i className={`bx ${step3Data.password.length >= 8 ? 'bx-check-circle' : 'bx-circle'} mr-1`}></i>
-                        At least 8 characters long
-                      </li>
-                    </ul>
+                  <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-600/30">
+                    <p className="text-xs font-medium text-gray-400 mb-2">Password Requirements:</p>
+                    <div className={`flex items-center gap-2 text-xs ${step3Data.password.length >= 8 ? 'text-emerald-400' : 'text-gray-500'}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={step3Data.password.length >= 8 ? "M5 13l4 4L19 7" : "M12 8v4m0 4h.01"} />
+                      </svg>
+                      At least 8 characters long
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Navigation Buttons */}
-              <div className="flex justify-between gap-2 pt-2.5 border-t border-gray-200">
-                <Button 
-                  onClick={handlePrevStep}
-                  variant="outline"
-                  className="px-3 py-1.5 rounded text-xs font-semibold hover:bg-gray-100 transition-colors"
-                >
-                  <i className='bx bx-left-arrow-alt mr-1 text-sm'></i>
+              {/* Navigation */}
+              <div className="flex justify-between pt-4 border-t border-slate-700">
+                <button onClick={handlePrevStep} className="px-5 py-2.5 text-gray-400 hover:text-white border border-slate-600 hover:border-slate-500 rounded-lg transition-all text-sm font-medium flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
                   Back
-                </Button>
-                <Button 
-                  onClick={handleFinalSubmit}
-                  disabled={loading}
-                  className="px-3 py-1.5 rounded text-xs font-semibold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white disabled:opacity-50 transition-all"
-                >
+                </button>
+                <button onClick={handleFinalSubmit} disabled={loading} className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-medium rounded-lg hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-all flex items-center gap-2 text-sm">
                   {loading ? (
                     <>
-                      <i className='bx bx-loader-alt animate-spin mr-1 text-sm'></i>
-                      Creating...
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Creating Account...
                     </>
                   ) : (
                     <>
-                      Complete
-                      <i className='bx bx-right-arrow-alt ml-1 text-sm'></i>
+                      Complete Registration
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
                     </>
                   )}
-                </Button>
+                </button>
               </div>
             </div>
           )}
-        </Card>
+        </div>
+
+        {/* Footer Link */}
+        <div className="text-center mt-6">
+          <p className="text-gray-500 text-sm">
+            Already have an account?{' '}
+            <Link to="/student-login" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
+              Login here
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );
