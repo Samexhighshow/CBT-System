@@ -1,5 +1,5 @@
 import React, { useState, useEffect, ChangeEvent, FormEvent } from 'react';
-import { Card, Button, Input } from '../components';
+import { Card, Button, Input, TeacherSubjectSelection, StudentSubjectSelection } from '../components';
 import { showSuccess, showError, showConfirm } from '../utils/alerts';
 import axios from 'axios';
 import useAuthStore from '../store/authStore';
@@ -27,6 +27,11 @@ const Profile: React.FC<ProfileProps> = ({ asModal = false }) => {
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [twoFAStatus, setTwoFAStatus] = useState<TwoFAStatus>({ enabled: false, type: null });
+  const [showTeacherSubjects, setShowTeacherSubjects] = useState(false);
+  const [showStudentSubjects, setShowStudentSubjects] = useState(false);
+  
+  const isTeacher = user?.roles?.some((role: any) => role.name === 'Teacher');
+  const isStudent = user?.roles?.some((role: any) => role.name === 'Student');
 
   // General tab state
   const [name, setName] = useState('');
@@ -475,9 +480,50 @@ const Profile: React.FC<ProfileProps> = ({ asModal = false }) => {
                 </div>
               )}
             </Card>
+
+            {/* Subject/Class Management */}
+            {(isTeacher || isStudent) && (
+              <Card>
+                <h2 className="text-xl font-semibold mb-4">
+                  {isTeacher ? 'Teaching Subjects' : 'Class & Subjects'}
+                </h2>
+                <p className="text-gray-600 mb-4">
+                  {isTeacher 
+                    ? 'Manage the subjects you teach and their categories (JSS/SSS/Both)'
+                    : 'Update your class, department, and subject selections'
+                  }
+                </p>
+                <Button 
+                  onClick={() => isTeacher ? setShowTeacherSubjects(true) : setShowStudentSubjects(true)}
+                  variant="primary"
+                >
+                  {isTeacher ? 'Manage Teaching Subjects' : 'Update Class & Subjects'}
+                </Button>
+              </Card>
+            )}
           </div>
         )}
       </div>
+
+      {/* Subject Selection Modals */}
+      {showTeacherSubjects && (
+        <TeacherSubjectSelection
+          onClose={() => setShowTeacherSubjects(false)}
+          onSave={() => {
+            setShowTeacherSubjects(false);
+            showSuccess('Teaching subjects updated successfully');
+          }}
+        />
+      )}
+      {showStudentSubjects && (
+        <StudentSubjectSelection
+          onClose={() => setShowStudentSubjects(false)}
+          onSave={() => {
+            setShowStudentSubjects(false);
+            showSuccess('Class and subjects updated successfully');
+          }}
+        />
+      )}
     </div>
   );
 };

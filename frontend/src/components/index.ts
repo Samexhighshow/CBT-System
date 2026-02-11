@@ -12,5 +12,8 @@ export { default as KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 export { default as TwoFactorSetup } from './TwoFactorSetup';
 export { default as DashboardCharts } from './DashboardCharts';
 export { default as OfflineRouteHandler } from './OfflineRouteHandler';
+export { default as AnnouncementsCarousel } from './AnnouncementsCarousel';
 export { SkeletonCard, SkeletonList } from './Skeleton';
 export { default as SkeletonTable } from './SkeletonTable';
+export { TeacherSubjectSelection } from './TeacherSubjectSelection';
+export { StudentSubjectSelection } from './StudentSubjectSelection';

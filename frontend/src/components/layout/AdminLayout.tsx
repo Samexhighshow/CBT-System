@@ -3,13 +3,11 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import AvatarDropdown from '../AvatarDropdown';
 import useAuthStore from '../../store/authStore';
 import FooterMinimal from '../FooterMinimal';
-
-interface NavLink {
-  name: string;
-  path: string;
-  icon: string;
-  subItems?: NavLink[];
-}
+import { adminNavLinks, NavLinkConfig } from '../../config/adminNav';
+import { useRoleBasedNav } from '../../hooks/useRoleBasedNav';
+import { TeacherSubjectSelection, StudentSubjectSelection } from '../index';
+import { api } from '../../services/api';
+import { showSuccess } from '../../utils/alerts';
 
 const AdminLayout: React.FC = () => {
   const navigate = useNavigate();
@@ -18,6 +16,10 @@ const AdminLayout: React.FC = () => {
   const [isMainAdmin, setIsMainAdmin] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [allocationDropdownOpen, setAllocationDropdownOpen] = useState(false);
+  const [showTeacherSubjects, setShowTeacherSubjects] = useState(false);
+  const [showStudentSubjects, setShowStudentSubjects] = useState(false);
+  const [checkedFirstLogin, setCheckedFirstLogin] = useState(false);
+  const { loading: navLoading, filterNavLinks } = useRoleBasedNav();
 
   useEffect(() => {
     if (!user) {
@@ -27,36 +29,57 @@ const AdminLayout: React.FC = () => {
     // Check if user has Main Admin role
     const hasMainAdminRole = user.roles?.some((role: any) => role.name === 'Main Admin');
     setIsMainAdmin(hasMainAdminRole || false);
+    
+    // Check if first login (needs subject selection)
+    checkFirstLogin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate, user]);
+
+  const checkFirstLogin = async () => {
+    if (checkedFirstLogin || !user) return;
+    
+    try {
+      const isTeacher = user.roles?.some((role: any) => role.name === 'Teacher');
+      const isStudent = user.roles?.some((role: any) => role.name === 'Student');
+      
+      if (isTeacher) {
+        // Check if teacher has subjects selected
+        const res = await api.get('/preferences/teacher/subjects');
+        if (!res.data?.teacher_subjects || res.data.teacher_subjects.length === 0) {
+          setShowTeacherSubjects(true);
+        }
+      } else if (isStudent) {
+        // Check if student has class/subjects selected
+        const res = await api.get('/preferences/student/subjects');
+        if (!res.data?.class_id || !res.data?.student_subjects || res.data.student_subjects.length === 0) {
+          setShowStudentSubjects(true);
+        }
+      }
+      
+      setCheckedFirstLogin(true);
+    } catch (err) {
+      console.error('Failed to check first login:', err);
+      setCheckedFirstLogin(true);
+    }
+  };
+
+  // Check first login for subject/class selection
+  useEffect(() => {
+    if (user && !checkedFirstLogin) {
+      checkFirstLogin();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, checkedFirstLogin]);
 
   // Close sidebar when route changes (mobile)
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location.pathname]);
 
-  if (!user) return null;
+  if (!user || navLoading) return null;
 
-  const navLinks: NavLink[] = [
-    { name: 'Overview', path: '/admin', icon: 'bx-home-alt' },
-    { name: 'Questions', path: '/admin/questions', icon: 'bx-edit-alt' },
-    { name: 'Exams', path: '/admin/exams', icon: 'bx-book-content' },
-    { name: 'Students', path: '/admin/students', icon: 'bx-group' },
-    { name: 'Subjects', path: '/admin/subjects', icon: 'bx-folder' },
-    { name: 'Halls', path: '/admin/halls', icon: 'bx-building' },
-    { 
-      name: 'Allocation System', 
-      path: '/admin/allocations', 
-      icon: 'bx-layout',
-      subItems: [
-        { name: 'View Allocations', path: '/admin/allocations', icon: 'bx-list-ul' },
-        { name: 'Generate Allocation', path: '/admin/allocations/generate', icon: 'bx-plus-circle' },
-        { name: 'Teacher Assignment', path: '/admin/teachers/assign', icon: 'bx-user-check' },
-      ]
-    },
-    { name: 'Results', path: '/admin/results', icon: 'bx-bar-chart-alt-2' },
-    { name: 'Users', path: '/admin/users', icon: 'bx-shield' },
-    { name: 'Activity Logs', path: '/admin/activity-logs', icon: 'bx-history' },
-  ];
+  // Filter nav links based on user's role-based permissions
+  const navLinks: NavLinkConfig[] = filterNavLinks(adminNavLinks);
 
   const isActivePath = (path: string) => {
     if (path === '/admin') {
@@ -69,10 +92,10 @@ const AdminLayout: React.FC = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col w-full">
       {/* Top Navigation Bar - Desktop */}
       <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full sticky top-0 z-40">
-        <div className="app-shell">
-          <div className="flex justify-between items-center h-14">
+        <div className="w-full px-3 md:px-4 lg:px-6">
+          <div className="flex justify-between items-center h-14 max-w-full">
             {/* Left Section: Logo + Desktop Nav */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-1">
               {/* Mobile Hamburger */}
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -143,8 +166,8 @@ const AdminLayout: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Section: Avatar */}
-            <div className="flex items-center">
+            {/* Right Section: Avatar - Separated with space */}
+            <div className="flex items-center ml-auto pl-4">
               <AvatarDropdown showSettings={isMainAdmin} />
             </div>
           </div>
@@ -247,6 +270,26 @@ const AdminLayout: React.FC = () => {
       <div className="mt-auto">
         <FooterMinimal />
       </div>
+
+      {/* First Login Modals */}
+      {showTeacherSubjects && (
+        <TeacherSubjectSelection
+          onClose={() => setShowTeacherSubjects(false)}
+          onSave={() => {
+            setShowTeacherSubjects(false);
+            showSuccess('Subjects saved successfully');
+          }}
+        />
+      )}
+      {showStudentSubjects && (
+        <StudentSubjectSelection
+          onClose={() => setShowStudentSubjects(false)}
+          onSave={() => {
+            setShowStudentSubjects(false);
+            showSuccess('Class and subjects saved successfully');
+          }}
+        />
+      )}
     </div>
   );
 };

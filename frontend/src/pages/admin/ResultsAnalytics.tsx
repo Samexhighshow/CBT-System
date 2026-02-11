@@ -26,6 +26,30 @@ interface CbtSubject {
   class_level: string;
 }
 
+interface ReportCardSubject {
+  attempt_id: number;
+  subject_id: number;
+  subject: string;
+  class_level: string;
+  score: number;
+  total_marks: number;
+  percentage: number | null;
+  grade?: string | null;
+  status: string;
+  submitted_at?: string | null;
+}
+
+interface ReportCard {
+  student_id: number;
+  student_name: string;
+  student_email?: string;
+  class_level: string;
+  average_percentage: number;
+  pass_rate: number;
+  total_subjects: number;
+  results: ReportCardSubject[];
+}
+
 const ResultsAnalytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<AnalyticsData>({
@@ -38,6 +62,7 @@ const ResultsAnalytics: React.FC = () => {
   const [studentName, setStudentName] = useState<string>('');
   const [classLevel, setClassLevel] = useState<string>('');
   const [cbtSubjects, setCbtSubjects] = useState<CbtSubject[]>([]);
+  const [reportCards, setReportCards] = useState<ReportCard[]>([]);
 
   useEffect(() => {
     loadAnalytics();
@@ -59,20 +84,19 @@ const ResultsAnalytics: React.FC = () => {
   const loadAnalytics = async () => {
     try {
       setLoading(true);
-      // Global analytics
-      const response = await api.get('/results/analytics');
-      if (response.data) setAnalytics(response.data);
-
-      // Load filtered results
       const params = new URLSearchParams();
       if (studentName) params.append('student_name', studentName);
       if (classLevel) params.append('class_level', classLevel);
       if (subjectId) params.append('subject_id', subjectId);
 
+      const analyticsRes = await api.get(`/results/analytics?${params.toString()}`);
+      if (analyticsRes.data) setAnalytics(analyticsRes.data);
+
       const resultsRes = await api.get(`/cbt/results?${params.toString()}`);
-      if (resultsRes.data?.results) {
-        setAttempts(resultsRes.data.results);
-      }
+      if (resultsRes.data?.results) setAttempts(resultsRes.data.results);
+
+      const reportCardsRes = await api.get(`/results/report-cards?${params.toString()}`);
+      if (reportCardsRes.data?.report_cards) setReportCards(reportCardsRes.data.report_cards);
     } catch (error: any) {
       console.error('Failed to fetch analytics:', error);
       // Don't show error, just use default empty state
@@ -82,8 +106,19 @@ const ResultsAnalytics: React.FC = () => {
         total_submissions: 0,
       });
       setAttempts([]);
+      setReportCards([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const emailResults = async (studentId: number) => {
+    try {
+      await api.post(`/results/email/${studentId}`);
+      showSuccess('Results emailed successfully');
+    } catch (error: any) {
+      console.error('Failed to email results:', error);
+      showError('Could not email results for this student');
     }
   };
 
@@ -102,8 +137,8 @@ const ResultsAnalytics: React.FC = () => {
       <div className="space-y-4">
       <div className="flex flex-col md:flex-row justify-between items-start gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Results & Analytics</h1>
-          <p className="text-xs md:text-sm text-gray-600 mt-1">View exam results and performance metrics</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">Results & Analytics</h1>
+          <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 mt-1">View exam results and performance metrics</p>
         </div>
         {subjectId && (
           <div className="flex flex-col md:flex-row gap-2">
@@ -192,39 +227,101 @@ const ResultsAnalytics: React.FC = () => {
       </div>
 
       <Card>
-        <h2 className="text-xl font-semibold mb-4">Performance Analytics</h2>
-        <p className="text-gray-500 mb-4">Charts and analytics will appear here</p>
-        {attempts.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="font-semibold">Results ({attempts.length})</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <h2 className="text-xl font-semibold mb-4">Report Cards</h2>
+        {loading && <SkeletonList />}
+        {!loading && reportCards.length === 0 && (
+          <p className="text-gray-500">No report cards found for the selected filters.</p>
+        )}
+        {!loading && reportCards.length > 0 && (
+          <div className="space-y-4">
+            {reportCards.map((rc) => (
+              <div key={rc.student_id} className="border rounded-lg p-4 bg-gray-50">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-gray-600">{rc.class_level || 'Class N/A'}</p>
+                    <h3 className="text-lg font-semibold text-gray-900">{rc.student_name}</h3>
+                    {rc.student_email && <p className="text-xs text-gray-500">{rc.student_email}</p>}
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <span className="px-3 py-1 rounded bg-green-100 text-green-800">Avg: {rc.average_percentage.toFixed(1)}%</span>
+                    <span className="px-3 py-1 rounded bg-blue-100 text-blue-800">Pass: {rc.pass_rate.toFixed(1)}%</span>
+                    <span className="px-3 py-1 rounded bg-purple-100 text-purple-800">Subjects: {rc.total_subjects}</span>
+                    <Button size="sm" variant="secondary" onClick={() => emailResults(rc.student_id)}>
+                      Email Results
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto mt-3">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-white">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grade</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {rc.results.map((res) => (
+                        <tr key={res.attempt_id}>
+                          <td className="px-3 py-2 text-sm">{res.subject}</td>
+                          <td className="px-3 py-2 text-sm">{res.class_level}</td>
+                          <td className="px-3 py-2 text-sm">{res.score}/{res.total_marks} ({(res.percentage ?? 0).toFixed(1)}%)</td>
+                          <td className="px-3 py-2 text-sm">{res.grade ?? 'N/A'}</td>
+                          <td className="px-3 py-2 text-sm">
+                            <span className={`px-2 py-1 rounded text-xs ${res.status === 'graded' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                              {res.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-sm">{res.submitted_at ?? '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="text-xl font-semibold mb-4">Attempt Details</h2>
+        {attempts.length === 0 && !loading && (
+          <p className="text-gray-500">No attempts found for the selected filters.</p>
+        )}
+        {loading && <SkeletonList />}
+        {!loading && attempts.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {attempts.map((a) => (
+                  <tr key={a.id}>
+                    <td className="px-4 py-2 text-sm">{a.student_name}</td>
+                    <td className="px-4 py-2 text-sm">{a.subject}</td>
+                    <td className="px-4 py-2 text-sm">{a.class_level}</td>
+                    <td className="px-4 py-2 text-sm">{a.score}/{a.total_marks} ({(a.percentage ?? 0).toFixed(1)}%)</td>
+                    <td className="px-4 py-2 text-sm">
+                      <span className={`px-2 py-1 rounded text-xs ${a.status === 'graded' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                        {a.status}
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {attempts.map((a) => (
-                    <tr key={a.id}>
-                      <td className="px-4 py-2 text-sm">{a.student_name}</td>
-                      <td className="px-4 py-2 text-sm">{a.subject}</td>
-                      <td className="px-4 py-2 text-sm">{a.class_level}</td>
-                      <td className="px-4 py-2 text-sm">{a.score}/{a.total_marks} ({(a.percentage ?? 0).toFixed(1)}%)</td>
-                      <td className="px-4 py-2 text-sm">
-                        <span className={`px-2 py-1 rounded text-xs ${a.status === 'graded' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                          {a.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>

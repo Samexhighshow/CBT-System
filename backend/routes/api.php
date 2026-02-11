@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\RoleManagementController;
+use App\Http\Controllers\Api\PagePermissionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\SystemSettingController;
 use App\Http\Controllers\Api\ProfileController;
@@ -33,6 +35,8 @@ use App\Http\Controllers\Api\AllocationController;
 use App\Http\Controllers\Api\ExamQuestionRandomizationController;
 use App\Http\Controllers\Api\BankQuestionController;
 use App\Http\Controllers\Api\ExamQuestionController;
+use App\Http\Controllers\Api\ExamAccessController;
+use App\Http\Controllers\Api\AnnouncementController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -57,6 +61,7 @@ Route::post('/admin/signup', [UserController::class, 'store']);
 // Students
 Route::prefix('students')->group(function () {
     Route::get('/', [StudentController::class, 'index']);
+    Route::get('/by-reg-number/{regNumber}', [StudentController::class, 'getByRegistrationNumber']);
     Route::get('/{id}', [StudentController::class, 'show']);
     Route::post('/', [StudentController::class, 'store']);
     Route::put('/{id}', [StudentController::class, 'update']);
@@ -257,6 +262,23 @@ Route::middleware('auth:sanctum')->prefix('profile')->group(function () {
     Route::post('/2fa/disable', [ProfileController::class, 'disable2FA']);
 });
 
+// User Preferences (Subject/Class Selection)
+Route::middleware('auth:sanctum')->prefix('preferences')->group(function () {
+    Route::get('/options', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getOptions']);
+    
+    // Teacher preferences
+    Route::get('/teacher/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getTeacherSubjects']);
+    Route::post('/teacher/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'saveTeacherSubjects']);
+    
+    // Student preferences
+    Route::get('/student/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getStudentSubjects']);
+    Route::post('/student/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'saveStudentSubjects']);
+    Route::put('/student/class-department', [\App\Http\Controllers\Api\UserPreferenceController::class, 'updateStudentClassDepartment']);
+    
+    // Get subjects by class
+    Route::get('/subjects/class/{classId}', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getSubjectsByClass']);
+});
+
 // CBT System routes (authenticated)
 Route::middleware('auth:sanctum')->group(function () {
     // User management (Main Admin only - enforced by middleware in controller)
@@ -264,6 +286,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/roles', [RoleController::class, 'listRoles']);
     Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
 
+    // Role & page permissions management (Admin/Main Admin)
+    Route::middleware('role:Admin|Main Admin')->group(function () {
+        Route::get('/admin/roles', [RoleManagementController::class, 'listRoles']);
+        Route::get('/admin/users', [RoleManagementController::class, 'listUsers']);
+        Route::post('/admin/users/{user}/roles', [RoleManagementController::class, 'assignRole']);
+        Route::get('/admin/pages', [PagePermissionController::class, 'index']);
+        Route::get('/admin/pages/role-map', [PagePermissionController::class, 'rolePageMap']);
+        Route::post('/admin/pages/sync', [PagePermissionController::class, 'syncPages']);
+        Route::post('/admin/roles/{role}/pages', [PagePermissionController::class, 'assignToRole']);
+        Route::post('/admin/roles/modules', [PagePermissionController::class, 'updateRoleModules']);
+    });
     // Import questions to a subject
     Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
 
@@ -283,7 +316,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/cbt/results/subject/{subject}', [CbtResultsController::class, 'subjectSummary']);
     // All results with filters
     Route::get('/cbt/results', [CbtResultsController::class, 'allResults']);
-
+    // Results analytics and report cards
+    Route::get('/results/analytics', [CbtResultsController::class, 'analytics']);
+    Route::get('/results/report-cards', [CbtResultsController::class, 'reportCards']);
+    Route::post('/results/email/{student}', [CbtResultsController::class, 'emailStudentReport']);
     // CBT Subjects management
     Route::get('/cbt/subjects', [CbtSubjectController::class, 'index']);
     Route::post('/cbt/subjects', [CbtSubjectController::class, 'store']);
@@ -377,5 +413,30 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/export/excel/{runId}', [AllocationController::class, 'exportExcel']);
         Route::get('/conflicts/{runId}', [AllocationController::class, 'getConflicts']);
         Route::get('/status/{runId}', [AllocationController::class, 'checkStatus']);
+    });
+    
+    // Exam Access Management (One-Time Passwords)
+    Route::prefix('admin')->group(function () {
+        Route::get('/exams/today', [ExamAccessController::class, 'getTodayExams']);
+        Route::get('/exam-access', [ExamAccessController::class, 'index']);
+        Route::post('/exam-access/generate', [ExamAccessController::class, 'generate']);
+        Route::delete('/exam-access/{id}', [ExamAccessController::class, 'destroy']);
+    });
+    
+    // Announcements Management (Admin)
+    Route::prefix('admin/announcements')->group(function () {
+        Route::get('/', [AnnouncementController::class, 'adminIndex']); // Get all for admin management
+        Route::post('/', [AnnouncementController::class, 'store']); // Create new
+        Route::put('/{id}', [AnnouncementController::class, 'update']); // Update
+        Route::delete('/{id}', [AnnouncementController::class, 'destroy']); // Delete
+    });
+    
+    // Student exam access verification (public endpoint for login)
+    Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
+    
+    // Announcements (Public - for students to view)
+    Route::prefix('announcements')->group(function () {
+        Route::get('/', [AnnouncementController::class, 'index']); // Get all published
+        Route::get('/{id}', [AnnouncementController::class, 'show']); // Get specific announcement
     });
 });
