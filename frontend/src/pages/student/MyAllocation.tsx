@@ -1,195 +1,179 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Card, Alert, Loading } from '../../components';
-import api from '../../services/api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card } from '../../components';
+import { api } from '../../services/api';
+import { showError } from '../../utils/alerts';
+import { getCurrentStudentProfile } from './studentData';
 
-interface StudentAllocation {
-  exam: any;
-  allocation: {
-    id: number;
-    hall: any;
-    row: number;
-    column: number;
-    seat_number: number;
-  };
-  surrounding_students: Array<{
-    student: any;
-    row: number;
-    column: number;
-    direction: string;
-  }>;
+interface ExamOption {
+  id: number;
+  title: string;
+  start_datetime?: string;
+  end_datetime?: string;
+  start_time?: string;
+  end_time?: string;
+  subject?: { name?: string };
 }
 
+interface AllocationPayload {
+  id: number;
+  hall?: {
+    id: number;
+    name?: string;
+    code?: string;
+    building?: string;
+    floor?: string;
+    notes?: string;
+  };
+  row: number;
+  column: number;
+  seat_number: number;
+}
+
+const formatDate = (value?: string) => {
+  if (!value) return 'Not set';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not set';
+  return date.toLocaleString();
+};
+
 const MyAllocation: React.FC = () => {
-  const { examId } = useParams<{ examId: string }>();
-  const [allocation, setAllocation] = useState<StudentAllocation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [fetchingAllocation, setFetchingAllocation] = useState(false);
+  const [studentId, setStudentId] = useState<number | null>(null);
+  const [exams, setExams] = useState<ExamOption[]>([]);
+  const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
+  const [allocation, setAllocation] = useState<AllocationPayload | null>(null);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (examId) {
-      fetchMyAllocation();
-    }
-  }, [examId]);
+    const loadInitialData = async () => {
+      try {
+        setLoading(true);
+        const student = await getCurrentStudentProfile();
+        setStudentId(student.id);
 
-  const fetchMyAllocation = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await api.get(`/allocations/my-seat/${examId}`);
-      setAllocation(response.data);
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        setError('You have not been allocated a seat for this exam yet.');
-      } else {
-        setError(err.response?.data?.message || 'Failed to load seat allocation');
+        const examResponse = await api.get(`/students/${student.id}/exams`);
+        const rows: ExamOption[] = examResponse.data?.data || examResponse.data || [];
+        const normalizedRows = Array.isArray(rows) ? rows : [];
+        setExams(normalizedRows);
+
+        if (normalizedRows.length > 0) {
+          setSelectedExamId(normalizedRows[0].id);
+        } else {
+          setMessage('No available exams found to display seat allocation.');
+        }
+      } catch (error: any) {
+        showError(error?.response?.data?.message || 'Failed to load your exam allocations.');
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  const printAllocation = () => {
-    window.print();
-  };
+    loadInitialData();
+  }, []);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <Loading />
-      </div>
-    );
-  }
+  useEffect(() => {
+    const fetchAllocation = async () => {
+      if (!selectedExamId || !studentId) return;
 
-  if (error) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <Alert type="info" message={error} />
-      </div>
-    );
-  }
+      try {
+        setFetchingAllocation(true);
+        setMessage('');
+        const response = await api.get(`/allocations/student/${selectedExamId}/${studentId}`);
+        setAllocation(response.data?.allocation || null);
+        if (!response.data?.allocation) {
+          setMessage('No seat allocation found yet for this exam.');
+        }
+      } catch (error: any) {
+        setAllocation(null);
+        setMessage(error?.response?.data?.message || 'No seat allocation found yet for this exam.');
+      } finally {
+        setFetchingAllocation(false);
+      }
+    };
 
-  if (!allocation) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <Alert type="info" message="No allocation found for this exam." />
-      </div>
-    );
-  }
+    fetchAllocation();
+  }, [selectedExamId, studentId]);
+
+  const selectedExam = useMemo(
+    () => exams.find((exam) => exam.id === selectedExamId) || null,
+    [exams, selectedExamId]
+  );
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="mb-6 flex justify-between items-start print:block">
-        <div>
-          <h1 className="text-2xl font-bold">My Seat Allocation</h1>
-          <p className="text-gray-600">{allocation.exam.title}</p>
-          <p className="text-sm text-gray-500">
-            Date: {new Date(allocation.exam.exam_date).toLocaleDateString()}
-          </p>
-        </div>
-        <button
-          onClick={printAllocation}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 print:hidden"
-        >
-          🖨️ Print
-        </button>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">My Seat Allocation</h1>
+        <p className="text-sm text-slate-600 mt-1">Select an exam to view your hall and assigned seat.</p>
       </div>
 
-      {/* Seat Information Card */}
-      <Card className="p-6 mb-6 bg-blue-50 border-2 border-blue-300">
-        <h2 className="text-xl font-bold mb-4 text-blue-900">Your Seat Details</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <div className="text-sm text-gray-600">Exam Hall</div>
-            <div className="text-2xl font-bold text-blue-900">{allocation.allocation.hall.name}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-600">Seat Number</div>
-            <div className="text-2xl font-bold text-blue-900">#{allocation.allocation.seat_number}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-600">Row</div>
-            <div className="text-xl font-medium text-blue-900">{allocation.allocation.row}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-600">Column</div>
-            <div className="text-xl font-medium text-blue-900">{allocation.allocation.column}</div>
-          </div>
-        </div>
-      </Card>
+      {loading ? (
+        <Card><p className="text-sm text-slate-500">Loading allocation data...</p></Card>
+      ) : (
+        <>
+          <Card>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">Exam</label>
+            <select
+              value={selectedExamId || ''}
+              onChange={(e) => setSelectedExamId(Number(e.target.value) || null)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+            >
+              <option value="">Select exam</option>
+              {exams.map((exam) => (
+                <option key={exam.id} value={exam.id}>{exam.title}</option>
+              ))}
+            </select>
+          </Card>
 
-      {/* Mini Seating Map */}
-      <Card className="p-6 mb-6">
-        <h3 className="text-lg font-bold mb-4">Seat Location</h3>
-        <div className="flex justify-center">
-          <div className="inline-grid grid-cols-3 gap-2">
-            {[-1, 0, 1].map((rowOffset) => (
-              <React.Fragment key={rowOffset}>
-                {[-1, 0, 1].map((colOffset) => {
-                  const isCurrentSeat = rowOffset === 0 && colOffset === 0;
-                  const surrounding = allocation.surrounding_students.find(
-                    (s) =>
-                      s.row === allocation.allocation.row + rowOffset &&
-                      s.column === allocation.allocation.column + colOffset
-                  );
+          {selectedExam && (
+            <Card className="bg-slate-50 border border-slate-200">
+              <p className="text-sm font-semibold text-slate-900">{selectedExam.title}</p>
+              <p className="text-xs text-slate-600 mt-1">
+                {selectedExam.subject?.name || 'General'} • Start: {formatDate(selectedExam.start_datetime || selectedExam.start_time)} • End: {formatDate(selectedExam.end_datetime || selectedExam.end_time)}
+              </p>
+            </Card>
+          )}
 
-                  return (
-                    <div
-                      key={`${rowOffset}-${colOffset}`}
-                      className={`
-                        border-2 p-4 min-w-[100px] min-h-[80px] flex flex-col items-center justify-center rounded
-                        ${
-                          isCurrentSeat
-                            ? 'bg-blue-600 border-blue-700 text-white font-bold shadow-lg'
-                            : surrounding
-                            ? 'bg-gray-100 border-gray-300 text-gray-700'
-                            : 'bg-white border-gray-200 text-gray-400'
-                        }
-                      `}
-                    >
-                      {isCurrentSeat ? (
-                        <>
-                          <div className="text-xs mb-1">YOU</div>
-                          <div className="text-xl">#{allocation.allocation.seat_number}</div>
-                        </>
-                      ) : surrounding ? (
-                        <>
-                          <div className="text-xs text-gray-500">{surrounding.direction}</div>
-                          <div className="text-sm text-center">
-                            {surrounding.student?.name || surrounding.student?.user?.name || 'Student'}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-xs">Empty</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      </Card>
+          {fetchingAllocation ? (
+            <Card><p className="text-sm text-slate-500">Checking your seat allocation...</p></Card>
+          ) : allocation ? (
+            <>
+              <Card className="border border-cyan-200 bg-cyan-50">
+                <h2 className="text-xl font-bold text-cyan-900">Allocated Seat</h2>
+                <div className="grid gap-3 sm:grid-cols-2 mt-3 text-sm">
+                  <div>
+                    <p className="text-slate-500">Hall</p>
+                    <p className="font-semibold text-slate-900">{allocation.hall?.name || 'Not assigned'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Seat Number</p>
+                    <p className="font-semibold text-slate-900">#{allocation.seat_number}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Row</p>
+                    <p className="font-semibold text-slate-900">{allocation.row}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Column</p>
+                    <p className="font-semibold text-slate-900">{allocation.column}</p>
+                  </div>
+                </div>
+              </Card>
 
-      {/* Instructions */}
-      <Card className="p-6">
-        <h3 className="text-lg font-bold mb-3">Important Instructions</h3>
-        <ul className="list-disc list-inside space-y-2 text-gray-700">
-          <li>Please arrive at least 15 minutes before the exam starts</li>
-          <li>Bring your student ID card for verification</li>
-          <li>Only sit at your assigned seat number</li>
-          <li>No electronic devices except approved calculators</li>
-          <li>Follow all exam hall rules and regulations</li>
-        </ul>
-      </Card>
-
-      {/* Hall Details */}
-      {allocation.allocation.hall.notes && (
-        <Card className="p-6 mt-6">
-          <h3 className="text-lg font-bold mb-3">Hall Notes</h3>
-          <p className="text-gray-700 whitespace-pre-wrap">{allocation.allocation.hall.notes}</p>
-        </Card>
+              <Card>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">Important Instructions</h3>
+                <ul className="list-disc list-inside text-sm text-slate-700 space-y-1">
+                  <li>Arrive at least 15 minutes before exam start time.</li>
+                  <li>Bring your valid student identification.</li>
+                  <li>Sit only at your allocated seat to avoid malpractice flags.</li>
+                  <li>Follow invigilator instructions throughout the exam.</li>
+                </ul>
+              </Card>
+            </>
+          ) : (
+            <Card><p className="text-sm text-slate-500">{message || 'No seat allocation is available for the selected exam.'}</p></Card>
+          )}
+        </>
       )}
     </div>
   );

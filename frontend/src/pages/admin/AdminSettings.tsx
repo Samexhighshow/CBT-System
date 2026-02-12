@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import api from '../../services/api';
 import { showSuccess, showError } from '../../utils/alerts';
 import { useTheme } from '../../hooks/useTheme';
@@ -11,6 +11,9 @@ interface Setting {
   description?: string;
 }
 
+const findSettingValue = (key: string, settingsList: Setting[]) =>
+  settingsList.find(setting => setting.key === key)?.value;
+
 const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,22 +21,22 @@ const AdminSettings: React.FC = () => {
   const { theme, changeTheme } = useTheme();
   // Token is injected via axios interceptor in `api` using `auth_token` key
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/settings');
       setSettings(res.data);
       
       // Load system name
-      setSystemName(getValue('system_name', res.data) || 'CBT System');
+      setSystemName(findSettingValue('system_name', res.data) || 'CBT System');
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to load settings');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchSettings(); }, []);
+  useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
   const updateSetting = async (key: string, value: any) => {
     try {
@@ -212,6 +215,20 @@ const AdminSettings: React.FC = () => {
               />
               Enable debug logging
             </label>
+            <div className="mt-3">
+              <label className="text-sm">CBT tab-fencing max violations</label>
+              <input
+                type="number"
+                defaultValue={getValue('cbt_tab_fencing_max_violations') || '3'}
+                min={1}
+                onBlur={e => updateSetting('cbt_tab_fencing_max_violations', e.target.value)}
+                className="border rounded px-2 py-1 w-32 ml-2"
+                aria-label="CBT tab-fencing maximum violations"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Auto-submit exam attempt when a student reaches this tab-fencing warning count.
+              </p>
+            </div>
           </div>
 
           {/* Appearance Settings */}

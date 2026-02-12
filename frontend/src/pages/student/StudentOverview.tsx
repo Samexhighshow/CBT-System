@@ -1,257 +1,196 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, AnnouncementsCarousel } from '../../components';
+import { AnnouncementsCarousel, Card } from '../../components';
 import { api } from '../../services/api';
+import { getCurrentStudentProfile, CurrentStudentProfile } from './studentData';
 
 interface DashboardStats {
   availableExams: number;
   completedExams: number;
   averageScore: number;
-  upcomingExams: number;
+  passRate: number;
 }
 
-interface ModuleCard {
+interface QuickItem {
   title: string;
   description: string;
-  icon: string;
   path: string;
-  color: string;
-  badge?: string;
+  icon: string;
+  accent: string;
+}
+
+interface ResultPreview {
+  id: number;
+  exam_title: string;
+  score: number;
+  total_marks: number;
+  percentage: number;
+  passed: boolean;
+  completed_at?: string;
 }
 
 const StudentOverview: React.FC = () => {
   const navigate = useNavigate();
+
+  const [loading, setLoading] = useState(true);
+  const [student, setStudent] = useState<CurrentStudentProfile | null>(null);
   const [stats, setStats] = useState<DashboardStats>({
     availableExams: 0,
     completedExams: 0,
     averageScore: 0,
-    upcomingExams: 0,
+    passRate: 0,
   });
+  const [recentResults, setRecentResults] = useState<ResultPreview[]>([]);
 
   useEffect(() => {
-    loadStats();
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const profile = await getCurrentStudentProfile();
+        setStudent(profile);
+
+        const [statsResponse, resultsResponse] = await Promise.all([
+          api.get(`/analytics/student/${profile.id}/dashboard`),
+          api.get(`/results/student/${profile.id}`, {
+            params: { limit: 5 },
+          }),
+        ]);
+
+        const statsPayload = statsResponse.data || {};
+        setStats({
+          availableExams: Number(statsPayload.available_exams || 0),
+          completedExams: Number(statsPayload.total_exams_taken || 0),
+          averageScore: Number(statsPayload.average_score || 0),
+          passRate: Number(statsPayload.pass_rate || 0),
+        });
+
+        const rows: ResultPreview[] = resultsResponse.data?.data || [];
+        setRecentResults(rows.slice(0, 4));
+      } catch (error) {
+        console.error('Failed to load student overview data', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
   }, []);
 
-  const loadStats = async () => {
-    try {
-      const userData = localStorage.getItem('user');
-      if (!userData) return;
-      
-      const user = JSON.parse(userData);
-      
-      // Try to fetch stats, but don't fail if endpoint doesn't exist
-      try {
-        const response = await api.get(`/analytics/student/${user.id}/dashboard`);
-        
-        if (response.data) {
-          setStats({
-            availableExams: response.data.available_exams || 0,
-            completedExams: response.data.total_exams_taken || 0,
-            averageScore: response.data.average_score || 0,
-            upcomingExams: response.data.available_exams || 0,
-          });
-        }
-      } catch (apiError: any) {
-        // If analytics endpoint doesn't exist (404), just use defaults
-        if (apiError.response?.status === 404 || apiError.response?.status === 401) {
-          console.log('Analytics endpoint not available, using default stats');
-        } else {
-          console.error('Failed to fetch student stats:', apiError);
-        }
-      }
-    } catch (error: any) {
-      console.error('Failed to load stats:', error);
-    } finally {
-      // Always set default stats if nothing was loaded
-      setStats(prev => prev.availableExams === 0 ? {
-        availableExams: 0,
-        completedExams: 0,
-        averageScore: 0,
-        upcomingExams: 0,
-      } : prev);
-    }
-  };
-
-  const modules: ModuleCard[] = [
+  const quickItems: QuickItem[] = useMemo(() => ([
     {
       title: 'Available Exams',
-      description: 'View and take available exams',
-      icon: 'bx bx-book-content',
+      description: 'Check active exams and start immediately.',
       path: '/student/exams',
-      color: 'bg-blue-500',
-      badge: '5 New',
+      icon: 'bx bx-book-content',
+      accent: 'from-cyan-500 to-blue-600',
     },
     {
       title: 'My Results',
-      description: 'View your exam results and scores',
-      icon: 'bx bx-bar-chart-alt-2',
+      description: 'Review scores, pass rate, and recent performance.',
       path: '/student/results',
-      color: 'bg-green-500',
+      icon: 'bx bx-bar-chart-alt-2',
+      accent: 'from-emerald-500 to-teal-600',
     },
     {
-      title: 'Exam History',
-      description: 'View all your past exam attempts',
-      icon: 'bx bx-time-five',
-      path: '/student/history',
-      color: 'bg-purple-500',
+      title: 'Seat Allocation',
+      description: 'Find your allocated hall and seat for exams.',
+      path: '/student/allocations',
+      icon: 'bx bx-grid-alt',
+      accent: 'from-indigo-500 to-purple-600',
     },
     {
-      title: 'My Profile',
-      description: 'View and update your profile',
-      icon: 'bx bx-user',
+      title: 'Announcements',
+      description: 'Read notices from school administration.',
+      path: '/student/announcements',
+      icon: 'bx bx-megaphone',
+      accent: 'from-amber-500 to-orange-600',
+    },
+    {
+      title: 'Profile Settings',
+      description: 'Update personal details, password, and photo.',
       path: '/student/profile',
-      color: 'bg-orange-500',
+      icon: 'bx bx-user-circle',
+      accent: 'from-rose-500 to-pink-600',
     },
-    {
-      title: 'Practice Tests',
-      description: 'Take practice tests to prepare',
-      icon: 'bx bx-edit-alt',
-      path: '/student/practice',
-      color: 'bg-indigo-500',
-    },
-    {
-      title: 'Completed Exams',
-      description: 'Review your completed exams',
-      icon: 'bx bx-check-circle',
-      path: '/student/completed',
-      color: 'bg-pink-500',
-    },
-  ];
+  ]), []);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold text-slate-900">Student Overview</h1>
+        <p className="text-sm text-slate-600">
+          {student
+            ? `Welcome, ${student.first_name || 'Student'} (${student.registration_number || 'No Reg No'})`
+            : 'Welcome back. Here is your academic dashboard.'}
+        </p>
+      </div>
+
+      <AnnouncementsCarousel limit={5} autoScrollInterval={7000} />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
+          <p className="text-xs uppercase tracking-wide text-cyan-100">Available Exams</p>
+          <p className="text-3xl font-extrabold mt-2">{loading ? '...' : stats.availableExams}</p>
+        </Card>
+        <Card className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+          <p className="text-xs uppercase tracking-wide text-emerald-100">Completed</p>
+          <p className="text-3xl font-extrabold mt-2">{loading ? '...' : stats.completedExams}</p>
+        </Card>
+        <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+          <p className="text-xs uppercase tracking-wide text-indigo-100">Average Score</p>
+          <p className="text-3xl font-extrabold mt-2">{loading ? '...' : `${stats.averageScore.toFixed(1)}%`}</p>
+        </Card>
+        <Card className="bg-gradient-to-br from-orange-500 to-amber-600 text-white">
+          <p className="text-xs uppercase tracking-wide text-orange-100">Pass Rate</p>
+          <p className="text-3xl font-extrabold mt-2">{loading ? '...' : `${stats.passRate.toFixed(1)}%`}</p>
+        </Card>
+      </div>
+
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Student Dashboard</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">Welcome back! Here's your academic overview.</p>
-      </div>
-
-      {/* Announcements Carousel */}
-      <AnnouncementsCarousel limit={5} autoScrollInterval={6000} />
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-blue-100 text-sm">Available Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.availableExams}</h3>
-              <p className="text-blue-100 text-xs mt-1">Ready to take</p>
-            </div>
-            <i className='bx bx-book-content text-5xl'></i>
-          </div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-green-100 text-sm">Average Score</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.averageScore}%</h3>
-              <p className="text-green-100 text-xs mt-1">Overall performance</p>
-            </div>
-            <i className='bx bx-bar-chart-alt-2 text-5xl'></i>
-          </div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-purple-100 text-sm">Completed Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.completedExams}</h3>
-              <p className="text-purple-100 text-xs mt-1">This term</p>
-            </div>
-            <i className='bx bx-check-circle text-5xl'></i>
-          </div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-orange-100 text-sm">Upcoming Exams</p>
-              <h3 className="text-3xl font-bold mt-2">{stats.upcomingExams}</h3>
-              <p className="text-orange-100 text-xs mt-1">This week</p>
-            </div>
-            <i className='bx bx-time-five text-5xl'></i>
-          </div>
-        </Card>
-      </div>
-
-      {/* Modules Section */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Quick Access</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {modules.map((module) => (
-            <Card
-              key={module.path}
-              className="cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 relative"
-              onClick={() => navigate(module.path)}
+        <h2 className="text-xl font-bold text-slate-900 mb-3">Student Tools</h2>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {quickItems.map((item) => (
+            <button
+              type="button"
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className="text-left rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition"
             >
-              {module.badge && (
-                <span className="absolute top-4 right-4 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                  {module.badge}
-                </span>
-              )}
-              <div className="flex items-start space-x-4">
-                <div className={`${module.color} text-white p-3 rounded-lg flex items-center justify-center w-16 h-16`}>
-                  <i className={`${module.icon} text-3xl`}></i>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900">{module.title}</h3>
-                  <p className="text-gray-600 text-sm mt-1">{module.description}</p>
-                  <button className="text-blue-600 text-sm font-medium mt-3 hover:text-blue-700">
-                    Open →
-                  </button>
-                </div>
+              <div className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${item.accent} text-white`}>
+                <i className={`${item.icon} text-2xl`} />
               </div>
-            </Card>
+              <p className="mt-3 text-base font-semibold text-slate-900">{item.title}</p>
+              <p className="mt-1 text-sm text-slate-600">{item.description}</p>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Recent Activity */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Recent Activity</h2>
-        <Card>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b pb-4">
-              <div className="flex items-center space-x-3">
-                <div className="bg-green-100 p-2 rounded-lg">
-                  <i className='bx bx-check-circle text-2xl text-green-600'></i>
-                </div>
+      <Card>
+        <h2 className="text-lg font-bold text-slate-900 mb-3">Recent Results</h2>
+        {loading ? (
+          <p className="text-sm text-slate-500">Loading recent results...</p>
+        ) : recentResults.length === 0 ? (
+          <p className="text-sm text-slate-500">No completed results yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {recentResults.map((result) => (
+              <div key={result.id} className="rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium">Mathematics Mid-Term Exam</p>
-                  <p className="text-sm text-gray-600">Completed • Score: 85%</p>
+                  <p className="text-sm font-semibold text-slate-900">{result.exam_title}</p>
+                  <p className="text-xs text-slate-500">{result.completed_at ? new Date(result.completed_at).toLocaleString() : 'Completed'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">{result.score}/{result.total_marks}</p>
+                  <p className={`text-xs font-semibold ${result.passed ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {result.percentage?.toFixed(1)}% {result.passed ? 'Passed' : 'Pending'}
+                  </p>
                 </div>
               </div>
-              <span className="text-xs text-gray-500">2 days ago</span>
-            </div>
-            <div className="flex items-center justify-between border-b pb-4">
-              <div className="flex items-center space-x-3">
-                <div className="bg-blue-100 p-2 rounded-lg">
-                  <i className='bx bx-book-content text-2xl text-blue-600'></i>
-                </div>
-                <div>
-                  <p className="font-medium">English Language Test</p>
-                  <p className="text-sm text-gray-600">Available • 45 minutes</p>
-                </div>
-              </div>
-              <button className="text-blue-600 font-medium text-sm">Start</button>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="bg-purple-100 p-2 rounded-lg">
-                  <i className='bx bx-time-five text-2xl text-purple-600'></i>
-                </div>
-                <div>
-                  <p className="font-medium">Physics Practical Exam</p>
-                  <p className="text-sm text-gray-600">Upcoming • Tomorrow at 10:00 AM</p>
-                </div>
-              </div>
-              <span className="text-xs text-gray-500">In 1 day</span>
-            </div>
+            ))}
           </div>
-        </Card>
-      </div>
+        )}
+      </Card>
     </div>
   );
 };

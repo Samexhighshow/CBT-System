@@ -69,14 +69,17 @@ export const useRoleBasedNav = () => {
   // Filter navigation links based on user permissions
   const filterNavLinks = (navLinks: NavLinkConfig[]): NavLinkConfig[] => {
     return navLinks
-      .filter(link => userPages.includes(link.name))
-      .map(link => ({
-        ...link,
-        subItems: link.subItems
-          ? link.subItems.filter(sub => userPages.includes(sub.name))
-          : undefined
-      }))
-      .filter(link => !link.subItems || link.subItems.length > 0); // Remove parent if no sub-items
+      .map(link => {
+        if (!link.subItems) {
+          return userPages.includes(link.name) ? link : null;
+        }
+
+        const subItems = link.subItems.filter(sub => userPages.includes(sub.name));
+        if (subItems.length === 0) return null;
+
+        return { ...link, subItems };
+      })
+      .filter((link): link is NavLinkConfig => Boolean(link));
   };
 
   return { userPages, loading, filterNavLinks };

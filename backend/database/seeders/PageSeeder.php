@@ -26,7 +26,8 @@ class PageSeeder extends Seeder
             ['name' => 'Teacher Assignment', 'path' => '/admin/teachers/assign', 'category' => 'Allocation'],
             ['name' => 'Halls', 'path' => '/admin/halls', 'category' => 'Allocation'],
             ['name' => 'Allocation System', 'path' => '/admin/allocations', 'category' => 'Allocation'],
-            ['name' => 'Results', 'path' => '/admin/results', 'category' => 'Analytics'],
+            ['name' => 'Results & Marking', 'path' => '/admin/results', 'category' => 'Analytics'],
+            ['name' => 'Marking Workbench', 'path' => '/admin/marking', 'category' => 'Analytics'],
             ['name' => 'Users', 'path' => '/admin/users', 'category' => 'Admin'],
             ['name' => 'System Settings', 'path' => '/admin/system-settings', 'category' => 'Admin'],
             ['name' => 'Activity Logs', 'path' => '/admin/activity-logs', 'category' => 'Admin'],
@@ -64,15 +65,15 @@ class PageSeeder extends Seeder
                 return !in_array($name, $excluded);
             }, ARRAY_FILTER_USE_KEY)),
             'Sub-Admin' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results',
+                'Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench',
                 'Academic Management', 'Announcements', 'Allocation System', 'View Allocations',
                 'Generate Allocation', 'Teacher Assignment', 'Halls'
             ]))),
             'Moderator' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Exams', 'Exam Access', 'Students', 'Results'
+                'Overview', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench'
             ]))),
             'Teacher' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Questions', 'Results'
+                'Overview', 'Questions', 'Results & Marking'
             ]))),
         ];
 

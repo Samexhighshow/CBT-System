@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import { useTeacherSetup } from './hooks/useTeacherSetup';
 import { useTheme } from './hooks/useTheme';
@@ -20,7 +20,6 @@ import PasswordResetRequest from './pages/PasswordResetRequest';
 import PasswordReset from './pages/PasswordReset';
 import PasswordOtpRequest from './pages/PasswordOtpRequest';
 import PasswordOtpReset from './pages/PasswordOtpReset';
-import ExamAccessLogin from './pages/ExamAccessLogin';
 import AdminSignup from './pages/admin/AdminSignup';
 import AdminSettings from './pages/admin/AdminSettings';
 import Profile from './pages/Profile';
@@ -28,6 +27,7 @@ import SubjectSelection from './pages/SubjectSelection';
 import QuestionBank from './pages/admin/QuestionBank';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
+import CbtInterfaceApp from './cbt-interface/CbtInterfaceApp';
 
 const App: React.FC = () => {
   const { showModal, handleComplete, handleSkip } = useTeacherSetup();
@@ -56,13 +56,14 @@ const App: React.FC = () => {
         <Route path="/register" element={<StudentRegistrationForm />} />
         <Route path="/login" element={<StudentLogin />} />
         <Route path="/student-login" element={<StudentLogin />} />
-        <Route path="/exam-access" element={<ExamAccessLogin />} />
+        <Route path="/exam-access" element={<Navigate to="/cbt" replace />} />
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route path="/forgot-password" element={<PasswordResetRequest />} />
         <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="/forgot-password-otp" element={<PasswordOtpRequest />} />
         <Route path="/reset-password-otp" element={<PasswordOtpReset />} />
         <Route path="/admin/signup" element={<AdminSignup />} />
+        <Route path="/cbt/*" element={<CbtInterfaceApp />} />
         
         {/* Profile Route (All authenticated users) */}
         <Route

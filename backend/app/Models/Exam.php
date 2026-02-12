@@ -114,6 +114,14 @@ class Exam extends Model
     }
 
     /**
+     * Get linked bank questions for this exam
+     */
+    public function examQuestions()
+    {
+        return $this->hasMany(ExamQuestion::class, 'exam_id');
+    }
+
+    /**
      * Get question pools for this exam (Phase 7)
      */
     public function questionPools()
@@ -417,6 +425,13 @@ class Exam extends Model
      */
     public function getTotalMarks(): float
     {
+        $examQuestions = $this->examQuestions()->with('bankQuestion')->get();
+        if ($examQuestions->isNotEmpty()) {
+            return (float) $examQuestions->sum(function ($item) {
+                return $item->marks_override ?? ($item->bankQuestion->marks ?? 0);
+            });
+        }
+
         return (float) $this->questions()->sum('marks');
     }
 

@@ -12,6 +12,47 @@ use Illuminate\Validation\Rule;
 class StudentController extends Controller
 {
     /**
+     * Get current authenticated student's profile snapshot.
+     */
+    public function getCurrentProfile(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Authentication required.',
+            ], 401);
+        }
+
+        $student = Student::with(['department', 'schoolClass'])
+            ->where('email', $user->email)
+            ->first();
+
+        if (!$student) {
+            return response()->json([
+                'message' => 'Student profile not found for this user account.',
+            ], 404);
+        }
+
+        $completedAttempts = $student->examAttempts()->whereIn('status', ['completed', 'submitted'])->count();
+        $averageScore = (float) ($student->examAttempts()->whereIn('status', ['completed', 'submitted'])->avg('score') ?? 0);
+
+        return response()->json([
+            'id' => $student->id,
+            'registration_number' => $student->registration_number,
+            'first_name' => $student->first_name,
+            'last_name' => $student->last_name,
+            'other_names' => $student->other_names,
+            'email' => $student->email,
+            'class_level' => $student->class_level,
+            'department' => $student->department?->name,
+            'class_name' => $student->schoolClass?->name,
+            'completed_attempts' => $completedAttempts,
+            'average_score' => round($averageScore, 2),
+        ]);
+    }
+
+    /**
      * Display a listing of students
      */
     public function index(Request $request)
@@ -208,12 +249,28 @@ class StudentController extends Controller
     public function getExams($id)
     {
         $student = Student::findOrFail($id);
-        
-        $exams = $student->department->exams()
-            ->with(['subject', 'questions'])
-            ->where('status', 'published')
-            ->where('start_time', '<=', now())
-            ->where('end_time', '>=', now())
+
+        $now = now();
+
+        $exams = \App\Models\Exam::with(['subject', 'schoolClass'])
+            ->where('class_id', $student->class_id)
+            ->where('published', true)
+            ->whereIn('status', ['scheduled', 'active'])
+            ->where(function ($query) use ($now) {
+                $query->where(function ($q) {
+                    $q->whereNull('start_datetime')->whereNull('start_time');
+                })
+                ->orWhere('start_datetime', '<=', $now)
+                ->orWhere('start_time', '<=', $now);
+            })
+            ->where(function ($query) use ($now) {
+                $query->where(function ($q) {
+                    $q->whereNull('end_datetime')->whereNull('end_time');
+                })
+                ->orWhere('end_datetime', '>=', $now)
+                ->orWhere('end_time', '>=', $now);
+            })
+            ->orderByRaw('COALESCE(start_datetime, start_time) asc')
             ->get();
 
         return response()->json($exams);
@@ -241,16 +298,31 @@ class StudentController extends Controller
     public function getStatistics($id)
     {
         $student = Student::findOrFail($id);
-        
+
         $totalExams = $student->examAttempts()->where('status', 'completed')->count();
         $averageScore = $student->examAttempts()
             ->where('status', 'completed')
             ->avg('score') ?? 0;
-        
-        $availableExams = $student->department->exams()
-            ->where('status', 'published')
-            ->where('start_time', '<=', now())
-            ->where('end_time', '>=', now())
+
+        $now = now();
+        $availableExams = \App\Models\Exam::query()
+            ->where('class_id', $student->class_id)
+            ->where('published', true)
+            ->whereIn('status', ['scheduled', 'active'])
+            ->where(function ($query) use ($now) {
+                $query->where(function ($q) {
+                    $q->whereNull('start_datetime')->whereNull('start_time');
+                })
+                ->orWhere('start_datetime', '<=', $now)
+                ->orWhere('start_time', '<=', $now);
+            })
+            ->where(function ($query) use ($now) {
+                $query->where(function ($q) {
+                    $q->whereNull('end_datetime')->whereNull('end_time');
+                })
+                ->orWhere('end_datetime', '>=', $now)
+                ->orWhere('end_time', '>=', $now);
+            })
             ->count();
 
         return response()->json([

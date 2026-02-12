@@ -3,32 +3,38 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\ExamAccess;
 use App\Models\Exam;
-use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use App\Models\ExamAccess;
+use App\Models\ExamAttempt;
+use App\Models\Student;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class ExamAccessController extends Controller
 {
     /**
-     * Get all exam access records
+     * Get all exam access records.
      */
     public function index()
     {
         try {
-            $accessRecords = ExamAccess::with(['exam', 'student'])
+            $accessRecords = ExamAccess::with(['exam:id,title', 'student:id,registration_number,first_name,last_name'])
                 ->orderBy('created_at', 'desc')
                 ->get()
-                ->map(function ($access) {
+                ->map(function (ExamAccess $access) {
+                    $studentName = $access->student
+                        ? trim($access->student->first_name . ' ' . $access->student->last_name)
+                        : 'Unknown';
+
                     return [
                         'id' => $access->id,
-                        'student_reg_number' => $access->student->reg_number ?? 'N/A',
-                        'student_name' => $access->student->name ?? 'Unknown',
+                        'student_reg_number' => $access->student_reg_number ?? $access->student?->registration_number ?? 'N/A',
+                        'student_name' => $studentName,
                         'exam_title' => $access->exam->title ?? 'Unknown Exam',
                         'access_code' => $access->access_code,
-                        'used' => $access->used,
+                        'used' => (bool) $access->used,
                         'used_at' => $access->used_at,
                         'generated_at' => $access->created_at,
                         'expires_at' => $access->expires_at,
@@ -49,13 +55,13 @@ class ExamAccessController extends Controller
     }
 
     /**
-     * Generate access codes for students
+     * Generate access codes for students.
      */
     public function generate(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'exam_id' => 'required|exists:exams,id',
-            'student_id' => 'sometimes|exists:users,id',
+            'student_id' => 'sometimes|exists:students,id',
             'reg_numbers' => 'sometimes|array|min:1',
             'reg_numbers.*' => 'sometimes|string',
         ]);
@@ -73,11 +79,9 @@ class ExamAccessController extends Controller
             $generated = [];
             $errors = [];
 
-            // Handle single student generation
             if ($request->has('student_id')) {
-                $student = User::findOrFail($request->student_id);
-                
-                // Check if student already has an unused access code for this exam
+                $student = Student::findOrFail($request->student_id);
+
                 $existingAccess = ExamAccess::where('exam_id', $exam->id)
                     ->where('student_id', $student->id)
                     ->where('used', false)
@@ -86,20 +90,17 @@ class ExamAccessController extends Controller
                 if ($existingAccess) {
                     return response()->json([
                         'success' => false,
-                        'message' => "Student already has an unused access code for this exam",
+                        'message' => 'Student already has an unused access code for this exam',
                     ], 422);
                 }
 
-                // Generate access code
                 $accessCode = ExamAccess::generateUniqueCode();
+                $expiresAt = $this->resolveExpiryForExam($exam);
 
-                // Set expiration to end of exam day
-                $expiresAt = Carbon::parse($exam->date)->endOfDay();
-
-                // Create access record
                 $access = ExamAccess::create([
                     'exam_id' => $exam->id,
                     'student_id' => $student->id,
+                    'student_reg_number' => $student->registration_number,
                     'access_code' => $accessCode,
                     'used' => false,
                     'expires_at' => $expiresAt,
@@ -111,8 +112,8 @@ class ExamAccessController extends Controller
                     'data' => [
                         'id' => $access->id,
                         'access_code' => $accessCode,
-                        'student_name' => $student->name,
-                        'student_reg_number' => $student->reg_number,
+                        'student_name' => trim($student->first_name . ' ' . $student->last_name),
+                        'student_reg_number' => $student->registration_number,
                         'exam_title' => $exam->title,
                         'generated_at' => $access->created_at,
                         'expires_at' => $expiresAt,
@@ -120,23 +121,21 @@ class ExamAccessController extends Controller
                 ], 201);
             }
 
-            // Handle bulk registration numbers
             $regNumbers = $request->reg_numbers ?? [];
 
-            foreach ($regNumbers as $regNumber) {
-                // Find student by registration number
-                $student = User::where('reg_number', $regNumber)
-                    ->whereHas('roles', function ($query) {
-                        $query->where('name', 'Student');
-                    })
-                    ->first();
+            foreach ($regNumbers as $regNumberInput) {
+                $regNumber = strtoupper(trim((string) $regNumberInput));
+                if ($regNumber === '') {
+                    continue;
+                }
+
+                $student = Student::where('registration_number', $regNumber)->first();
 
                 if (!$student) {
                     $errors[] = "Student with reg number {$regNumber} not found";
                     continue;
                 }
 
-                // Check if student already has an unused access code for this exam
                 $existingAccess = ExamAccess::where('exam_id', $exam->id)
                     ->where('student_id', $student->id)
                     ->where('used', false)
@@ -147,24 +146,21 @@ class ExamAccessController extends Controller
                     continue;
                 }
 
-                // Generate access code
                 $accessCode = ExamAccess::generateUniqueCode();
+                $expiresAt = $this->resolveExpiryForExam($exam);
 
-                // Set expiration to end of exam day
-                $expiresAt = Carbon::parse($exam->date)->endOfDay();
-
-                // Create access record
-                $access = ExamAccess::create([
+                ExamAccess::create([
                     'exam_id' => $exam->id,
                     'student_id' => $student->id,
+                    'student_reg_number' => $student->registration_number,
                     'access_code' => $accessCode,
                     'used' => false,
                     'expires_at' => $expiresAt,
                 ]);
 
                 $generated[] = [
-                    'reg_number' => $regNumber,
-                    'student_name' => $student->name,
+                    'reg_number' => $student->registration_number,
+                    'student_name' => trim($student->first_name . ' ' . $student->last_name),
                     'access_code' => $accessCode,
                 ];
             }
@@ -192,13 +188,14 @@ class ExamAccessController extends Controller
     }
 
     /**
-     * Verify and use an access code
+     * Verify an access code and allow resume if attempt is still in-progress.
      */
     public function verify(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'access_code' => 'required|string',
-            'exam_id' => 'required|exists:exams,id',
+            'exam_id' => 'nullable|exists:exams,id',
+            'reg_number' => 'nullable|string|max:64',
         ]);
 
         if ($validator->fails()) {
@@ -210,22 +207,30 @@ class ExamAccessController extends Controller
         }
 
         try {
-            $access = ExamAccess::where('access_code', $request->access_code)
-                ->where('exam_id', $request->exam_id)
-                ->first();
+            $accessCode = strtoupper((string) $request->input('access_code'));
+            $regNumber = strtoupper((string) $request->input('reg_number', ''));
+
+            $query = ExamAccess::where('access_code', $accessCode);
+
+            if ($request->filled('exam_id')) {
+                $query->where('exam_id', $request->input('exam_id'));
+            }
+
+            if ($regNumber !== '') {
+                $query->where(function ($q) use ($regNumber) {
+                    $q->where('student_reg_number', $regNumber)
+                        ->orWhereHas('student', function ($sq) use ($regNumber) {
+                            $sq->where('registration_number', $regNumber);
+                        });
+                });
+            }
+
+            $access = $query->first();
 
             if (!$access) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid access code for this exam',
-                ], 403);
-            }
-
-            if ($access->used) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This access code has already been used',
-                    'used_at' => $access->used_at,
                 ], 403);
             }
 
@@ -236,15 +241,47 @@ class ExamAccessController extends Controller
                 ], 403);
             }
 
-            // Mark as used
-            $access->markAsUsed();
+            $student = $access->student;
+
+            if ($regNumber !== '' && $student && strtoupper((string) $student->registration_number) !== $regNumber) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Access code does not match this registration number',
+                ], 403);
+            }
+
+            $resumableAttempt = null;
+            if ($student) {
+                $resumableAttempt = ExamAttempt::where('exam_id', $access->exam_id)
+                    ->where('student_id', $student->id)
+                    ->whereIn('status', ['pending', 'in_progress'])
+                    ->where(function ($q) {
+                        $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
+                    })
+                    ->latest('id')
+                    ->first();
+            }
+
+            if ($access->used && !$resumableAttempt) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This access code has already been used',
+                    'used_at' => $access->used_at,
+                ], 403);
+            }
+
+            if (!$access->used) {
+                $access->markAsUsed();
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Access code verified successfully',
                 'data' => [
-                    'student_id' => $access->student_id,
+                    'student_id' => $student?->id ?? $access->student_id,
                     'exam_id' => $access->exam_id,
+                    'attempt_id' => $resumableAttempt?->id,
+                    'resume_available' => (bool) $resumableAttempt,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -257,7 +294,7 @@ class ExamAccessController extends Controller
     }
 
     /**
-     * Revoke an access code (delete unused code)
+     * Revoke an access code (delete unused code).
      */
     public function destroy($id)
     {
@@ -287,24 +324,31 @@ class ExamAccessController extends Controller
     }
 
     /**
-     * Get today's exams for access code generation
+     * Get today's exams for access code generation.
      */
     public function getTodayExams()
     {
         try {
             $today = Carbon::today();
-            $exams = Exam::with('subject')
-                ->whereDate('date', $today)
-                ->orderBy('start_time')
+
+            $exams = Exam::with('subject:id,name')
+                ->where(function ($query) use ($today) {
+                    $query->whereDate('start_datetime', $today)
+                        ->orWhereDate('start_time', $today);
+                })
+                ->orderByRaw('COALESCE(start_datetime, start_time) asc')
                 ->get()
-                ->map(function ($exam) {
+                ->map(function (Exam $exam) {
+                    $start = $exam->start_datetime ?? $exam->start_time;
+                    $end = $exam->end_datetime ?? $exam->end_time;
+
                     return [
                         'id' => $exam->id,
                         'title' => $exam->title,
                         'subject_name' => $exam->subject->name ?? 'Unknown',
-                        'date' => $exam->date,
-                        'start_time' => $exam->start_time,
-                        'end_time' => $exam->end_time,
+                        'date' => optional($start)->toDateString(),
+                        'start_time' => optional($start)->format('H:i'),
+                        'end_time' => optional($end)->format('H:i'),
                     ];
                 });
 
@@ -319,5 +363,16 @@ class ExamAccessController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function resolveExpiryForExam(Exam $exam): Carbon
+    {
+        $examEnd = $exam->end_datetime ?? $exam->end_time;
+
+        if ($examEnd instanceof Carbon) {
+            return $examEnd->copy();
+        }
+
+        return Carbon::today()->endOfDay();
     }
 }

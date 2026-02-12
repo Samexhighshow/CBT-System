@@ -3,9 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 // Routes that work offline
 const OFFLINE_ENABLED_ROUTES = [
-  '/student/overview',
+  '/student',
   '/student/exams',
   '/student/results',
+  '/student/allocations',
+  '/student/announcements',
+  '/student/profile',
   '/offline-exam/',
   '/profile',
 ];

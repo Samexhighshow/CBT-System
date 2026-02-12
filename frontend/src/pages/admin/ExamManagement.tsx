@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, SkeletonTable } from '../../components';
+import { SkeletonTable } from '../../components';
 import { api } from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
@@ -56,9 +56,6 @@ const ExamManagement: React.FC = () => {
   const [openRowMenu, setOpenRowMenu] = useState<{ exam: ExamRow, top: number, left: number } | null>(null);
   const [classLevelFilter, setClassLevelFilter] = useState<string>('');
   const [assessmentTypeFilter, setAssessmentTypeFilter] = useState<string>('');
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
   
   // PHASE 8: Delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -120,44 +117,6 @@ const ExamManagement: React.FC = () => {
     return result;
   }, [classes, examForm.class_id]);
 
-  const handleDownloadSampleCSV = () => {
-    const csvContent = 'title,description,class_id,subject_id,duration_minutes,start_datetime,end_datetime,instructions,status\n' +
-                       'Mid-Term Math Exam,Mathematics examination for SSS 1,1,1,90,2025-01-15 09:00:00,2025-01-15 10:30:00,Answer all questions,scheduled\n' +
-                       'English Language Test,Comprehension and grammar test,2,2,60,2025-01-20 14:00:00,2025-01-20 15:00:00,No use of dictionaries,draft';
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'exams-sample-template.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleBulkUpload = async () => {
-    if (!uploadFile) return;
-    
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('file', uploadFile);
-    
-    try {
-      await api.post('/exams/bulk-upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      showSuccess('Exams uploaded successfully');
-      setShowUploadModal(false);
-      setUploadFile(null);
-      loadExams();
-    } catch (error: any) {
-      showError(error.response?.data?.message || 'Failed to upload CSV');
-    } finally {
-      setUploading(false);
-    }
-  };
 
   const loadExams = async () => {
     try {
@@ -183,22 +142,56 @@ const ExamManagement: React.FC = () => {
     }
   };
 
-  const handleExportExams = async () => {
-    try {
-      const response = await api.get('/exams/export', { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `exams_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      showSuccess('Exams exported successfully');
-    } catch (error) {
-      console.error('Export failed:', error);
-      showError('Failed to export exams');
-    }
+  const handleExportExams = () => {
+    if (selectedExams.length === 0) return;
+
+    const selectedRows = exams.filter((exam) => selectedExams.includes(exam.id));
+    const csvEscape = (value: unknown) => {
+      const text = String(value ?? '');
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const headers = [
+      'Exam ID',
+      'Title',
+      'Assessment Type',
+      'Class Level',
+      'Subject',
+      'Duration (mins)',
+      'Status',
+      'Published',
+      'Results Released',
+      'Start DateTime',
+      'End DateTime',
+    ];
+
+    const lines = selectedRows.map((exam) => [
+      exam.id,
+      exam.title,
+      exam.assessment_type || '',
+      exam.school_class?.name || '',
+      exam.subject?.name || '',
+      exam.duration_minutes,
+      exam.status,
+      exam.published ? 'Yes' : 'No',
+      exam.results_released ? 'Yes' : 'No',
+      exam.start_datetime || exam.start_time || '',
+      exam.end_datetime || exam.end_time || '',
+    ].map(csvEscape).join(','));
+
+    const csv = [headers.map(csvEscape).join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `exams-export-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    showSuccess(`${selectedRows.length} exam(s) exported`);
   };
+
 
   const handleBulkDeleteExams = async () => {
     if (selectedExams.length === 0) return;
@@ -373,7 +366,7 @@ const ExamManagement: React.FC = () => {
     } else {
       setSubjects([]);
     }
-  }, [examForm.class_id]);
+  }, [examForm.class_id, classes]);
 
   useKeyboardShortcuts({
     onSearch: () => searchInputRef.current?.focus(),
@@ -641,10 +634,13 @@ const ExamManagement: React.FC = () => {
     } catch (e: any) {
       const archived = e.response?.data?.errors?.archived;
       const subjectMismatch = e.response?.data?.errors?.subject_mismatch;
+      const classMismatch = e.response?.data?.errors?.class_mismatch;
       if (archived && Array.isArray(archived)) {
         showError(`Cannot add archived question(s): ${archived.join(', ')}`);
       } else if (subjectMismatch && Array.isArray(subjectMismatch)) {
         showError(`Subject mismatch question(s): ${subjectMismatch.join(', ')}. Only questions for '${viewingExam.subject?.name}' are allowed.`);
+      } else if (classMismatch && Array.isArray(classMismatch)) {
+        showError(`Class mismatch question(s): ${classMismatch.join(', ')}. Only questions for the exam class are allowed.`);
       } else {
         showError(e.response?.data?.message || 'Failed to add questions');
       }
@@ -707,45 +703,10 @@ const ExamManagement: React.FC = () => {
           <div className="text-xs text-gray-600">
             {exams.length} total exams
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportExams}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium text-xs transition-colors flex items-center gap-2"
-            >
-              <i className='bx bx-download'></i>
-              Export CSV
-            </button>
-          </div>
         </div>
 
         {/* Action Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div 
-            onClick={() => setShowUploadModal(true)}
-            className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
-          >
-            <div className="flex justify-center mb-3">
-              <div className="text-4xl text-gray-400">
-                <i className='bx bx-file'></i>
-              </div>
-            </div>
-            <h3 className="text-base md:text-lg font-bold text-gray-800 mb-1">Upload CSV File</h3>
-            <p className="text-xs text-gray-600">Bulk upload exams from CSV</p>
-          </div>
-
-          <div 
-            onClick={handleDownloadSampleCSV}
-            className="border-2 border-dashed border-green-500 rounded-lg p-6 text-center cursor-pointer hover:border-green-600 hover:bg-green-50 transition-all duration-200"
-          >
-            <div className="flex justify-center mb-3">
-              <div className="text-4xl text-green-500">
-                <i className='bx bx-download'></i>
-              </div>
-            </div>
-            <h3 className="text-base md:text-lg font-bold text-gray-800 mb-1">Download Sample CSV</h3>
-            <p className="text-xs text-gray-600">Download CSV format template</p>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div 
             onClick={handleOpenCreateModal}
             className="border-2 border-dashed border-purple-500 rounded-lg p-6 text-center cursor-pointer hover:border-purple-600 hover:bg-purple-50 transition-all duration-200"
@@ -1367,96 +1328,6 @@ const ExamManagement: React.FC = () => {
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
-        )}
-        {/* Bulk Upload Modal */}
-        {showUploadModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col">
-              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
-                <h3 className="text-xl font-bold text-gray-800">
-                  Bulk Upload Exams
-                </h3>
-                <button
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setUploadFile(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 text-2xl transition-colors"
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className="px-6 py-6 space-y-5 overflow-y-auto flex-1">
-                <div>
-                  <p className="text-sm text-gray-700 mb-3 font-medium">
-                    Upload a CSV file with the following columns:
-                  </p>
-                  <ul className="text-xs text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-1.5">
-                    <li>• <strong>title</strong> (required)</li>
-                    <li>• <strong>description</strong> (optional)</li>
-                    <li>• <strong>class_id</strong> (required): ID of the class</li>
-                    <li>• <strong>subject_id</strong> (required): ID of the subject</li>
-                    <li>• <strong>duration_minutes</strong> (required): Duration in minutes</li>
-                    <li>• <strong>start_datetime</strong> (required): Format: YYYY-MM-DD HH:MM:SS</li>
-                    <li>• <strong>end_datetime</strong> (required): Format: YYYY-MM-DD HH:MM:SS</li>
-                    <li>• <strong>instructions</strong> (optional)</li>
-                    <li>• <strong>status</strong> (optional): draft/scheduled/active/completed/cancelled</li>
-                  </ul>
-                </div>
-
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-all bg-gray-50 hover:bg-blue-50">
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                    className="hidden"
-                    id="csv-upload-exams"
-                  />
-                  <label htmlFor="csv-upload-exams" className="cursor-pointer block">
-                    <div className="flex justify-center mb-3">
-                      <i className='bx bx-cloud-upload text-6xl text-gray-400'></i>
-                    </div>
-                    <p className="text-base font-semibold text-gray-800 mb-1">
-                      {uploadFile ? uploadFile.name : 'Click to upload CSV'}
-                    </p>
-                    <p className="text-sm text-gray-500">or drag and drop</p>
-                  </label>
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadModal(false);
-                      setUploadFile(null);
-                    }}
-                    className="flex-1 px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-sm transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleBulkUpload}
-                    disabled={!uploadFile || uploading}
-                    className="flex-1 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:shadow-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-                  >
-                    {uploading ? (
-                      <>
-                        <i className='bx bx-loader-alt bx-spin text-lg'></i>
-                        Uploading...
-                      </>
-                    ) : (
-                      <>
-                        <i className='bx bx-upload text-lg'></i>
-                        Upload
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         )}

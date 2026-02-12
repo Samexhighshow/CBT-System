@@ -35,11 +35,20 @@ class ExamQuestionController extends Controller
         $archived = [];
         $warnings = [];
         $subjectMismatch = [];
+        $classMismatch = [];
+        $examClassLevel = $exam->class_level
+            ?? optional($exam->schoolClass)->name
+            ?? optional($exam->classLevel)->name;
         foreach ($data['items'] as $item) {
             $bankQ = BankQuestion::findOrFail($item['bank_question_id']);
             // Subject alignment: require question.subject_id to equal exam.subject_id
             if ((int)($bankQ->subject_id ?? 0) !== (int)$exam->subject_id) {
                 $subjectMismatch[] = $bankQ->id;
+            }
+            if ($examClassLevel) {
+                if (!$bankQ->class_level || strcasecmp($bankQ->class_level, $examClassLevel) !== 0) {
+                    $classMismatch[] = $bankQ->id;
+                }
             }
             if (strcasecmp($bankQ->status, 'Archived') === 0) {
                 $archived[] = $bankQ->id;
@@ -52,13 +61,16 @@ class ExamQuestionController extends Controller
             }
         }
 
-        if (!empty($archived) || !empty($subjectMismatch)) {
+        if (!empty($archived) || !empty($subjectMismatch) || !empty($classMismatch)) {
             $errors = [];
             if (!empty($archived)) {
                 $errors['archived'] = $archived;
             }
             if (!empty($subjectMismatch)) {
                 $errors['subject_mismatch'] = $subjectMismatch;
+            }
+            if (!empty($classMismatch)) {
+                $errors['class_mismatch'] = $classMismatch;
             }
             return response()->json([
                 'message' => 'Some questions cannot be added due to validation errors.',

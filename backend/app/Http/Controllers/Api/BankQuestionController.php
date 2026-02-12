@@ -7,6 +7,7 @@ use App\Models\BankQuestion;
 use App\Models\BankQuestionOption;
 use App\Models\BankQuestionTag;
 use App\Models\BankQuestionVersion;
+use App\Models\Subject;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -65,8 +66,8 @@ class BankQuestionController extends Controller
             'question_type' => ['required', Rule::in($this->types)],
             'marks' => ['required','integer','min:1'],
             'difficulty' => ['required', Rule::in($this->difficulties)],
-            'subject_id' => ['nullable','integer','exists:subjects,id'],
-            'class_level' => ['nullable','string','max:100'],
+            'subject_id' => ['required','integer','exists:subjects,id'],
+            'class_level' => ['required','string','max:100'],
             'instructions' => ['nullable','string'],
             'status' => ['nullable', Rule::in($this->statuses)],
             'tags' => ['array'],
@@ -75,6 +76,15 @@ class BankQuestionController extends Controller
             'options.*.option_text' => ['required_with:options','string'],
             'options.*.is_correct' => ['boolean'],
         ]);
+
+        $subject = Subject::find($validated['subject_id']);
+        $subjectClassLevel = $subject?->class_level ?? $subject?->schoolClass?->name;
+        if ($subjectClassLevel && strcasecmp($subjectClassLevel, $validated['class_level']) !== 0) {
+            return response()->json([
+                'message' => 'Subject does not match the selected class level',
+                'errors' => ['class_level' => ["Subject '{$subject->name}' is not available for class '{$validated['class_level']}'."]],
+            ], 422);
+        }
 
         return DB::transaction(function () use ($validated, $request) {
             $status = $validated['status'] ?? 'Draft';
@@ -133,8 +143,8 @@ class BankQuestionController extends Controller
             'question_type' => ['sometimes', Rule::in($this->types)],
             'marks' => ['sometimes','integer','min:1'],
             'difficulty' => ['sometimes', Rule::in($this->difficulties)],
-            'subject_id' => ['nullable','integer','exists:subjects,id'],
-            'class_level' => ['nullable','string','max:100'],
+            'subject_id' => ['sometimes','integer','exists:subjects,id'],
+            'class_level' => ['sometimes','string','max:100'],
             'instructions' => ['nullable','string'],
             'status' => ['sometimes', Rule::in($this->statuses)],
             'tags' => ['array'],
@@ -144,6 +154,19 @@ class BankQuestionController extends Controller
             'options.*.is_correct' => ['boolean'],
             'change_notes' => ['nullable','string','max:255'],
         ]);
+
+        if (array_key_exists('subject_id', $validated) || array_key_exists('class_level', $validated)) {
+            $subjectId = $validated['subject_id'] ?? $question->subject_id;
+            $classLevel = $validated['class_level'] ?? $question->class_level;
+            $subject = Subject::find($subjectId);
+            $subjectClassLevel = $subject?->class_level ?? $subject?->schoolClass?->name;
+            if ($subjectClassLevel && $classLevel && strcasecmp($subjectClassLevel, $classLevel) !== 0) {
+                return response()->json([
+                    'message' => 'Subject does not match the selected class level',
+                    'errors' => ['class_level' => ["Subject '{$subject->name}' is not available for class '{$classLevel}'."]],
+                ], 422);
+            }
+        }
 
         return DB::transaction(function () use ($validated, $question, $request) {
             $original = $question->replicate();
@@ -441,8 +464,8 @@ class BankQuestionController extends Controller
             $questionType = trim($row[$idx['question_type']] ?? '');
             $marks = (int) ($row[$idx['marks']] ?? 0);
             $difficulty = trim($row[$idx['difficulty']] ?? 'Medium');
-            $subjectId = isset($idx['subject_id']) ? (int) ($row[$idx['subject_id']] ?? 0) : null;
-            $classLevel = isset($idx['class_level']) ? trim($row[$idx['class_level']] ?? '') : null;
+            $subjectId = isset($idx['subject_id']) ? (int) ($row[$idx['subject_id']] ?? 0) : 0;
+            $classLevel = isset($idx['class_level']) ? trim($row[$idx['class_level']] ?? '') : '';
 
             // Collect options 1..10 if present
             $options = [];
@@ -481,6 +504,21 @@ class BankQuestionController extends Controller
             if (!in_array($questionType, $this->types)) $errors[] = 'Invalid question type';
             if ($marks < 1) $errors[] = 'Marks must be >= 1';
             if (!in_array($difficulty, $this->difficulties)) $errors[] = 'Invalid difficulty';
+            if ($subjectId <= 0) $errors[] = 'Subject ID is required';
+            if ($classLevel === '') $errors[] = 'Class level is required';
+
+            $subject = null;
+            if ($subjectId > 0) {
+                $subject = Subject::find($subjectId);
+                if (!$subject) {
+                    $errors[] = 'Subject not found';
+                }
+            }
+
+            $subjectClassLevel = $subject?->class_level ?? $subject?->schoolClass?->name;
+            if ($subjectClassLevel && $classLevel !== '' && strcasecmp($subjectClassLevel, $classLevel) !== 0) {
+                $errors[] = "Subject '{$subject->name}' is not available for class '{$classLevel}'";
+            }
 
             // Type-specific option validation
             try {
@@ -507,8 +545,8 @@ class BankQuestionController extends Controller
                     'question_type' => $questionType,
                     'marks' => $marks,
                     'difficulty' => $difficulty,
-                    'subject_id' => $subjectId ?: null,
-                    'class_level' => $classLevel ?: null,
+                    'subject_id' => $subjectId,
+                    'class_level' => $classLevel,
                     'status' => 'Draft',
                     'created_by' => optional($request->user())->id,
                 ]);

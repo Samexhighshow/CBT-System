@@ -20,6 +20,7 @@ class SystemSettingSeeder extends Seeder
             ['key' => 'dark_mode', 'value' => '0', 'type' => 'boolean', 'description' => 'Enable dark mode by default'],
             ['key' => 'system_name', 'value' => 'CBT System', 'type' => 'string', 'description' => 'System name displayed in UI'],
             ['key' => 'allow_exam_retakes', 'value' => '0', 'type' => 'boolean', 'description' => 'Allow students to retake exams'],
+            ['key' => 'cbt_tab_fencing_max_violations', 'value' => '3', 'type' => 'string', 'description' => 'Maximum tab-fencing violations before auto-submit'],
             ['key' => 'registration_number_prefix', 'value' => 'REG', 'type' => 'string', 'description' => 'Prefix for auto-generated registration numbers'],
             ['key' => 'registration_number_year', 'value' => date('Y'), 'type' => 'string', 'description' => 'Year for auto-generated registration numbers'],
             ['key' => 'registration_number_separator', 'value' => '/', 'type' => 'string', 'description' => 'Separator for registration numbers'],

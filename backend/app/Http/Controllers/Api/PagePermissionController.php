@@ -114,15 +114,15 @@ class PagePermissionController extends Controller
                 return !in_array($name, $excluded);
             }, ARRAY_FILTER_USE_KEY)),
             'Sub-Admin' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results', 
+                'Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 
                 'Academic Management', 'Announcements', 'Allocation System', 'View Allocations', 
                 'Generate Allocation', 'Teacher Assignment', 'Halls'
             ]))),
             'Moderator' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Exams', 'Exam Access', 'Students', 'Results'
+                'Overview', 'Exams', 'Exam Access', 'Students', 'Results & Marking'
             ]))),
             'Teacher' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Questions', 'Results'
+                'Overview', 'Questions', 'Results & Marking'
             ]))),
         ];
 

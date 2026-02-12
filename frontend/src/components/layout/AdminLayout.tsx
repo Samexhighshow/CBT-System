@@ -15,7 +15,7 @@ const AdminLayout: React.FC = () => {
   const { user } = useAuthStore();
   const [isMainAdmin, setIsMainAdmin] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [allocationDropdownOpen, setAllocationDropdownOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [showTeacherSubjects, setShowTeacherSubjects] = useState(false);
   const [showStudentSubjects, setShowStudentSubjects] = useState(false);
   const [checkedFirstLogin, setCheckedFirstLogin] = useState(false);
@@ -74,6 +74,7 @@ const AdminLayout: React.FC = () => {
   // Close sidebar when route changes (mobile)
   useEffect(() => {
     setIsSidebarOpen(false);
+    setOpenDropdown(null);
   }, [location.pathname]);
 
   if (!user || navLoading) return null;
@@ -93,7 +94,7 @@ const AdminLayout: React.FC = () => {
       {/* Top Navigation Bar - Desktop */}
       <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full sticky top-0 z-40">
         <div className="app-shell">
-          <div className="flex justify-between items-center h-14">
+          <div className="flex justify-between items-center min-h-[56px] py-2">
             {/* Left Section: Logo + Desktop Nav */}
             <div className="flex items-center space-x-2 flex-1">
               {/* Mobile Hamburger */}
@@ -108,35 +109,35 @@ const AdminLayout: React.FC = () => {
               <h1 className="text-lg font-bold text-blue-600 dark:text-blue-400">CBT Admin</h1>
               
               {/* Desktop Navigation Links */}
-              <div className="hidden md:flex space-x-0.5">
+              <div className="hidden md:flex items-center gap-1.5 flex-wrap">
                 {navLinks.map((link) => (
                   link.subItems ? (
-                    // Dropdown Menu for Allocation System
+                    // Dropdown Menu
                     <div key={link.path} className="relative">
                       <button
-                        onClick={() => setAllocationDropdownOpen(!allocationDropdownOpen)}
-                        className={`px-3 py-1.5 text-xs md:text-sm font-medium rounded-md transition flex items-center space-x-1 ${
+                        onClick={() => setOpenDropdown(openDropdown === link.path ? null : link.path)}
+                        className={`h-9 px-3 text-xs md:text-sm font-medium rounded-full transition inline-flex items-center gap-1 border ${
                           isActivePath(link.path)
-                            ? 'bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300'
-                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm'
+                            : 'text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700'
                         }`}
                       >
                         <i className={`bx ${link.icon} text-sm`}></i>
                         <span className="hidden lg:inline">{link.name}</span>
-                        <i className={`bx bx-chevron-down text-xs transition-transform ${allocationDropdownOpen ? 'rotate-180' : ''}`}></i>
+                        <i className={`bx bx-chevron-down text-xs transition-transform ${openDropdown === link.path ? 'rotate-180' : ''}`}></i>
                       </button>
-                      {allocationDropdownOpen && (
-                        <div className="absolute left-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                      {openDropdown === link.path && (
+                        <div className="absolute left-0 mt-2 w-52 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                           {link.subItems.map((subItem) => (
                             <button
                               key={subItem.path}
                               onClick={() => {
                                 navigate(subItem.path);
-                                setAllocationDropdownOpen(false);
+                                setOpenDropdown(null);
                               }}
-                              className={`w-full text-left px-3 py-1.5 text-xs flex items-center space-x-2 ${
+                              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 ${
                                 isActivePath(subItem.path)
-                                  ? 'bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium'
+                                  ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-semibold'
                                   : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                               }`}
                             >
@@ -152,10 +153,10 @@ const AdminLayout: React.FC = () => {
                     <button
                       key={link.path}
                       onClick={() => navigate(link.path)}
-                      className={`px-3 py-1.5 text-xs md:text-sm font-medium rounded-md transition flex items-center space-x-1 ${
+                      className={`h-9 px-3 text-xs md:text-sm font-medium rounded-full transition inline-flex items-center gap-1 border ${
                         isActivePath(link.path)
-                          ? 'bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300'
-                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm'
+                          : 'text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700'
                       }`}
                     >
                       <i className={`bx ${link.icon} text-sm`}></i>

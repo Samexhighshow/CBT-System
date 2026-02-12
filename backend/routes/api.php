@@ -37,12 +37,26 @@ use App\Http\Controllers\Api\BankQuestionController;
 use App\Http\Controllers\Api\ExamQuestionController;
 use App\Http\Controllers\Api\ExamAccessController;
 use App\Http\Controllers\Api\AnnouncementController;
+use App\Http\Controllers\Api\CbtInterfaceController;
+use App\Http\Controllers\Api\MarkingController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
 
 // Sample CSV for question import (public for easy access)
 Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv']);
+
+// Dedicated CBT runtime endpoints (public, session-token protected per request)
+Route::prefix('cbt')->group(function () {
+    Route::get('/exams', [CbtInterfaceController::class, 'exams']);
+    Route::post('/exams/{examId}/verify', [CbtInterfaceController::class, 'verify'])->middleware('throttle:30,1');
+    Route::get('/attempts/{attemptId}/state', [CbtInterfaceController::class, 'state']);
+    Route::get('/attempts/{attemptId}/questions', [CbtInterfaceController::class, 'questions']);
+    Route::post('/attempts/{attemptId}/answer', [CbtInterfaceController::class, 'answer'])->middleware('throttle:120,1');
+    Route::post('/attempts/{attemptId}/event', [CbtInterfaceController::class, 'event'])->middleware('throttle:240,1');
+    Route::post('/attempts/{attemptId}/submit', [CbtInterfaceController::class, 'submit']);
+    Route::post('/attempts/{attemptId}/ping', [CbtInterfaceController::class, 'ping'])->middleware('throttle:240,1');
+});
 
 // Auth & Verification
 Route::post('/auth/login', [AuthController::class, 'login']);
@@ -54,6 +68,9 @@ Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
 // OTP password reset (public)
 Route::post('/auth/password/otp/request', [AuthController::class, 'requestPasswordOtp']);
 Route::post('/auth/password/otp/verify', [AuthController::class, 'resetPasswordWithOtp']);
+
+// Student exam access verification (public endpoint for login)
+Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
 
 // Admin signup applicant (public)
 Route::post('/admin/signup', [UserController::class, 'store']);
@@ -281,6 +298,9 @@ Route::middleware('auth:sanctum')->prefix('preferences')->group(function () {
 
 // CBT System routes (authenticated)
 Route::middleware('auth:sanctum')->group(function () {
+    // Authenticated student profile snapshot
+    Route::get('/student/me', [StudentController::class, 'getCurrentProfile']);
+
     // User management (Main Admin only - enforced by middleware in controller)
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/roles', [RoleController::class, 'listRoles']);
@@ -422,6 +442,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/exam-access/generate', [ExamAccessController::class, 'generate']);
         Route::delete('/exam-access/{id}', [ExamAccessController::class, 'destroy']);
     });
+
+    // Admin marking workflow
+    Route::middleware('role:Admin|Main Admin')->prefix('marking')->group(function () {
+        Route::get('/exams', [MarkingController::class, 'exams']);
+        Route::get('/exams/{examId}/attempts', [MarkingController::class, 'attempts']);
+        Route::get('/attempts/{attemptId}', [MarkingController::class, 'attempt']);
+        Route::post('/attempts/{attemptId}/questions/{questionId}/score', [MarkingController::class, 'scoreQuestion']);
+        Route::post('/attempts/{attemptId}/finalize', [MarkingController::class, 'finalize']);
+    });
     
     // Announcements Management (Admin)
     Route::prefix('admin/announcements')->group(function () {
@@ -430,9 +459,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}', [AnnouncementController::class, 'update']); // Update
         Route::delete('/{id}', [AnnouncementController::class, 'destroy']); // Delete
     });
-    
-    // Student exam access verification (public endpoint for login)
-    Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
     
     // Announcements (Public - for students to view)
     Route::prefix('announcements')->group(function () {

@@ -7,6 +7,7 @@ use App\Models\Exam;
 use App\Services\QuestionSelectionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class ExamQuestionRandomizationController extends Controller
 {
@@ -125,17 +126,23 @@ class ExamQuestionRandomizationController extends Controller
         // Reload fresh data and return current stats
         $exam->refresh();
         
-        $totalQuestions = $exam->questions()->count();
-        $activeQuestions = $exam->questions()->where('status', 'active')->count();
-        
-        $difficultyBreakdown = $exam->questions()
-            ->selectRaw('difficulty_level, COUNT(*) as count')
-            ->groupBy('difficulty_level')
-            ->pluck('count', 'difficulty_level')
+        $questionsQuery = DB::table('exam_questions as eq')
+            ->join('bank_questions as bq', 'bq.id', '=', 'eq.bank_question_id')
+            ->where('eq.exam_id', $exam->id);
+
+        $totalQuestions = (clone $questionsQuery)->count();
+        $activeQuestions = (clone $questionsQuery)
+            ->where('bq.status', 'Active')
+            ->count();
+
+        $difficultyBreakdown = (clone $questionsQuery)
+            ->selectRaw('bq.difficulty as difficulty, COUNT(*) as count')
+            ->groupBy('bq.difficulty')
+            ->pluck('count', 'difficulty')
             ->toArray();
 
-        $marksBreakdown = $exam->questions()
-            ->selectRaw('marks, COUNT(*) as count')
+        $marksBreakdown = (clone $questionsQuery)
+            ->selectRaw('COALESCE(eq.marks_override, bq.marks) as marks, COUNT(*) as count')
             ->groupBy('marks')
             ->pluck('count', 'marks')
             ->toArray();
@@ -293,18 +300,24 @@ class ExamQuestionRandomizationController extends Controller
     {
         $exam = Exam::findOrFail($examId);
 
-        $totalQuestions = $exam->questions()->count();
-        $activeQuestions = $exam->questions()->where('status', 'active')->count();
+        $questionsQuery = DB::table('exam_questions as eq')
+            ->join('bank_questions as bq', 'bq.id', '=', 'eq.bank_question_id')
+            ->where('eq.exam_id', $exam->id);
+
+        $totalQuestions = (clone $questionsQuery)->count();
+        $activeQuestions = (clone $questionsQuery)
+            ->where('bq.status', 'Active')
+            ->count();
         $selectionsCount = $exam->questionSelections()->count();
-        
-        $difficultyBreakdown = $exam->questions()
-            ->selectRaw('difficulty_level, COUNT(*) as count')
-            ->groupBy('difficulty_level')
-            ->pluck('count', 'difficulty_level')
+
+        $difficultyBreakdown = (clone $questionsQuery)
+            ->selectRaw('bq.difficulty as difficulty, COUNT(*) as count')
+            ->groupBy('bq.difficulty')
+            ->pluck('count', 'difficulty')
             ->toArray();
 
-        $marksBreakdown = $exam->questions()
-            ->selectRaw('marks, COUNT(*) as count')
+        $marksBreakdown = (clone $questionsQuery)
+            ->selectRaw('COALESCE(eq.marks_override, bq.marks) as marks, COUNT(*) as count')
             ->groupBy('marks')
             ->pluck('count', 'marks')
             ->toArray();
