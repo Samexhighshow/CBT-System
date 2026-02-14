@@ -52,10 +52,15 @@ const getStatusColor = (status?: string) => {
   switch (status?.toLowerCase()) {
     case 'active':
       return 'bg-green-100 text-green-800';
+    case 'inactive':
     case 'disabled':
       return 'bg-red-100 text-red-800';
     case 'draft':
       return 'bg-blue-100 text-blue-800';
+    case 'pending review':
+      return 'bg-amber-100 text-amber-800';
+    case 'archived':
+      return 'bg-slate-100 text-slate-700';
     default:
       return 'bg-gray-100 text-gray-800';
   }
@@ -104,9 +109,9 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
 
   return (
     <>
-      <table className="min-w-full text-xs border-collapse bg-white">
+      <table className="w-full min-w-[1080px] text-xs border-collapse bg-white">
         <thead>
-          <tr className="bg-gray-50 text-gray-700 border-b">
+          <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
             <th className="px-3 py-2 w-10">
               <input
                 type="checkbox"
@@ -143,7 +148,9 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                 questions.map((question, index) => (
                   <tr
                     key={question.id}
-                    className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${
+                    className={`border-b border-gray-200 transition-colors ${
+                      index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                    } hover:bg-blue-50/60 ${
                       selectedIds.has(question.id) ? 'bg-blue-50' : ''
                     }`}
                     onContextMenu={(e) => handleContextMenu(e, question.id)}
@@ -164,8 +171,8 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                     </td>
 
                     {/* Question Text */}
-                    <td className="px-3 py-2 text-gray-900 max-w-sm">
-                      <div className="truncate text-sm hover:text-blue-600 cursor-help" title={question.question_text}>
+                    <td className="px-3 py-2 text-gray-900 max-w-md">
+                      <div className="truncate text-sm leading-5 hover:text-blue-600 cursor-help" title={question.question_text}>
                         {question.question_text.substring(0, 80)}
                         {question.question_text.length > 80 ? '...' : ''}
                       </div>

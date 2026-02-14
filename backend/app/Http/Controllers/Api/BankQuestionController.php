@@ -21,6 +21,15 @@ class BankQuestionController extends Controller
 
     public function index(Request $request)
     {
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = strtolower((string) $request->get('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
+        $allowedSortColumns = ['id', 'question_text', 'marks', 'difficulty', 'status', 'created_at'];
+        if (!in_array($sortBy, $allowedSortColumns, true)) {
+            $sortBy = 'created_at';
+        }
+
+        $includeInactive = filter_var($request->get('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
+
         $query = BankQuestion::query()->with(['subject','tags','options'])
             ->when($request->filled('q'), fn($q) => $q->where('question_text', 'like', '%'.$request->q.'%'))
             ->when($request->filled('subject_id'), fn($q) => $q->where('subject_id', $request->integer('subject_id')))
@@ -28,12 +37,14 @@ class BankQuestionController extends Controller
             ->when($request->filled('question_type'), fn($q) => $q->where('question_type', $request->get('question_type')))
             ->when($request->filled('status'), fn($q) => $q->where('status', $request->get('status')))
             ->when($request->filled('difficulty'), fn($q) => $q->where('difficulty', $request->get('difficulty')))
+            ->when(!$includeInactive && !$request->filled('status'), fn($q) => $q->where('status', '!=', 'Inactive'))
             ->when($request->filled('tag_id'), function ($q) use ($request) {
                 $q->whereHas('tags', fn($tq) => $tq->where('bank_question_tags.id', $request->integer('tag_id')));
             })
-            ->orderByDesc('created_at');
+            ->orderBy($sortBy, $sortOrder)
+            ->when($sortBy !== 'id', fn($q) => $q->orderBy('id', 'desc'));
 
-        $perPage = (int) ($request->get('per_page', 10));
+        $perPage = max(1, min(200, (int) ($request->get('per_page', 10))));
         $data = $query->paginate($perPage);
 
         return response()->json($data);

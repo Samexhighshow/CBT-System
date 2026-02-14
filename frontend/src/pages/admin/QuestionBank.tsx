@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { Card, Button, SkeletonCard, SkeletonTable } from '../../components';
 import { api } from '../../services/api';
@@ -45,9 +44,17 @@ interface FilterOptions {
   section?: string;
 }
 
+interface PaginationState {
+  currentPage: number;
+  lastPage: number;
+  total: number;
+  from: number;
+  to: number;
+}
+
+type SortPreset = 'newest' | 'oldest' | 'qid_asc' | 'qid_desc' | 'text_asc' | 'text_desc';
+
 const QuestionBank: React.FC<{}> = () => {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +71,16 @@ const QuestionBank: React.FC<{}> = () => {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkPreviewLoading, setBulkPreviewLoading] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
+  const [sortPreset, setSortPreset] = useState<SortPreset>('qid_asc');
+  const [pagination, setPagination] = useState<PaginationState>({
+    currentPage: 1,
+    lastPage: 1,
+    total: 0,
+    from: 0,
+    to: 0,
+  });
   const [groupBySection, setGroupBySection] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -121,7 +138,7 @@ const QuestionBank: React.FC<{}> = () => {
 
   useEffect(() => {
     loadClasses();
-    loadQuestions();
+    // Questions are loaded by the filter/pagination effect.
   }, []);
 
   useEffect(() => {
@@ -174,7 +191,12 @@ const QuestionBank: React.FC<{}> = () => {
   useEffect(() => {
     loadQuestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, searchTerm, selectedSubject, selectedClass]);
+  }, [filters, searchTerm, selectedSubject, selectedClass, currentPage, perPage, sortPreset, showInactive]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedIds(new Set());
+  }, [filters.questionType, filters.difficulty, filters.status, filters.section]);
 
   const loadClasses = async () => {
     try {
@@ -221,6 +243,17 @@ const QuestionBank: React.FC<{}> = () => {
 
   const loadQuestions = async () => {
     try {
+      setLoading(true);
+      const sortMap: Record<SortPreset, { sortBy: string; sortOrder: 'asc' | 'desc' }> = {
+        newest: { sortBy: 'created_at', sortOrder: 'desc' },
+        oldest: { sortBy: 'created_at', sortOrder: 'asc' },
+        qid_asc: { sortBy: 'id', sortOrder: 'asc' },
+        qid_desc: { sortBy: 'id', sortOrder: 'desc' },
+        text_asc: { sortBy: 'question_text', sortOrder: 'asc' },
+        text_desc: { sortBy: 'question_text', sortOrder: 'desc' },
+      };
+      const selectedSort = sortMap[sortPreset] || sortMap.newest;
+
       const params: any = {};
       if (selectedSubject) params.subject_id = selectedSubject;
       if (selectedClass) params.class_level = selectedClass;
@@ -228,16 +261,58 @@ const QuestionBank: React.FC<{}> = () => {
       if (filters.difficulty) params.difficulty = filters.difficulty;
       if (filters.status) params.status = filters.status;
       if (searchTerm) params.q = searchTerm;
+      params.page = currentPage;
+      params.per_page = perPage;
+      params.sort_by = selectedSort.sortBy;
+      params.sort_order = selectedSort.sortOrder;
+      params.include_inactive = showInactive ? '1' : '0';
 
       const response = await api.get('/bank/questions', { params });
       const payload = response.data;
-      const questionData: any[] = Array.isArray(payload)
-        ? payload
-        : (Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload?.questions) ? payload.questions : []));
-      setQuestions(questionData);
+
+      if (Array.isArray(payload)) {
+        setQuestions(payload);
+        setPagination({
+          currentPage: 1,
+          lastPage: 1,
+          total: payload.length,
+          from: payload.length > 0 ? 1 : 0,
+          to: payload.length,
+        });
+        return;
+      }
+
+      const pagedRows: any[] = Array.isArray(payload?.data)
+        ? payload.data
+        : (Array.isArray(payload?.questions) ? payload.questions : []);
+
+      const serverCurrentPage = Number(payload?.current_page || currentPage || 1);
+      const serverLastPage = Math.max(1, Number(payload?.last_page || 1));
+      if (serverCurrentPage > serverLastPage) {
+        setCurrentPage(serverLastPage);
+        return;
+      }
+
+      setQuestions(pagedRows);
+      setPagination({
+        currentPage: serverCurrentPage,
+        lastPage: serverLastPage,
+        total: Number(payload?.total || pagedRows.length),
+        from: Number(payload?.from || (pagedRows.length > 0 ? 1 : 0)),
+        to: Number(payload?.to || pagedRows.length),
+      });
     } catch (error: any) {
       console.error('Failed to fetch bank questions:', error);
       setQuestions([]);
+      setPagination({
+        currentPage: 1,
+        lastPage: 1,
+        total: 0,
+        from: 0,
+        to: 0,
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -982,26 +1057,15 @@ const QuestionBank: React.FC<{}> = () => {
   };
 
   const filtered = useMemo(() => {
-    let result = questions.filter(q =>
-      q.question_text.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    let result = questions;
 
-    // Apply filters
-    if (filters.questionType && filters.questionType !== '') {
-      result = result.filter(q => q.question_type === filters.questionType);
-    }
-    if (filters.difficulty && filters.difficulty !== '') {
-      result = result.filter(q => q.difficulty === filters.difficulty);
-    }
-    if (filters.status && filters.status !== '') {
-      result = result.filter(q => q.status === filters.status);
-    }
+    // Section filter is applied client-side because not all API payloads expose section filtering.
     if (filters.section && filters.section !== '') {
       result = result.filter(q => q.section_name === filters.section);
     }
 
     return result;
-  }, [questions, searchTerm, filters]);
+  }, [questions, filters.section]);
 
   // Group by section
   const groupedBySection = useMemo(() => {
@@ -1025,6 +1089,29 @@ const QuestionBank: React.FC<{}> = () => {
     return Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
   }, [filtered]);
 
+  const getPageNumbers = (current: number, total: number): Array<number | string> => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+
+    const pages: Array<number | string> = [1];
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+
+    if (start > 2) {
+      pages.push('...');
+    }
+    for (let pageNum = start; pageNum <= end; pageNum += 1) {
+      pages.push(pageNum);
+    }
+    if (end < total - 1) {
+      pages.push('...');
+    }
+
+    pages.push(total);
+    return pages;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <div className="app-shell section-shell py-4">
@@ -1038,7 +1125,10 @@ const QuestionBank: React.FC<{}> = () => {
 
         {/* Stats Summary */}
         <div className="mb-4">
-          <p className="text-sm text-gray-600">{questions.length} total questions</p>
+          <p className="text-sm text-gray-600">
+            {pagination.total} total questions
+            {pagination.total > 0 ? ` | Page ${pagination.currentPage} of ${pagination.lastPage}` : ''}
+          </p>
         </div>
 
         {/* Question Management Interface */}
@@ -1092,17 +1182,24 @@ const QuestionBank: React.FC<{}> = () => {
               {/* Left: Title and Count */}
               <div>
                 <h3 className="text-base font-semibold text-gray-900">Your Questions</h3>
-                <p className="text-xs text-gray-600">{filtered.length} matching questions</p>
+                <p className="text-xs text-gray-600">
+                  {pagination.total} matching questions
+                  {pagination.total > 0 ? ` | Showing ${pagination.from}-${pagination.to}` : ''}
+                </p>
               </div>
               
               {/* Right: Controls */}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
                 {/* Show Inactive */}
                 <label className="flex items-center gap-2 text-sm whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={showInactive}
-                    onChange={(e) => setShowInactive(e.target.checked)}
+                    onChange={(e) => {
+                      setShowInactive(e.target.checked);
+                      setSelectedIds(new Set());
+                      setCurrentPage(1);
+                    }}
                     className="rounded border-gray-300 cursor-pointer"
                   />
                   <span className="text-gray-700">Show inactive</span>
@@ -1114,26 +1211,48 @@ const QuestionBank: React.FC<{}> = () => {
                   <input
                     ref={searchInputRef}
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setSelectedIds(new Set());
+                      setCurrentPage(1);
+                    }}
                     placeholder="Search questions..."
-                    className="pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 w-56"
+                    className="pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 w-56 md:w-64"
                   />
                 </div>
                 
                 {/* Sort */}
-                <select className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white">
-                  <option>Name A–Z</option>
-                  <option>Name Z–A</option>
-                  <option>Newest First</option>
-                  <option>Oldest First</option>
+                <select
+                  value={sortPreset}
+                  onChange={(e) => {
+                    setSortPreset(e.target.value as SortPreset);
+                    setSelectedIds(new Set());
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="qid_desc">QID Desc</option>
+                  <option value="qid_asc">QID Asc</option>
+                  <option value="text_asc">Question A-Z</option>
+                  <option value="text_desc">Question Z-A</option>
                 </select>
                 
                 {/* Per Page */}
-                <select className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white">
-                  <option>10 per page</option>
-                  <option>25 per page</option>
-                  <option>50 per page</option>
-                  <option>100 per page</option>
+                <select
+                  value={perPage}
+                  onChange={(e) => {
+                    setPerPage(Number(e.target.value));
+                    setSelectedIds(new Set());
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value={10}>10 per page</option>
+                  <option value={25}>25 per page</option>
+                  <option value={50}>50 per page</option>
+                  <option value={100}>100 per page</option>
                 </select>
               </div>
             </div>
@@ -1194,6 +1313,8 @@ const QuestionBank: React.FC<{}> = () => {
                     const newClass = e.target.value || null;
                     setSelectedClass(newClass);
                     setSelectedSubject(null);
+                    setSelectedIds(new Set());
+                    setCurrentPage(1);
                     if (newClass) {
                       loadSubjectsForClass(newClass);
                     } else {
@@ -1215,7 +1336,11 @@ const QuestionBank: React.FC<{}> = () => {
                 <span className="text-[11px] text-gray-600">Subject:</span>
                 <select
                   value={selectedSubject || ''}
-                  onChange={(e) => setSelectedSubject(e.target.value ? Number(e.target.value) : null)}
+                  onChange={(e) => {
+                    setSelectedSubject(e.target.value ? Number(e.target.value) : null);
+                    setSelectedIds(new Set());
+                    setCurrentPage(1);
+                  }}
                   disabled={!selectedClass}
                   className="px-2 py-1 border border-gray-300 rounded-md text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
                 >
@@ -1237,6 +1362,10 @@ const QuestionBank: React.FC<{}> = () => {
                   setFilters({});
                   setSearchTerm('');
                   setShowInactive(false);
+                  setSelectedIds(new Set());
+                  setCurrentPage(1);
+                  setPerPage(25);
+                  setSortPreset('qid_asc');
                 }}
                 className="px-3 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50"
               >
@@ -1246,7 +1375,7 @@ const QuestionBank: React.FC<{}> = () => {
           </div>
 
           {/* Questions Table */}
-          <div className={filtered.length >= 6 ? 'max-h-96 overflow-auto' : ''}>
+          <div className="overflow-x-auto">
             {loading ? (
               <SkeletonTable rows={5} cols={8} />
             ) : filtered.length === 0 ? (
@@ -1270,6 +1399,58 @@ const QuestionBank: React.FC<{}> = () => {
               />
             )}
           </div>
+
+          {!loading && pagination.total > 0 && (
+            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <p className="text-xs text-gray-600">
+                Showing {pagination.from} to {pagination.to} of {pagination.total}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedIds(new Set());
+                    setCurrentPage(Math.max(1, pagination.currentPage - 1));
+                  }}
+                  disabled={pagination.currentPage === 1}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Prev
+                </button>
+                {getPageNumbers(pagination.currentPage, pagination.lastPage).map((pageNum, idx) => (
+                  <button
+                    key={`${pageNum}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      if (typeof pageNum === 'number') {
+                        setSelectedIds(new Set());
+                        setCurrentPage(pageNum);
+                      }
+                    }}
+                    disabled={typeof pageNum !== 'number'}
+                    className={`min-w-[34px] px-2.5 py-1.5 text-xs rounded-md border ${
+                      pageNum === pagination.currentPage
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+                    } ${typeof pageNum !== 'number' ? 'cursor-default' : ''}`}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedIds(new Set());
+                    setCurrentPage(Math.min(pagination.lastPage, pagination.currentPage + 1));
+                  }}
+                  disabled={pagination.currentPage === pagination.lastPage}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       {/* Create/Edit Modal - Enhanced Design */}
