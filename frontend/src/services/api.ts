@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import useLoadingStore from '../store/loadingStore';
 
 // Prefer localhost for Windows dev environments; still allow env override
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
@@ -21,6 +22,12 @@ const apiClient: AxiosInstance = axios.create({
 // Request interceptor to add auth token
 apiClient.interceptors.request.use(
   (config) => {
+    const shouldTrack = !(config as any)?.skipGlobalLoading;
+    if (shouldTrack) {
+      useLoadingStore.getState().increment();
+      (config as any).__loadingTracked = true;
+    }
+
     const token = localStorage.getItem('auth_token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -34,8 +41,19 @@ apiClient.interceptors.request.use(
 
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const tracked = (response.config as any)?.__loadingTracked;
+    if (tracked) {
+      useLoadingStore.getState().decrement();
+    }
+    return response;
+  },
   (error) => {
+    const tracked = (error.config as any)?.__loadingTracked;
+    if (tracked) {
+      useLoadingStore.getState().decrement();
+    }
+
     if (error.response?.status === 401) {
       const currentPath = window.location.pathname;
       const requestUrl = error.config?.url || '';

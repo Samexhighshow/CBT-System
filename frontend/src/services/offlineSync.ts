@@ -187,7 +187,7 @@ class OfflineSyncService {
 
     switch (action) {
       case 'create':
-        await examApi.submit(data.exam_id, data.answers);
+        await this.submitSyncedAnswers(data, false);
         break;
       case 'update':
         // Answer updates not typically supported
@@ -223,11 +223,31 @@ class OfflineSyncService {
 
     switch (action) {
       case 'create':
-        await examApi.submit(data.exam_id, data.answers);
+        await this.submitSyncedAnswers(data, true);
         break;
       default:
         console.warn('Result action not implemented:', action);
     }
+  }
+
+  private async submitSyncedAnswers(data: any, defaultFinal: boolean): Promise<void> {
+    if (!data) {
+      throw new Error('Missing submission payload');
+    }
+
+    const examId = data.exam_id ?? data.examId;
+    const answers = data.answers ?? data.payload?.answers ?? data.submission?.answers;
+    const attemptId = data.attempt_id ?? data.attemptId ?? data.attempt?.id;
+    const studentId = data.student_id ?? data.studentId;
+    const final = typeof data.final === 'boolean'
+      ? data.final
+      : (typeof data.is_final === 'boolean' ? data.is_final : defaultFinal);
+
+    if (!examId || !answers) {
+      throw new Error('Missing exam_id or answers');
+    }
+
+    await examApi.submit(examId, answers, { final, attemptId, studentId });
   }
 
   // Add item to sync queue

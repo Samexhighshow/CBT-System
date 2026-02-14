@@ -17,8 +17,8 @@ interface AttemptSummary {
   class_level: string;
   score: number;
   total_marks: number;
+  status?: string;
   percentage?: number;
-  passed?: boolean;
   completed_at?: string;
 }
 
@@ -118,17 +118,42 @@ const ResultsAnalytics: React.FC = () => {
 
       const analyticsRes = await api.get(`/results/analytics?${params.toString()}`);
       if (analyticsRes.data) {
+        const totalAttempts = Number(
+          analyticsRes.data.total_attempts ?? analyticsRes.data.total_submissions ?? 0
+        );
+
         setAnalytics({
           average_score: Number(analyticsRes.data.average_score ?? 0),
           pass_rate: Number(analyticsRes.data.pass_rate ?? 0),
-          total_attempts: Number(analyticsRes.data.total_attempts ?? 0),
+          total_attempts: totalAttempts,
         });
       }
 
       if (examId) {
-        const resultsRes = await api.get(`/results/exam/${examId}`);
-        const data = resultsRes.data?.data || [];
-        setAttempts(Array.isArray(data) ? data : []);
+        // Use marking attempts endpoint so submitted/pending scripts are included too.
+        const attemptsRes = await api.get(`/marking/exams/${examId}/attempts`);
+        const rows = attemptsRes.data?.data || [];
+        const mapped: AttemptSummary[] = Array.isArray(rows)
+          ? rows.map((row: any) => {
+              const score = Number(row.score ?? 0);
+              const totalMarks = Number(attemptsRes.data?.exam?.total_marks ?? 0);
+              const percentage = totalMarks > 0 ? (score / totalMarks) * 100 : 0;
+
+              return {
+                id: row.id,
+                student_name: row.student?.name || 'Unknown',
+                registration_number: row.student?.registration_number,
+                department: undefined,
+                class_level: row.student?.class_level || 'N/A',
+                score,
+                total_marks: totalMarks,
+                status: String(row.status || '').toLowerCase(),
+                percentage,
+                completed_at: row.completed_at || row.submitted_at,
+              };
+            })
+          : [];
+        setAttempts(mapped);
       } else {
         setAttempts([]);
       }
@@ -299,8 +324,28 @@ const ResultsAnalytics: React.FC = () => {
                         {a.score}/{a.total_marks} ({(a.percentage ?? 0).toFixed(1)}%)
                       </td>
                       <td className="px-4 py-2 text-sm">
-                        <span className={`px-2 py-1 rounded-full text-[11px] font-semibold ${a.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                          {a.passed ? 'Passed' : 'Pending'}
+                        <span
+                          className={`px-2 py-1 rounded-full text-[11px] font-semibold ${
+                            a.status === 'completed'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : a.status === 'submitted'
+                                ? 'bg-amber-100 text-amber-800'
+                                : a.status === 'in_progress'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : a.status === 'expired'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {a.status === 'completed'
+                            ? 'Completed'
+                            : a.status === 'submitted'
+                              ? 'Pending Marking'
+                              : a.status === 'in_progress'
+                                ? 'In Progress'
+                                : a.status === 'expired'
+                                  ? 'Expired'
+                                  : 'Unknown'}
                         </span>
                       </td>
                     </tr>

@@ -54,6 +54,7 @@ interface AttemptQuestion {
   answer: {
     id?: number;
     option_id?: number | null;
+    option_ids?: number[];
     answer_text?: string | null;
     flagged: boolean;
     is_correct?: boolean | null;
@@ -123,6 +124,7 @@ const MarkingWorkbench: React.FC = () => {
   const [loadingAttempts, setLoadingAttempts] = useState(false);
   const [loadingAttemptDetail, setLoadingAttemptDetail] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [clearingAttempt, setClearingAttempt] = useState(false);
   const [scoreForms, setScoreForms] = useState<Record<number, ScoreFormState>>({});
 
   const selectedExam = useMemo(() => exams.find((exam) => exam.id === selectedExamId) || null, [exams, selectedExamId]);
@@ -259,6 +261,28 @@ const MarkingWorkbench: React.FC = () => {
     }
   };
 
+  const clearAttempt = async () => {
+    if (!attemptDetail || !selectedExamId) return;
+
+    const shouldProceed = window.confirm(
+      `Clear attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}? This will remove answers and allow a fresh restart.`
+    );
+    if (!shouldProceed) return;
+
+    try {
+      setClearingAttempt(true);
+      await api.delete(`/marking/attempts/${attemptDetail.attempt.id}`);
+      showSuccess('Attempt cleared. Student can restart the exam.');
+      setSelectedAttemptId(null);
+      setAttemptDetail(null);
+      await loadAttempts(selectedExamId);
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to clear attempt');
+    } finally {
+      setClearingAttempt(false);
+    }
+  };
+
   return (
     <div className="app-shell py-6 space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -344,6 +368,13 @@ const MarkingWorkbench: React.FC = () => {
                     {attemptDetail.attempt.status}
                   </span>
                   <button
+                    onClick={clearAttempt}
+                    disabled={clearingAttempt}
+                    className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {clearingAttempt ? 'Clearing...' : 'Clear Attempt'}
+                  </button>
+                  <button
                     onClick={finalizeAttempt}
                     disabled={finalizing}
                     className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60"
@@ -402,7 +433,14 @@ const MarkingWorkbench: React.FC = () => {
               <div className="space-y-3 max-h-[720px] overflow-auto pr-1">
                 {attemptDetail.questions.map((question, idx) => {
                   const form = scoreForms[question.question_id] || { marks: '', feedback: '', saving: false };
-                  const selectedOptionText = question.options.find((option) => option.id === question.answer.option_id)?.option_text;
+                  const selectedOptionIds = Array.from(new Set([
+                    ...(typeof question.answer.option_id === 'number' ? [question.answer.option_id] : []),
+                    ...(question.answer.option_ids || []),
+                  ]));
+                  const selectedOptionText = question.options
+                    .filter((option) => selectedOptionIds.includes(option.id))
+                    .map((option) => option.option_text)
+                    .join(', ');
                   const correctOptionText = question.options
                     .filter((option) => question.correct_option_ids.includes(option.id))
                     .map((option) => option.option_text)

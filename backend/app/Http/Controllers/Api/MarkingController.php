@@ -7,9 +7,11 @@ use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptEvent;
+use App\Models\ExamAttemptSession;
 use App\Models\Question;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MarkingController extends Controller
 {
@@ -95,7 +97,7 @@ class MarkingController extends Controller
 
         $answersByQuestion = $attempt->examAnswers->keyBy('question_id');
 
-        $questions = Question::with('options')
+        $questions = Question::with(['options', 'bankQuestion'])
             ->whereIn('id', $questionIds)
             ->get()
             ->keyBy('id');
@@ -118,8 +120,10 @@ class MarkingController extends Controller
 
             return [
                 'question_id' => $questionId,
-                'question_text' => $question->question_text,
-                'question_type' => $question->question_type,
+                'question_text' => trim((string) ($question->question_text ?? '')) !== ''
+                    ? $question->question_text
+                    : ($question->bankQuestion?->question_text ?? ''),
+                'question_type' => $this->resolveQuestionType($question),
                 'marks' => (float) ($question->marks ?? 1),
                 'requires_manual_marking' => $this->requiresManualMarking($question),
                 'options' => $question->options->map(fn ($opt) => [
@@ -130,6 +134,7 @@ class MarkingController extends Controller
                 'answer' => [
                     'id' => $answer?->id,
                     'option_id' => $answer?->option_id,
+                    'option_ids' => $answer ? $this->extractSelectedOptionIds($answer) : [],
                     'answer_text' => $answer?->answer_text,
                     'flagged' => (bool) ($answer?->flagged ?? false),
                     'is_correct' => $answer?->is_correct,
@@ -226,6 +231,30 @@ class MarkingController extends Controller
         ]);
     }
 
+    public function clearAttempt(int $attemptId): JsonResponse
+    {
+        $attempt = ExamAttempt::with(['student:id,registration_number,first_name,last_name', 'exam:id,title'])
+            ->findOrFail($attemptId);
+
+        DB::transaction(function () use ($attempt) {
+            ExamAnswer::where('attempt_id', $attempt->id)->delete();
+            ExamAttemptSession::where('attempt_id', $attempt->id)->delete();
+            ExamAttemptEvent::where('attempt_id', $attempt->id)->delete();
+            $attempt->delete();
+        });
+
+        return response()->json([
+            'message' => 'Attempt cleared successfully. Student can restart with a fresh attempt.',
+            'data' => [
+                'attempt_id' => $attemptId,
+                'student_id' => $attempt->student?->id,
+                'student_reg_number' => $attempt->student?->registration_number,
+                'exam_id' => $attempt->exam?->id,
+                'exam_title' => $attempt->exam?->title,
+            ],
+        ]);
+    }
+
     private function attemptQuestionStats(ExamAttempt $attempt): array
     {
         $answers = ExamAnswer::with('question:id,question_type')
@@ -291,12 +320,52 @@ class MarkingController extends Controller
             return false;
         }
 
-        return !in_array($question->question_type, [
+        return !in_array($this->resolveQuestionType($question), [
+            'multiple_choice',
             'multiple_choice_single',
+            'multiple_select',
             'multiple_choice_multiple',
             'true_false',
             'mcq',
         ], true);
+    }
+
+    private function resolveQuestionType(Question $question): string
+    {
+        $bankType = strtolower(trim((string) ($question->bankQuestion?->question_type ?? '')));
+        if ($bankType !== '') {
+            return $bankType;
+        }
+
+        return strtolower(trim((string) ($question->question_type ?? '')));
+    }
+
+    private function extractSelectedOptionIds(ExamAnswer $answer): array
+    {
+        $selected = [];
+        if ($answer->option_id) {
+            $selected[] = (int) $answer->option_id;
+        }
+
+        $text = trim((string) ($answer->answer_text ?? ''));
+        if ($text !== '') {
+            $decoded = json_decode($text, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $raw = $decoded['option_ids'] ?? $decoded['selected_option_ids'] ?? null;
+                if (is_array($raw)) {
+                    $selected = array_merge($selected, $raw);
+                }
+            }
+        }
+
+        $normalized = collect($selected)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+        sort($normalized);
+        return $normalized;
     }
 
     private function securitySummary(int $attemptId, int $switchCount = 0): array

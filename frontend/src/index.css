@@ -63,6 +63,16 @@ body {
   background: #f8fafc;
 }
 
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable both-edges;
+}
+
+body,
+#root {
+  overflow-x: hidden;
+}
+
 .app-shell,
 .section-shell {
   width: 100%;

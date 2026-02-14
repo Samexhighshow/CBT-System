@@ -8,6 +8,7 @@ use App\Models\BankQuestionOption;
 use App\Models\BankQuestionTag;
 use App\Models\BankQuestionVersion;
 use App\Models\Subject;
+use App\Models\SchoolClass;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -412,11 +413,15 @@ class BankQuestionController extends Controller
     {
         $request->validate([
             'file' => 'required|file|mimes:csv,txt,xlsx,xls',
+            'default_subject_id' => 'nullable|integer|exists:subjects,id',
+            'default_class_level' => 'nullable|string|max:100',
         ]);
 
         $file = $request->file('file');
         $ext = strtolower($file->getClientOriginalExtension());
         $rows = [];
+        $defaultSubjectId = (int) ($request->input('default_subject_id') ?? 0);
+        $defaultClassLevel = trim((string) ($request->input('default_class_level') ?? ''));
 
         if (in_array($ext, ['csv','txt'])) {
             $path = $file->getRealPath();
@@ -441,38 +446,117 @@ class BankQuestionController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Empty file'], 422);
         }
 
-        $header = array_map('trim', $rows[0] ?? []);
-        $expectedMinimal = ['question_text','question_type','marks','difficulty'];
-        foreach ($expectedMinimal as $col) {
-            if (!in_array($col, $header)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Invalid header. Missing column: '.$col,
-                ], 422);
+        $header = array_map(
+            fn ($h) => strtolower(trim((string) $h)),
+            $rows[0] ?? []
+        );
+
+        // Map header indexes (case-insensitive)
+        $idx = [];
+        foreach ($header as $position => $name) {
+            if ($name !== '') {
+                $idx[$name] = $position;
             }
         }
 
-        // Map header indexes
-        $idx = array_flip($header);
+        $findIndex = function (array $candidates) use ($idx): ?int {
+            foreach ($candidates as $candidate) {
+                if (array_key_exists($candidate, $idx)) {
+                    return $idx[$candidate];
+                }
+            }
+
+            return null;
+        };
+
+        $questionTextIdx = $findIndex(['question_text', 'question']);
+        $questionTypeIdx = $findIndex(['question_type', 'type']);
+        $marksIdx = $findIndex(['marks', 'mark']);
+        $difficultyIdx = $findIndex(['difficulty', 'difficulty_level']);
+        $subjectIdIdx = $findIndex(['subject_id']);
+        $subjectNameIdx = $findIndex(['subject_name', 'subject', 'subject_code']);
+        $classLevelIdx = $findIndex(['class_level', 'class', 'class_name']);
+        $classIdIdx = $findIndex(['class_id']);
+        $instructionsIdx = $findIndex(['instructions', 'marking_rubric']);
+        $statusIdx = $findIndex(['status']);
+        $correctOptionsIdx = $findIndex(['correct_options', 'correct_option']);
+
+        if ($questionTextIdx === null || $questionTypeIdx === null || $marksIdx === null) {
+            $missing = [];
+            if ($questionTextIdx === null) {
+                $missing[] = 'question_text';
+            }
+            if ($questionTypeIdx === null) {
+                $missing[] = 'question_type';
+            }
+            if ($marksIdx === null) {
+                $missing[] = 'marks';
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid header. Missing required column(s): ' . implode(', ', $missing),
+            ], 422);
+        }
+
         $inserted = 0;
         $invalid = [];
 
         foreach (array_slice($rows, 1) as $i => $row) {
             $line = $i + 2;
 
-            $questionText = trim($row[$idx['question_text']] ?? '');
-            $questionType = trim($row[$idx['question_type']] ?? '');
-            $marks = (int) ($row[$idx['marks']] ?? 0);
-            $difficulty = trim($row[$idx['difficulty']] ?? 'Medium');
-            $subjectId = isset($idx['subject_id']) ? (int) ($row[$idx['subject_id']] ?? 0) : 0;
-            $classLevel = isset($idx['class_level']) ? trim($row[$idx['class_level']] ?? '') : '';
+            $questionText = trim((string) ($row[$questionTextIdx] ?? ''));
+            $rawType = trim((string) ($row[$questionTypeIdx] ?? ''));
+            $questionType = $this->normalizeImportQuestionType($rawType);
+            $marks = (int) ($row[$marksIdx] ?? 0);
+            $difficultyRaw = $difficultyIdx !== null ? trim((string) ($row[$difficultyIdx] ?? '')) : '';
+            $difficulty = $this->normalizeImportDifficulty($difficultyRaw !== '' ? $difficultyRaw : 'Medium');
+
+            $classLevel = $classLevelIdx !== null ? trim((string) ($row[$classLevelIdx] ?? '')) : '';
+            if ($classLevel === '' && $classIdIdx !== null) {
+                $classId = (int) ($row[$classIdIdx] ?? 0);
+                if ($classId > 0) {
+                    $classLevel = (string) (SchoolClass::find($classId)?->name ?? '');
+                }
+            }
+            if ($classLevel === '' && $defaultClassLevel !== '') {
+                $classLevel = $defaultClassLevel;
+            }
+
+            $rowSubjectIdentifier = '';
+            if ($subjectIdIdx !== null) {
+                $rowSubjectIdentifier = trim((string) ($row[$subjectIdIdx] ?? ''));
+            }
+            if ($rowSubjectIdentifier === '' && $subjectNameIdx !== null) {
+                $rowSubjectIdentifier = trim((string) ($row[$subjectNameIdx] ?? ''));
+            }
+
+            $subject = null;
+            if ($rowSubjectIdentifier !== '') {
+                $subject = $this->resolveImportSubject($rowSubjectIdentifier, $classLevel);
+                if (!$subject && $defaultSubjectId > 0) {
+                    $subject = Subject::find($defaultSubjectId);
+                }
+            } elseif ($defaultSubjectId > 0) {
+                $subject = Subject::find($defaultSubjectId);
+            }
+
+            $subjectId = (int) ($subject?->id ?? 0);
+            if ($classLevel === '' && $subject) {
+                $classLevel = (string) ($subject->class_level ?? $subject->schoolClass?->name ?? '');
+            }
+
+            $instructions = $instructionsIdx !== null ? trim((string) ($row[$instructionsIdx] ?? '')) : '';
+            $instructions = $instructions !== '' ? $instructions : null;
+            $statusRaw = $statusIdx !== null ? trim((string) ($row[$statusIdx] ?? '')) : '';
+            $status = $this->normalizeImportStatus($statusRaw);
 
             // Collect options 1..10 if present
             $options = [];
-            for ($n=1; $n<=10; $n++) {
+            for ($n = 1; $n <= 10; $n++) {
                 $key = 'option_'.$n;
                 if (isset($idx[$key])) {
-                    $text = trim($row[$idx[$key]] ?? '');
+                    $text = trim((string) ($row[$idx[$key]] ?? ''));
                     if ($text !== '') {
                         $options[] = ['option_text' => $text, 'is_correct' => false, 'sort_order' => count($options)];
                     }
@@ -480,12 +564,12 @@ class BankQuestionController extends Controller
             }
 
             // Correct options can be indices (e.g., "1|3") or texts (e.g., "Paris|London")
-            $correctRaw = isset($idx['correct_options']) ? trim((string)($row[$idx['correct_options']] ?? '')) : '';
+            $correctRaw = $correctOptionsIdx !== null ? trim((string) ($row[$correctOptionsIdx] ?? '')) : '';
             if ($correctRaw !== '') {
                 $parts = array_map('trim', explode('|', $correctRaw));
                 foreach ($parts as $p) {
-                    if (ctype_digit($p) && isset($options[((int)$p)-1])) {
-                        $options[((int)$p)-1]['is_correct'] = true;
+                    if (ctype_digit($p) && isset($options[((int) $p) - 1])) {
+                        $options[((int) $p) - 1]['is_correct'] = true;
                     } else {
                         // match by text
                         foreach ($options as &$opt) {
@@ -500,23 +584,29 @@ class BankQuestionController extends Controller
 
             // Row validation
             $errors = [];
-            if ($questionText === '') $errors[] = 'Question text required';
-            if (!in_array($questionType, $this->types)) $errors[] = 'Invalid question type';
-            if ($marks < 1) $errors[] = 'Marks must be >= 1';
-            if (!in_array($difficulty, $this->difficulties)) $errors[] = 'Invalid difficulty';
-            if ($subjectId <= 0) $errors[] = 'Subject ID is required';
-            if ($classLevel === '') $errors[] = 'Class level is required';
-
-            $subject = null;
-            if ($subjectId > 0) {
-                $subject = Subject::find($subjectId);
-                if (!$subject) {
-                    $errors[] = 'Subject not found';
-                }
+            if ($questionText === '') {
+                $errors[] = 'Question text required';
+            }
+            if (!in_array($questionType, $this->types, true)) {
+                $errors[] = 'Invalid question type';
+            }
+            if ($marks < 1) {
+                $errors[] = 'Marks must be >= 1';
+            }
+            if (!in_array($difficulty, $this->difficulties, true)) {
+                $errors[] = 'Invalid difficulty';
+            }
+            if ($rowSubjectIdentifier !== '' && !$subject) {
+                $errors[] = "Subject not found: {$rowSubjectIdentifier}";
+            } elseif ($subjectId <= 0) {
+                $errors[] = 'Subject is required (use subject_id or subject_name, or choose a subject filter before import)';
+            }
+            if ($classLevel === '') {
+                $errors[] = 'Class level is required';
             }
 
-            $subjectClassLevel = $subject?->class_level ?? $subject?->schoolClass?->name;
-            if ($subjectClassLevel && $classLevel !== '' && strcasecmp($subjectClassLevel, $classLevel) !== 0) {
+            $subjectClassLevel = (string) ($subject?->class_level ?? $subject?->schoolClass?->name ?? '');
+            if ($subjectClassLevel !== '' && $classLevel !== '' && !$this->classLevelsMatch($subjectClassLevel, $classLevel)) {
                 $errors[] = "Subject '{$subject->name}' is not available for class '{$classLevel}'";
             }
 
@@ -547,7 +637,8 @@ class BankQuestionController extends Controller
                     'difficulty' => $difficulty,
                     'subject_id' => $subjectId,
                     'class_level' => $classLevel,
-                    'status' => 'Draft',
+                    'instructions' => $instructions,
+                    'status' => $status,
                     'created_by' => optional($request->user())->id,
                 ]);
 
@@ -599,6 +690,115 @@ class BankQuestionController extends Controller
             'errors' => $invalid,
             'error_report_csv' => $errorCsv,
         ]);
+    }
+
+    private function normalizeImportQuestionType(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        $map = [
+            'mcq' => 'multiple_choice',
+            'multiple_choice_single' => 'multiple_choice',
+            'single_choice' => 'multiple_choice',
+            'multiple_choice' => 'multiple_choice',
+            'multiple_select' => 'multiple_select',
+            'multiple_choice_multiple' => 'multiple_select',
+            'true_false' => 'true_false',
+            'true/false' => 'true_false',
+            'truefalse' => 'true_false',
+            'short' => 'short_answer',
+            'short_answer' => 'short_answer',
+            'essay' => 'long_answer',
+            'long' => 'long_answer',
+            'long_answer' => 'long_answer',
+            'file' => 'file_upload',
+            'file_upload' => 'file_upload',
+        ];
+
+        return $map[$normalized] ?? $normalized;
+    }
+
+    private function normalizeImportDifficulty(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        return match ($normalized) {
+            'easy' => 'Easy',
+            'medium' => 'Medium',
+            'hard' => 'Hard',
+            default => $value !== '' ? ucfirst($value) : 'Medium',
+        };
+    }
+
+    private function normalizeImportStatus(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        return match ($normalized) {
+            'draft' => 'Draft',
+            'pending review', 'pending_review' => 'Pending Review',
+            'active' => 'Active',
+            'inactive' => 'Inactive',
+            'archived' => 'Archived',
+            default => 'Draft',
+        };
+    }
+
+    private function resolveImportSubject(string $identifier, string $classLevel = ''): ?Subject
+    {
+        $value = trim($identifier);
+        if ($value === '') {
+            return null;
+        }
+
+        if (ctype_digit($value)) {
+            return Subject::find((int) $value);
+        }
+
+        $lookup = strtolower($value);
+        $candidates = Subject::query()
+            ->with('schoolClass:id,name')
+            ->where(function ($q) use ($lookup) {
+                $q->whereRaw('LOWER(name) = ?', [$lookup])
+                    ->orWhereRaw('LOWER(code) = ?', [$lookup]);
+            })
+            ->orderBy('id')
+            ->get();
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        if ($classLevel === '') {
+            return $candidates->first();
+        }
+
+        $target = $this->normalizeClassLevelForCompare($classLevel);
+        return $candidates->first(function (Subject $subject) use ($target) {
+            $subjectLevel = (string) ($subject->class_level ?? $subject->schoolClass?->name ?? '');
+            return $this->normalizeClassLevelForCompare($subjectLevel) === $target;
+        }) ?? $candidates->first();
+    }
+
+    private function classLevelsMatch(string $left, string $right): bool
+    {
+        return $this->normalizeClassLevelForCompare($left) === $this->normalizeClassLevelForCompare($right);
+    }
+
+    private function normalizeClassLevelForCompare(string $value): string
+    {
+        $normalized = strtoupper(str_replace([' ', '-', '_'], '', trim($value)));
+
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (str_starts_with($normalized, 'JSS')) {
+            return 'JSS';
+        }
+
+        if (str_starts_with($normalized, 'SSS') || str_starts_with($normalized, 'SS')) {
+            return 'SSS';
+        }
+
+        return $normalized;
     }
 
     /** List versions for a question */

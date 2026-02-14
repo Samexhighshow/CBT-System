@@ -1,103 +1,91 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../components';
-import { showSuccess, showError } from '../utils/alerts';
-import axios from 'axios';
-import useAuthStore from '../store/authStore';
+import { showError, showSuccess } from '../utils/alerts';
+import { api } from '../services/api';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
-
-interface Subject {
+interface SubjectRow {
   id: number;
   name: string;
-  description: string | null;
-  subject_group: 'compulsory' | 'trade' | 'elective';
-}
-
-interface SubjectGroups {
-  compulsory: Subject[];
-  trade: Subject[];
-  elective: Subject[];
+  code?: string;
+  description?: string | null;
+  is_compulsory?: boolean;
+  subject_type?: string;
 }
 
 const SubjectSelection: React.FC = () => {
   const navigate = useNavigate();
-  const { token, user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [subjects, setSubjects] = useState<SubjectGroups>({
-    compulsory: [],
-    trade: [],
-    elective: []
-  });
-  const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
+  const [allSubjects, setAllSubjects] = useState<SubjectRow[]>([]);
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([]);
+
+  const coreSubjects = useMemo(
+    () => allSubjects.filter((s) => Boolean(s.is_compulsory) || String(s.subject_type || '').toLowerCase() === 'core'),
+    [allSubjects]
+  );
+
+  const electiveSubjects = useMemo(
+    () => allSubjects.filter((s) => !coreSubjects.some((core) => core.id === s.id)),
+    [allSubjects, coreSubjects]
+  );
 
   useEffect(() => {
-    fetchSubjects();
+    const load = async () => {
+      setLoading(true);
+      try {
+        const prefRes = await api.get('/preferences/student/subjects');
+        const classId = prefRes.data?.class_id;
+        const existing = Array.isArray(prefRes.data?.student_subjects) ? prefRes.data.student_subjects : [];
+
+        if (!classId) {
+          showError('Student class is not set. Contact admin to assign your class.');
+          setAllSubjects([]);
+          setSelectedSubjectIds([]);
+          return;
+        }
+
+        const classRes = await api.get(`/preferences/subjects/class/${classId}`);
+        const classSubjects: SubjectRow[] = Array.isArray(classRes.data?.subjects) ? classRes.data.subjects : [];
+        setAllSubjects(classSubjects);
+
+        const existingIds = new Set<number>(existing.map((s: SubjectRow) => Number(s.id)));
+        const mandatoryIds = classSubjects
+          .filter((s) => Boolean(s.is_compulsory) || String(s.subject_type || '').toLowerCase() === 'core')
+          .map((s) => s.id);
+
+        const merged: number[] = Array.from(new Set<number>([...mandatoryIds, ...Array.from(existingIds)]));
+        setSelectedSubjectIds(merged);
+      } catch (error: any) {
+        showError(error?.response?.data?.message || 'Failed to load available subjects');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
   }, []);
 
-  const fetchSubjects = async () => {
-    setLoading(true);
-    try {
-      // Get student info from user or localStorage
-      const studentData = JSON.parse(localStorage.getItem('studentData') || '{}');
-      const classLevel = studentData.class_level || 'JSS1';
-      const departmentId = studentData.department_id || null;
-
-      const response = await axios.post(
-        `${API_URL}/subjects/for-student`,
-        { class_level: classLevel, department_id: departmentId },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setSubjects(response.data);
-      
-      // Auto-select compulsory subjects
-      const compulsoryIds = response.data.compulsory.map((s: Subject) => s.id);
-      setSelectedSubjects(compulsoryIds);
-    } catch (error: any) {
-      showError(error.response?.data?.message || 'Failed to load subjects');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleSubject = (subjectId: number, isCompulsory: boolean) => {
-    if (isCompulsory) return; // Can't deselect compulsory subjects
-    
-    setSelectedSubjects(prev =>
-      prev.includes(subjectId)
-        ? prev.filter(id => id !== subjectId)
-        : [...prev, subjectId]
+  const toggleElective = (subjectId: number) => {
+    setSelectedSubjectIds((prev) =>
+      prev.includes(subjectId) ? prev.filter((id) => id !== subjectId) : [...prev, subjectId]
     );
   };
 
-  const handleSave = async () => {
-    if (selectedSubjects.length < subjects.compulsory.length) {
-      showError('You must select all compulsory subjects');
+  const saveSubjects = async () => {
+    if (selectedSubjectIds.length === 0) {
+      showError('Please select at least one subject');
       return;
     }
 
     setSaving(true);
     try {
-      const studentData = JSON.parse(localStorage.getItem('studentData') || '{}');
-      const studentId = studentData.id || user?.id;
-
-      await axios.post(
-        `${API_URL}/subjects/student/save`,
-        { student_id: studentId, subject_ids: selectedSubjects },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      showSuccess('Subjects saved successfully!');
-      
-      // Mark subject selection as complete
+      await api.post('/preferences/student/subjects', { subject_ids: selectedSubjectIds });
       localStorage.setItem('subjectsSelected', 'true');
-      
-      // Navigate to student dashboard
-      setTimeout(() => navigate('/student'), 1500);
+      showSuccess('Subject registration saved');
+      navigate('/student', { replace: true });
     } catch (error: any) {
-      showError(error.response?.data?.message || 'Failed to save subjects');
+      showError(error?.response?.data?.message || 'Failed to save selected subjects');
     } finally {
       setSaving(false);
     }
@@ -105,158 +93,100 @@ const SubjectSelection: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-emerald-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading subjects...</p>
+          <div className="h-12 w-12 rounded-full border-4 border-cyan-200 border-t-cyan-600 animate-spin mx-auto" />
+          <p className="mt-3 text-sm text-slate-600">Loading subject registration...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 py-12 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Select Your Subjects</h1>
-          <p className="text-gray-600">Choose your trade and elective subjects for this academic session</p>
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-emerald-50 py-8 px-4">
+      <div className="max-w-5xl mx-auto space-y-5">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-slate-900">Subject Registration</h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Register only subjects available for your class. Core subjects are marked as important.
+          </p>
         </div>
 
-        <div className="space-y-6">
-          {/* Compulsory Subjects */}
-          <Card>
-            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="w-2 h-2 bg-blue-600 rounded-full mr-2"></span>
-              Compulsory Subjects
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">These subjects are mandatory for all students</p>
-            <div className="grid md:grid-cols-2 gap-3">
-              {subjects.compulsory.map(subject => (
-                <div
-                  key={subject.id}
-                  className="p-4 border-2 border-blue-300 bg-blue-50 rounded-lg cursor-not-allowed opacity-75"
-                >
-                  <div className="flex items-center justify-between">
+        <Card className="border border-rose-200 bg-rose-50">
+          <h2 className="text-lg font-semibold text-rose-900">Core Subjects (Important)</h2>
+          <p className="text-xs text-rose-800 mt-1">These are compulsory and cannot be removed.</p>
+          <div className="grid md:grid-cols-2 gap-3 mt-4">
+            {coreSubjects.length === 0 ? (
+              <p className="text-sm text-slate-600">No core subjects configured for this class.</p>
+            ) : (
+              coreSubjects.map((subject) => (
+                <div key={subject.id} className="rounded-xl border border-rose-300 bg-white p-3 opacity-90">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h3 className="font-medium text-gray-900">{subject.name}</h3>
-                      {subject.description && (
-                        <p className="text-sm text-gray-600 mt-1">{subject.description}</p>
-                      )}
+                      <p className="text-sm font-semibold text-slate-900">{subject.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{subject.code || 'Core'}</p>
+                      {subject.description && <p className="text-xs text-slate-600 mt-1">{subject.description}</p>}
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={true}
-                      readOnly
-                      aria-label={`${subject.name} (compulsory)`}
-                      className="w-5 h-5 text-blue-600 rounded cursor-not-allowed"
-                    />
+                    <input type="checkbox" checked readOnly className="mt-1 h-4 w-4 text-rose-600" />
                   </div>
                 </div>
-              ))}
-            </div>
-          </Card>
+              ))
+            )}
+          </div>
+        </Card>
 
-          {/* Trade Subjects */}
-          {subjects.trade.length > 0 && (
-            <Card>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                <span className="w-2 h-2 bg-green-600 rounded-full mr-2"></span>
-                Trade Subjects
-              </h2>
-              <p className="text-sm text-gray-600 mb-4">Select your trade subjects (click to select/deselect)</p>
-              <div className="grid md:grid-cols-2 gap-3">
-                {subjects.trade.map(subject => {
-                  const isSelected = selectedSubjects.includes(subject.id);
-                  return (
-                    <div
-                      key={subject.id}
-                      onClick={() => toggleSubject(subject.id, false)}
-                      className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        isSelected
-                          ? 'border-green-500 bg-green-50'
-                          : 'border-gray-200 hover:border-green-300 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-medium text-gray-900">{subject.name}</h3>
-                          {subject.description && (
-                            <p className="text-sm text-gray-600 mt-1">{subject.description}</p>
-                          )}
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          readOnly
-                          aria-label={`${subject.name} trade subject`}
-                          className="w-5 h-5 text-green-600 rounded pointer-events-none"
-                        />
+        <Card className="border border-cyan-200 bg-cyan-50">
+          <h2 className="text-lg font-semibold text-cyan-900">Elective Subjects (By Choice)</h2>
+          <p className="text-xs text-cyan-800 mt-1">Select only the electives you want to offer.</p>
+          <div className="grid md:grid-cols-2 gap-3 mt-4">
+            {electiveSubjects.length === 0 ? (
+              <p className="text-sm text-slate-600">No electives configured for this class.</p>
+            ) : (
+              electiveSubjects.map((subject) => {
+                const selected = selectedSubjectIds.includes(subject.id);
+                return (
+                  <button
+                    type="button"
+                    key={subject.id}
+                    onClick={() => toggleElective(subject.id)}
+                    className={`text-left rounded-xl border p-3 transition ${
+                      selected ? 'border-cyan-500 bg-white shadow-sm' : 'border-cyan-200 bg-white/70 hover:border-cyan-400'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{subject.name}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{subject.code || 'Elective'}</p>
+                        {subject.description && <p className="text-xs text-slate-600 mt-1">{subject.description}</p>}
                       </div>
+                      <input type="checkbox" checked={selected} readOnly className="mt-1 h-4 w-4 text-cyan-600" />
                     </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </Card>
 
-          {/* Elective Subjects */}
-          {subjects.elective.length > 0 && (
-            <Card>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                <span className="w-2 h-2 bg-purple-600 rounded-full mr-2"></span>
-                Elective Subjects
-              </h2>
-              <p className="text-sm text-gray-600 mb-4">Select your elective subjects (click to select/deselect)</p>
-              <div className="grid md:grid-cols-2 gap-3">
-                {subjects.elective.map(subject => {
-                  const isSelected = selectedSubjects.includes(subject.id);
-                  return (
-                    <div
-                      key={subject.id}
-                      onClick={() => toggleSubject(subject.id, false)}
-                      className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        isSelected
-                          ? 'border-purple-500 bg-purple-50'
-                          : 'border-gray-200 hover:border-purple-300 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-medium text-gray-900">{subject.name}</h3>
-                          {subject.description && (
-                            <p className="text-sm text-gray-600 mt-1">{subject.description}</p>
-                          )}
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          readOnly
-                          aria-label={`${subject.name} optional subject`}
-                          className="w-5 h-5 text-purple-600 rounded pointer-events-none"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
-
-          {/* Summary */}
-          <Card>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Selected Subjects</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  You have selected {selectedSubjects.length} subject(s)
-                </p>
-              </div>
-              <Button onClick={handleSave} loading={saving} disabled={selectedSubjects.length === 0}>
+        <Card>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-sm text-slate-600">
+              Selected: <span className="font-semibold text-slate-900">{selectedSubjectIds.length}</span> subject(s)
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setSelectedSubjectIds(coreSubjects.map((s) => s.id))}
+                disabled={saving}
+              >
+                Reset Electives
+              </Button>
+              <Button onClick={saveSubjects} loading={saving}>
                 Save & Continue
               </Button>
             </div>
-          </Card>
-        </div>
+          </div>
+        </Card>
       </div>
     </div>
   );

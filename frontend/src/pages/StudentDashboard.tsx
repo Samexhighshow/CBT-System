@@ -1,39 +1,72 @@
 import React, { useEffect } from 'react';
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
-import { AvatarDropdown } from '../components';
+import { Loading, StudentAvatarDropdown } from '../components';
 import FooterMinimal from '../components/FooterMinimal';
 import useAuthStore from '../store/authStore';
+import { api } from '../services/api';
 import StudentAnnouncements from './StudentAnnouncements';
 import AvailableExams from './student/AvailableExams';
 import MyAllocation from './student/MyAllocation';
 import MyResults from './student/MyResults';
 import StudentOverview from './student/StudentOverview';
-import StudentProfileSettings from './student/StudentProfileSettings';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `px-3 py-2 rounded-lg text-sm font-medium transition ${isActive
-    ? 'bg-cyan-100 text-cyan-800'
-    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+  `h-10 px-4 rounded-full text-sm font-medium transition inline-flex items-center ${isActive
+    ? 'bg-cyan-100 text-cyan-800 border border-cyan-200 shadow-sm'
+    : 'text-slate-600 border border-transparent hover:bg-slate-100 hover:text-slate-900'
   }`;
 
 const StudentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  let storedUser: any = null;
+  try {
+    const raw = localStorage.getItem('user');
+    storedUser = raw ? JSON.parse(raw) : null;
+  } catch {
+    storedUser = null;
+  }
+  const activeUser = user || storedUser;
 
   useEffect(() => {
-    if (!user) {
+    if (!activeUser) {
       navigate('/student-login');
+      return;
     }
-  }, [navigate, user]);
 
-  if (!user) return null;
+    const roles = (activeUser?.roles || []).map((r: any) => String(r?.name || r).toLowerCase());
+    if (!roles.includes('student')) return;
+
+    const enforceSubjectSelection = async () => {
+      try {
+        const res = await api.get('/preferences/student/subjects');
+        const picked = Array.isArray((res as any)?.data?.student_subjects)
+          ? (res as any).data.student_subjects.length
+          : 0;
+        if (picked === 0) {
+          localStorage.removeItem('subjectsSelected');
+          navigate('/select-subjects', { replace: true });
+        } else {
+          localStorage.setItem('subjectsSelected', 'true');
+        }
+      } catch {
+        navigate('/select-subjects', { replace: true });
+      }
+    };
+
+    enforceSubjectSelection();
+  }, [activeUser, navigate]);
+
+  if (!activeUser) {
+    return <Loading fullScreen message="Loading student portal..." />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <nav className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-6 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
+        <div className="app-shell">
+          <div className="flex h-[68px] items-center">
+            <div className="flex min-w-0 items-center gap-2 md:min-w-[190px]">
               <div className="h-9 w-9 rounded-lg bg-cyan-600 text-white flex items-center justify-center">
                 <i className="bx bx-graduation text-xl" />
               </div>
@@ -43,33 +76,37 @@ const StudentDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="hidden lg:flex items-center gap-1">
-              <NavLink to="/student" end className={navLinkClass}>Overview</NavLink>
-              <NavLink to="/student/exams" className={navLinkClass}>Exams</NavLink>
-              <NavLink to="/student/results" className={navLinkClass}>Results</NavLink>
-              <NavLink to="/student/allocations" className={navLinkClass}>Allocations</NavLink>
-              <NavLink to="/student/announcements" className={navLinkClass}>Announcements</NavLink>
-              <NavLink to="/student/profile" className={navLinkClass}>Profile</NavLink>
+            <div className="hidden lg:flex flex-1 items-center justify-center px-4">
+              <div className="flex items-center justify-center gap-2 xl:gap-3">
+                <NavLink to="/student" end className={navLinkClass}>Overview</NavLink>
+                <NavLink to="/student/exams" className={navLinkClass}>Exams</NavLink>
+                <NavLink to="/student/results" className={navLinkClass}>Results</NavLink>
+                <NavLink to="/student/allocations" className={navLinkClass}>Allocations</NavLink>
+                <NavLink to="/student/announcements" className={navLinkClass}>Announcements</NavLink>
+              </div>
+            </div>
+
+            <div className="ml-auto flex items-center justify-end md:min-w-[190px]">
+              <StudentAvatarDropdown />
             </div>
           </div>
-
-          <AvatarDropdown showSettings={false} />
         </div>
       </nav>
 
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1">
+      <main className="app-shell w-full pt-6 pb-[72px] flex-1">
         <Routes>
           <Route index element={<StudentOverview />} />
           <Route path="exams" element={<AvailableExams />} />
           <Route path="results" element={<MyResults />} />
           <Route path="allocations" element={<MyAllocation />} />
           <Route path="announcements" element={<StudentAnnouncements />} />
-          <Route path="profile" element={<StudentProfileSettings />} />
           <Route path="*" element={<Navigate to="/student" replace />} />
         </Routes>
       </main>
 
-      <FooterMinimal />
+      <div className="fixed bottom-0 left-0 right-0 z-30">
+        <FooterMinimal />
+      </div>
     </div>
   );
 };

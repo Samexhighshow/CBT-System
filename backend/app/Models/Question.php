@@ -68,6 +68,14 @@ class Question extends Model
     }
 
     /**
+     * Relationship to bank question source (for exam questions linked from Question Bank)
+     */
+    public function bankQuestion(): BelongsTo
+    {
+        return $this->belongsTo(BankQuestion::class, 'bank_question_id');
+    }
+
+    /**
      * Relationship to Question Options (for MCQ, True/False, etc)
      */
     public function options(): HasMany

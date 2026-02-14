@@ -79,25 +79,46 @@ class ExamQuestionController extends Controller
         }
 
         $created = [];
-        DB::transaction(function () use ($data, $exam, &$created) {
+        $skipped = [];
+        DB::transaction(function () use ($data, $exam, &$created, &$skipped) {
             $maxOrder = (int) ExamQuestion::where('exam_id', $exam->id)->max('order_index');
+            $nextOrder = $maxOrder + 1;
 
-            foreach ($data['items'] as $i => $item) {
+            foreach ($data['items'] as $item) {
                 $bankQ = BankQuestion::findOrFail($item['bank_question_id']);
 
                 $version = $item['version_number'] ?? optional($bankQ->versions()->first())->version_number ?? 1;
+
+                $exists = ExamQuestion::where('exam_id', $exam->id)
+                    ->where('bank_question_id', $bankQ->id)
+                    ->where('version_number', $version)
+                    ->exists();
+
+                if ($exists) {
+                    $skipped[] = [
+                        'bank_question_id' => $bankQ->id,
+                        'version_number' => $version,
+                        'reason' => 'already_added',
+                    ];
+                    continue;
+                }
 
                 $created[] = ExamQuestion::create([
                     'exam_id' => $exam->id,
                     'bank_question_id' => $bankQ->id,
                     'version_number' => $version,
-                    'order_index' => $maxOrder + $i + 1,
+                    'order_index' => $nextOrder++,
                     'marks_override' => $item['marks_override'] ?? null,
                 ]);
             }
         });
 
-        return response()->json(['message' => 'Questions added', 'items' => $created, 'warnings' => $warnings], 201);
+        return response()->json([
+            'message' => count($created) > 0 ? 'Questions added' : 'No new questions were added',
+            'items' => $created,
+            'warnings' => $warnings,
+            'skipped' => $skipped,
+        ], count($created) > 0 ? 201 : 200);
     }
 
     public function update(Request $request, Exam $exam, ExamQuestion $question)

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, Input } from '../../components';
 import { api } from '../../services/api';
@@ -18,7 +18,11 @@ interface TwoFaStatus {
   type?: string | null;
 }
 
-const StudentProfileSettings: React.FC = () => {
+interface StudentProfileSettingsProps {
+  initialSection?: 'profile' | 'password';
+}
+
+const StudentProfileSettings: React.FC<StudentProfileSettingsProps> = ({ initialSection }) => {
   const navigate = useNavigate();
   const { user, setUser } = useAuthStore();
 
@@ -41,6 +45,9 @@ const StudentProfileSettings: React.FC = () => {
 
   const [otpCode, setOtpCode] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
+
+  const profileSectionRef = useRef<HTMLDivElement>(null);
+  const passwordSectionRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
     try {
@@ -87,6 +94,14 @@ const StudentProfileSettings: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!initialSection || loading) return;
+    const target = initialSection === 'password' ? passwordSectionRef.current : profileSectionRef.current;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [initialSection, loading]);
 
   const updateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,14 +284,16 @@ const StudentProfileSettings: React.FC = () => {
             </div>
           </Card>
 
-          <Card>
+          <div ref={profileSectionRef}>
+            <Card>
             <h2 className="text-lg font-bold text-slate-900 mb-3">Basic Profile</h2>
             <form onSubmit={updateProfile} className="space-y-4">
               <Input label="Full Name" value={name} onChange={(e) => setName(e.target.value)} required fullWidth />
               <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required fullWidth />
               <Button type="submit" loading={saving}>Save Profile</Button>
             </form>
-          </Card>
+            </Card>
+          </div>
 
           <Card>
             <h2 className="text-lg font-bold text-slate-900 mb-3">Profile Picture</h2>
@@ -298,7 +315,8 @@ const StudentProfileSettings: React.FC = () => {
             </div>
           </Card>
 
-          <Card>
+          <div ref={passwordSectionRef}>
+            <Card>
             <h2 className="text-lg font-bold text-slate-900 mb-3">Security</h2>
             <form onSubmit={changePassword} className="space-y-3">
               <Input label="Current Password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required fullWidth />
@@ -306,7 +324,8 @@ const StudentProfileSettings: React.FC = () => {
               <Input label="Confirm New Password" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required fullWidth />
               <Button type="submit" loading={saving}>Update Password</Button>
             </form>
-          </Card>
+            </Card>
+          </div>
 
           <Card>
             <h2 className="text-lg font-bold text-slate-900 mb-3">Two-Factor Authentication</h2>

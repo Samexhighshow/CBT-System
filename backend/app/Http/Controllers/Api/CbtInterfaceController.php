@@ -10,7 +10,6 @@ use App\Models\ExamAttempt;
 use App\Models\ExamAttemptEvent;
 use App\Models\ExamAttemptSession;
 use App\Models\Question;
-use App\Models\QuestionOption;
 use App\Models\Student;
 use App\Models\SystemSetting;
 use Carbon\Carbon;
@@ -124,6 +123,19 @@ class CbtInterfaceController extends Controller
             $activeAttempt = null;
         }
 
+        $latestAttempt = ExamAttempt::where('exam_id', $exam->id)
+            ->where('student_id', $student->id)
+            ->latest('id')
+            ->first();
+
+        if (!$activeAttempt && $latestAttempt) {
+            return response()->json([
+                'message' => 'Student already has an attempt for this exam. A new token cannot restart it.',
+                'reason' => 'attempt_already_exists',
+                'attempt_status' => $latestAttempt->status,
+            ], 409);
+        }
+
         if ($access->used && !$activeAttempt) {
             return response()->json([
                 'message' => 'This access code has already been used.',
@@ -147,22 +159,19 @@ class CbtInterfaceController extends Controller
                 ], 422);
             }
 
-            $startAt = now();
-            $endsAt = $this->computeEndsAt($exam, $startAt);
-
             $activeAttempt = ExamAttempt::create([
                 'attempt_uuid' => (string) Str::uuid(),
                 'exam_id' => $exam->id,
                 'student_id' => $student->id,
                 'device_id' => $validated['device_id'] ?? null,
-                'started_at' => $startAt,
-                'ends_at' => $endsAt,
-                'last_activity_at' => $startAt,
+                'started_at' => null,
+                'ends_at' => null,
+                'last_activity_at' => now(),
                 'question_order' => $questionOrder,
-                'status' => 'in_progress',
+                'status' => 'pending',
             ]);
 
-            $this->logEvent($activeAttempt->id, 'attempt_started', [
+            $this->logEvent($activeAttempt->id, 'attempt_created', [
                 'source' => 'cbt_verify',
                 'device_id' => $validated['device_id'] ?? null,
             ]);
@@ -216,7 +225,6 @@ class CbtInterfaceController extends Controller
             $activeAttempt->update([
                 'device_id' => $validated['device_id'] ?? $activeAttempt->device_id,
                 'last_activity_at' => $now,
-                'status' => 'in_progress',
             ]);
 
             if (!$access->used) {
@@ -224,13 +232,17 @@ class CbtInterfaceController extends Controller
             }
         });
 
-        $remainingSeconds = max(0, now()->diffInSeconds($activeAttempt->ends_at, false));
+        $remainingSeconds = $activeAttempt->ends_at
+            ? max(0, now()->diffInSeconds($activeAttempt->ends_at, false))
+            : max(60, ((int) ($exam->duration_minutes ?? 60)) * 60);
 
         return response()->json([
             'message' => 'Access verified successfully.',
             'data' => [
                 'attempt_id' => $activeAttempt->id,
                 'session_token' => $sessionToken,
+                'status' => $activeAttempt->status,
+                'started_at' => $activeAttempt->started_at?->toIso8601String(),
                 'ends_at' => $activeAttempt->ends_at?->toIso8601String(),
                 'remaining_seconds' => $remainingSeconds,
                 'switch_count' => $activeAttempt->switch_count,
@@ -245,6 +257,85 @@ class CbtInterfaceController extends Controller
                     'id' => $student->id,
                     'registration_number' => $student->registration_number,
                     'name' => trim($student->first_name . ' ' . $student->last_name),
+                ],
+            ],
+        ]);
+    }
+
+    public function start(Request $request, int $attemptId): JsonResponse
+    {
+        $attempt = ExamAttempt::with(['exam.subject:id,name', 'exam.schoolClass:id,name'])->findOrFail($attemptId);
+
+        $session = $this->validateSession($request, $attempt);
+        if ($session instanceof JsonResponse) {
+            return $session;
+        }
+
+        if ($attempt->isSubmitted()) {
+            return response()->json([
+                'message' => 'Attempt already submitted.',
+                'code' => 'attempt_submitted',
+            ], 409);
+        }
+
+        if ($attempt->isExpired()) {
+            $this->expireAttempt($attempt);
+            return response()->json([
+                'message' => 'Attempt expired before start.',
+                'code' => 'attempt_expired',
+            ], 409);
+        }
+
+        if ($attempt->status !== 'in_progress') {
+            $now = now();
+            $examEnd = $attempt->exam?->end_datetime ?? $attempt->exam?->end_time;
+            if ($examEnd instanceof Carbon && $examEnd->lte($now)) {
+                return response()->json([
+                    'message' => 'Exam window has already closed.',
+                    'code' => 'exam_window_closed',
+                ], 409);
+            }
+
+            $endsAt = $this->computeEndsAt($attempt->exam, $now);
+            if ($endsAt->lte($now)) {
+                return response()->json([
+                    'message' => 'Exam window has already closed.',
+                    'code' => 'exam_window_closed',
+                ], 409);
+            }
+
+            $attempt->update([
+                'started_at' => $attempt->started_at ?? $now,
+                'ends_at' => $attempt->ends_at ?? $endsAt,
+                'last_activity_at' => $now,
+                'status' => 'in_progress',
+            ]);
+
+            /** @var ExamAttemptSession $session */
+            $session->update(['last_seen_at' => $now]);
+
+            $this->logEvent($attempt->id, 'attempt_started', [
+                'source' => 'candidate_start_button',
+            ]);
+        }
+
+        $attempt->refresh();
+        $remainingSeconds = $this->remainingSecondsForAttempt($attempt);
+
+        return response()->json([
+            'message' => 'Attempt started.',
+            'data' => [
+                'attempt_id' => $attempt->id,
+                'status' => $attempt->status,
+                'started_at' => $attempt->started_at?->toIso8601String(),
+                'ends_at' => $attempt->ends_at?->toIso8601String(),
+                'remaining_seconds' => $remainingSeconds,
+                'exam' => [
+                    'id' => $attempt->exam?->id,
+                    'title' => $attempt->exam?->title,
+                    'subject' => $attempt->exam?->subject?->name,
+                    'class_level' => $attempt->exam?->schoolClass?->name,
+                    'duration_minutes' => $attempt->exam?->duration_minutes,
                 ],
             ],
         ]);
@@ -266,9 +357,11 @@ class CbtInterfaceController extends Controller
         }
 
         $answers = ExamAnswer::where('attempt_id', $attempt->id)->get()->map(function (ExamAnswer $answer) {
+            $selectedOptionIds = $this->extractSelectedOptionIds($answer);
             return [
                 'question_id' => $answer->question_id,
                 'option_id' => $answer->option_id,
+                'option_ids' => $selectedOptionIds,
                 'answer_text' => $answer->answer_text,
                 'flagged' => (bool) $answer->flagged,
                 'saved_at' => optional($answer->saved_at)->toIso8601String(),
@@ -276,7 +369,7 @@ class CbtInterfaceController extends Controller
             ];
         })->values();
 
-        $remainingSeconds = $attempt->ends_at ? max(0, now()->diffInSeconds($attempt->ends_at, false)) : 0;
+        $remainingSeconds = $this->remainingSecondsForAttempt($attempt);
 
         return response()->json([
             'data' => [
@@ -320,7 +413,7 @@ class CbtInterfaceController extends Controller
             $attempt->save();
         }
 
-        $questions = Question::with('options')
+        $questions = Question::with(['options', 'bankQuestion.options'])
             ->whereIn('id', $questionIds)
             ->get()
             ->keyBy('id');
@@ -332,8 +425,7 @@ class CbtInterfaceController extends Controller
                 return null;
             }
 
-            $options = $question->options
-                ->sortBy(fn ($opt) => [$opt->order_index ?? 0, $opt->id])
+            $options = $this->questionOptions($question)
                 ->values()
                 ->map(fn ($opt) => [
                     'id' => $opt->id,
@@ -342,9 +434,9 @@ class CbtInterfaceController extends Controller
 
             return [
                 'id' => $question->id,
-                'question_text' => $question->question_text,
-                'question_type' => $question->question_type,
-                'marks' => (int) ($question->marks ?? 1),
+                'question_text' => $this->questionText($question),
+                'question_type' => $this->questionType($question),
+                'marks' => (int) $this->questionMarks($question),
                 'max_words' => $question->max_words,
                 'options' => $options,
             ];
@@ -357,7 +449,9 @@ class CbtInterfaceController extends Controller
     {
         $validated = $request->validate([
             'question_id' => 'required|integer|exists:exam_questions,id',
-            'option_id' => 'nullable|integer|exists:question_options,id',
+            'option_id' => 'nullable|integer',
+            'option_ids' => 'nullable|array',
+            'option_ids.*' => 'integer',
             'answer_text' => 'nullable|string',
             'flagged' => 'nullable|boolean',
         ]);
@@ -371,6 +465,13 @@ class CbtInterfaceController extends Controller
 
         if ($attempt->isSubmitted()) {
             return response()->json(['message' => 'Attempt already submitted.'], 409);
+        }
+
+        if ($attempt->status !== 'in_progress' || !$attempt->started_at || !$attempt->ends_at) {
+            return response()->json([
+                'message' => 'Attempt has not started yet. Click Start Now to begin.',
+                'code' => 'attempt_not_started',
+            ], 409);
         }
 
         if ($attempt->isExpired()) {
@@ -387,42 +488,109 @@ class CbtInterfaceController extends Controller
 
         $question = Question::findOrFail($questionId);
 
-        $hasAnswerPayload = !empty($validated['option_id']) || !empty($validated['answer_text']);
+        $payload = $request->all();
+        $hasOptionIdPayload = array_key_exists('option_id', $payload);
+        $hasOptionIdsPayload = array_key_exists('option_ids', $payload);
+        $hasAnswerTextPayload = array_key_exists('answer_text', $payload);
+        $hasAnswerPayload = $hasOptionIdPayload || $hasOptionIdsPayload || $hasAnswerTextPayload;
         $hasFlagPayload = array_key_exists('flagged', $validated);
 
         if (!$hasAnswerPayload && !$hasFlagPayload) {
-            return response()->json(['message' => 'Either option_id or answer_text is required.'], 422);
-        }
-
-        if (!empty($validated['option_id'])) {
-            $validOption = QuestionOption::where('id', $validated['option_id'])
-                ->where('question_id', $questionId)
-                ->exists();
-
-            if (!$validOption) {
-                return response()->json(['message' => 'Selected option is invalid for this question.'], 422);
-            }
+            return response()->json(['message' => 'Provide answer payload (option_id, option_ids, or answer_text).'], 422);
         }
 
         $now = now();
+        $questionType = $this->normalizeQuestionType($question);
 
-        $answer = ExamAnswer::updateOrCreate(
-            ['attempt_id' => $attempt->id, 'question_id' => $questionId],
-            [
-                'option_id' => $validated['option_id'] ?? null,
-                'answer_text' => $validated['answer_text'] ?? null,
-                'flagged' => (bool) ($validated['flagged'] ?? false),
-                'saved_at' => $now,
-            ]
-        );
+        $answer = ExamAnswer::firstOrNew([
+            'attempt_id' => $attempt->id,
+            'question_id' => $questionId,
+        ]);
 
-        if ($this->isObjectiveQuestion($question) && !empty($validated['option_id'])) {
-            $option = QuestionOption::find($validated['option_id']);
-            $isCorrect = (bool) ($option?->is_correct ?? false);
-            $answer->is_correct = $isCorrect;
-            $answer->marks_awarded = $isCorrect ? (float) ($question->marks ?? 1) : 0;
-            $answer->save();
+        if ($this->isMultiSelectQuestion($question)) {
+            if ($hasOptionIdsPayload) {
+                $selectedIds = $this->normalizeOptionIds($validated['option_ids'] ?? []);
+
+                if (count($selectedIds) > 0 && !$this->areValidOptionsForQuestion($question, $selectedIds)) {
+                    return response()->json(['message' => 'One or more selected options are invalid for this question.'], 422);
+                }
+
+                $answer->option_id = null;
+                $answer->answer_text = count($selectedIds) > 0
+                    ? json_encode(['option_ids' => $selectedIds], JSON_UNESCAPED_UNICODE)
+                    : null;
+
+                if (count($selectedIds) > 0) {
+                    $correctIds = $this->questionOptions($question)
+                        ->where('is_correct', true)
+                        ->pluck('id')
+                        ->map(fn ($id) => (int) $id)
+                        ->values()
+                        ->all();
+
+                    sort($selectedIds);
+                    sort($correctIds);
+
+                    $isCorrect = $selectedIds === $correctIds;
+                    $answer->is_correct = $isCorrect;
+                    $answer->marks_awarded = $isCorrect ? $this->questionMarks($question) : 0;
+                } else {
+                    $answer->is_correct = null;
+                    $answer->marks_awarded = null;
+                }
+            }
+        } elseif ($this->isObjectiveQuestion($question)) {
+            if ($hasOptionIdPayload) {
+                $optionId = isset($validated['option_id']) ? (int) $validated['option_id'] : null;
+                if ($optionId !== null && !$this->isValidOptionForQuestion($question, $optionId)) {
+                    return response()->json(['message' => 'Selected option is invalid for this question.'], 422);
+                }
+
+                $answer->option_id = $optionId;
+                if ($optionId !== null) {
+                    $isCorrect = $this->isCorrectOptionForQuestion($question, $optionId);
+                    $answer->is_correct = $isCorrect;
+                    $answer->marks_awarded = $isCorrect ? $this->questionMarks($question) : 0;
+                } else {
+                    $answer->is_correct = null;
+                    $answer->marks_awarded = null;
+                }
+            }
+
+            if ($hasAnswerTextPayload && $questionType === 'true_false') {
+                $raw = trim((string) ($validated['answer_text'] ?? ''));
+                $normalized = strtolower($raw);
+                $answer->answer_text = $raw !== '' ? $raw : null;
+                if (in_array($normalized, ['true', 'false'], true)) {
+                    $matching = $this->questionOptions($question)
+                        ->first(function ($opt) use ($normalized) {
+                            return strtolower(trim((string) ($opt->option_text ?? ''))) === $normalized;
+                        });
+                    if ($matching) {
+                        $answer->option_id = (int) $matching->id;
+                        $isCorrect = (bool) ($matching->is_correct ?? false);
+                        $answer->is_correct = $isCorrect;
+                        $answer->marks_awarded = $isCorrect ? $this->questionMarks($question) : 0;
+                    }
+                }
+            }
+        } else {
+            if ($hasAnswerTextPayload) {
+                $raw = (string) ($validated['answer_text'] ?? '');
+                $answer->answer_text = trim($raw) === '' ? null : $raw;
+            }
+            $answer->option_id = null;
+            $answer->is_correct = null;
+            $answer->marks_awarded = null;
         }
+
+        if ($hasFlagPayload) {
+            $answer->flagged = (bool) ($validated['flagged'] ?? false);
+        } elseif (!$answer->exists) {
+            $answer->flagged = false;
+        }
+        $answer->saved_at = $now;
+        $answer->save();
 
         $attempt->update([
             'last_activity_at' => $now,
@@ -437,7 +605,8 @@ class CbtInterfaceController extends Controller
             'data' => [
                 'question_id' => $questionId,
                 'saved_at' => $now->toIso8601String(),
-                'flagged' => (bool) ($validated['flagged'] ?? false),
+                'flagged' => (bool) ($answer->flagged ?? false),
+                'option_ids' => $this->extractSelectedOptionIds($answer),
             ],
         ]);
     }
@@ -449,6 +618,14 @@ class CbtInterfaceController extends Controller
         $session = $this->validateSession($request, $attempt);
         if ($session instanceof JsonResponse) {
             return $session;
+        }
+
+        if ($attempt->status !== 'in_progress' || !$attempt->started_at || !$attempt->ends_at) {
+            return response()->json([
+                'status' => 'pending',
+                'remaining_seconds' => $this->remainingSecondsForAttempt($attempt),
+                'code' => 'attempt_not_started',
+            ]);
         }
 
         if ($attempt->isExpired()) {
@@ -466,7 +643,7 @@ class CbtInterfaceController extends Controller
 
         return response()->json([
             'status' => 'ok',
-            'remaining_seconds' => max(0, $now->diffInSeconds($attempt->ends_at, false)),
+            'remaining_seconds' => $this->remainingSecondsForAttempt($attempt),
         ]);
     }
 
@@ -487,6 +664,13 @@ class CbtInterfaceController extends Controller
         if ($attempt->isSubmitted()) {
             return response()->json([
                 'message' => 'Attempt already submitted.',
+            ], 409);
+        }
+
+        if ($attempt->status !== 'in_progress' || !$attempt->started_at || !$attempt->ends_at) {
+            return response()->json([
+                'message' => 'Attempt has not started yet.',
+                'code' => 'attempt_not_started',
             ], 409);
         }
 
@@ -589,6 +773,13 @@ class CbtInterfaceController extends Controller
             return $session;
         }
 
+        if ($attempt->status !== 'in_progress' || !$attempt->started_at || !$attempt->ends_at) {
+            return response()->json([
+                'message' => 'Attempt has not started yet.',
+                'code' => 'attempt_not_started',
+            ], 409);
+        }
+
         if ($attempt->isSubmitted()) {
             return response()->json([
                 'message' => 'Attempt already submitted.',
@@ -688,6 +879,16 @@ class CbtInterfaceController extends Controller
         return $durationEnd;
     }
 
+    private function remainingSecondsForAttempt(ExamAttempt $attempt): int
+    {
+        if ($attempt->ends_at instanceof Carbon) {
+            return max(0, now()->diffInSeconds($attempt->ends_at, false));
+        }
+
+        $durationMinutes = (int) ($attempt->exam?->duration_minutes ?? 60);
+        return max(60, $durationMinutes * 60);
+    }
+
     private function accessMatchesStudent(ExamAccess $access, Student $student): bool
     {
         if ((int) $access->student_id === (int) $student->id) {
@@ -729,7 +930,7 @@ class CbtInterfaceController extends Controller
             $questionIds = $attempt->exam->questions()->orderBy('id')->pluck('id');
         }
 
-        $questions = Question::with('options')
+        $questions = Question::with(['options', 'bankQuestion.options'])
             ->whereIn('id', $questionIds)
             ->get()
             ->keyBy('id');
@@ -747,7 +948,7 @@ class CbtInterfaceController extends Controller
                 continue;
             }
 
-            $marks = (float) ($question->marks ?? 1);
+            $marks = $this->questionMarks($question);
             $totalMarks += $marks;
 
             /** @var ExamAnswer|null $answer */
@@ -759,8 +960,19 @@ class CbtInterfaceController extends Controller
             if ($this->isObjectiveQuestion($question)) {
                 $isCorrect = false;
 
-                if ($answer->option_id) {
-                    $isCorrect = (bool) $question->options->where('id', $answer->option_id)->first()?->is_correct;
+                if ($this->isMultiSelectQuestion($question)) {
+                    $selectedIds = $this->extractSelectedOptionIds($answer);
+                    $correctIds = $this->questionOptions($question)
+                        ->where('is_correct', true)
+                        ->pluck('id')
+                        ->map(fn ($id) => (int) $id)
+                        ->values()
+                        ->all();
+                    sort($selectedIds);
+                    sort($correctIds);
+                    $isCorrect = count($selectedIds) > 0 && $selectedIds === $correctIds;
+                } elseif ($answer->option_id) {
+                    $isCorrect = $this->isCorrectOptionForQuestion($question, (int) $answer->option_id);
                 }
 
                 $awarded = $isCorrect ? $marks : 0.0;
@@ -814,12 +1026,149 @@ class CbtInterfaceController extends Controller
 
     private function isObjectiveQuestion(Question $question): bool
     {
-        return in_array($question->question_type, [
+        return in_array($this->questionType($question), [
+            'multiple_choice',
             'multiple_choice_single',
+            'multiple_select',
             'multiple_choice_multiple',
             'true_false',
             'mcq',
         ], true);
+    }
+
+    private function questionText(Question $question): string
+    {
+        $text = trim((string) ($question->question_text ?? ''));
+        if ($text !== '') {
+            return $text;
+        }
+
+        return trim((string) ($question->bankQuestion?->question_text ?? ''));
+    }
+
+    private function questionType(Question $question): string
+    {
+        $bankType = trim((string) ($question->bankQuestion?->question_type ?? ''));
+        if ($bankType !== '') {
+            return $bankType;
+        }
+
+        $type = trim((string) ($question->question_type ?? ''));
+        if ($type !== '') {
+            return $type;
+        }
+
+        return 'mcq';
+    }
+
+    private function questionMarks(Question $question): float
+    {
+        if ($question->marks !== null) {
+            return (float) $question->marks;
+        }
+
+        if (($question->marks_override ?? null) !== null) {
+            return (float) $question->marks_override;
+        }
+
+        if (($question->bankQuestion?->marks ?? null) !== null) {
+            return (float) $question->bankQuestion->marks;
+        }
+
+        return 1.0;
+    }
+
+    private function questionOptions(Question $question)
+    {
+        $options = $question->options
+            ->sortBy(fn ($opt) => [$opt->order_index ?? 0, $opt->id])
+            ->values();
+
+        if ($options->isNotEmpty()) {
+            return $options;
+        }
+
+        return $question->bankQuestion?->options
+            ? $question->bankQuestion->options
+                ->sortBy(fn ($opt) => [$opt->sort_order ?? 0, $opt->id])
+                ->values()
+            : collect();
+    }
+
+    private function isValidOptionForQuestion(Question $question, int $optionId): bool
+    {
+        return $this->questionOptions($question)->contains(fn ($opt) => (int) $opt->id === $optionId);
+    }
+
+    private function areValidOptionsForQuestion(Question $question, array $optionIds): bool
+    {
+        if (empty($optionIds)) {
+            return true;
+        }
+
+        $available = $this->questionOptions($question)->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+        $availableLookup = array_flip($available);
+        foreach ($optionIds as $id) {
+            if (!isset($availableLookup[(int) $id])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function isCorrectOptionForQuestion(Question $question, int $optionId): bool
+    {
+        return (bool) ($this->questionOptions($question)
+            ->first(fn ($opt) => (int) $opt->id === $optionId)?->is_correct ?? false);
+    }
+
+    private function normalizeQuestionType(Question $question): string
+    {
+        return strtolower(trim((string) $this->questionType($question)));
+    }
+
+    private function isMultiSelectQuestion(Question $question): bool
+    {
+        return in_array($this->normalizeQuestionType($question), [
+            'multiple_select',
+            'multiple_choice_multiple',
+        ], true);
+    }
+
+    private function normalizeOptionIds(array $optionIds): array
+    {
+        $normalized = collect($optionIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+        sort($normalized);
+        return $normalized;
+    }
+
+    private function extractSelectedOptionIds(ExamAnswer $answer): array
+    {
+        $selected = [];
+
+        if ($answer->option_id) {
+            $selected[] = (int) $answer->option_id;
+        }
+
+        $text = trim((string) ($answer->answer_text ?? ''));
+        if ($text === '') {
+            return $this->normalizeOptionIds($selected);
+        }
+
+        $decoded = json_decode($text, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $raw = $decoded['option_ids'] ?? $decoded['selected_option_ids'] ?? null;
+            if (is_array($raw)) {
+                $selected = array_merge($selected, $raw);
+            }
+        }
+
+        return $this->normalizeOptionIds($selected);
     }
 
     private function isTabWarningEvent(string $eventType): bool

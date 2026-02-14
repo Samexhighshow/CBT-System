@@ -31,6 +31,18 @@ export const cbtApi = {
     return response.data.data;
   },
 
+  startAttempt: async (
+    attemptId: number,
+    sessionToken: string
+  ): Promise<{ attempt_id: number; status: string; started_at?: string | null; ends_at?: string | null; remaining_seconds: number }> => {
+    const response = await cbtClient.post<{ data: { attempt_id: number; status: string; started_at?: string | null; ends_at?: string | null; remaining_seconds: number } }>(
+      `/cbt/attempts/${attemptId}/start`,
+      {},
+      withSessionHeader(sessionToken)
+    );
+    return response.data.data;
+  },
+
   getAttemptState: async (attemptId: number, sessionToken: string): Promise<CbtAttemptState> => {
     const response = await cbtClient.get<{ data: CbtAttemptState }>(`/cbt/attempts/${attemptId}/state`, withSessionHeader(sessionToken));
     return response.data.data;
@@ -44,7 +56,7 @@ export const cbtApi = {
   saveAnswer: async (
     attemptId: number,
     sessionToken: string,
-    payload: { question_id: number; option_id?: number; answer_text?: string; flagged?: boolean }
+    payload: { question_id: number; option_id?: number; option_ids?: number[]; answer_text?: string; flagged?: boolean }
   ): Promise<void> => {
     await cbtClient.post(`/cbt/attempts/${attemptId}/answer`, payload, withSessionHeader(sessionToken));
   },
@@ -67,8 +79,8 @@ export const cbtApi = {
     return response.data?.data;
   },
 
-  pingAttempt: async (attemptId: number, sessionToken: string): Promise<{ remaining_seconds: number }> => {
-    const response = await cbtClient.post<{ remaining_seconds: number }>(`/cbt/attempts/${attemptId}/ping`, {}, withSessionHeader(sessionToken));
+  pingAttempt: async (attemptId: number, sessionToken: string): Promise<{ status?: string; remaining_seconds: number; code?: string }> => {
+    const response = await cbtClient.post<{ status?: string; remaining_seconds: number; code?: string }>(`/cbt/attempts/${attemptId}/ping`, {}, withSessionHeader(sessionToken));
     return response.data;
   },
 };

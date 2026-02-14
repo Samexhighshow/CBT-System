@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\SystemSetting;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Spatie\Permission\Models\Role;
 
 class StudentController extends Controller
 {
@@ -39,12 +42,15 @@ class StudentController extends Controller
 
         return response()->json([
             'id' => $student->id,
+            'student_id' => $student->student_id,
             'registration_number' => $student->registration_number,
             'first_name' => $student->first_name,
             'last_name' => $student->last_name,
             'other_names' => $student->other_names,
             'email' => $student->email,
+            'class_id' => $student->class_id,
             'class_level' => $student->class_level,
+            'department_id' => $student->department_id,
             'department' => $student->department?->name,
             'class_name' => $student->schoolClass?->name,
             'completed_attempts' => $completedAttempts,
@@ -128,12 +134,12 @@ class StudentController extends Controller
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'other_names' => 'nullable|string|max:255',
-            'email' => 'required|email|unique:students,email',
+            'email' => 'required|email|unique:students,email|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
             'phone_number' => 'nullable|string|max:20',
             'date_of_birth' => 'required|date',
             'gender' => 'required|in:male,female',
-            'class_id' => 'required|exists:classes,id',
+            'class_id' => 'required|exists:school_classes,id',
             'department_id' => 'nullable|exists:departments,id',
             'address' => 'nullable|string',
             'guardian_first_name' => 'required|string|max:255',
@@ -165,8 +171,33 @@ class StudentController extends Controller
             }
         }
 
-        $validated['password'] = Hash::make($validated['password']);
-        $student = Student::create($validated);
+        $validated['student_id'] = $this->generateStudentId($validated['registration_number'] ?? null);
+        $hashedPassword = Hash::make($validated['password']);
+        $validated['password'] = $hashedPassword;
+
+        $student = DB::transaction(function () use ($validated, $hashedPassword) {
+            $fullName = trim(
+                ($validated['first_name'] ?? '') . ' ' .
+                ($validated['last_name'] ?? '') . ' ' .
+                ($validated['other_names'] ?? '')
+            );
+
+            $user = User::create([
+                'name' => $fullName !== '' ? $fullName : ($validated['email'] ?? 'Student'),
+                'email' => $validated['email'],
+                'password' => $hashedPassword,
+                'phone_number' => $validated['phone_number'] ?? null,
+            ]);
+
+            $studentRole = Role::firstOrCreate([
+                'name' => 'student',
+                'guard_name' => 'web',
+            ]);
+            $user->assignRole($studentRole);
+            $user->markEmailAsVerified();
+
+            return Student::create($validated);
+        });
 
         // Send registration email with registration number
         // TODO: Implement email notification with Mailable
@@ -193,6 +224,26 @@ class StudentController extends Controller
         if (strpos($name, 'SSS3') !== false || strpos($name, 'SS3') !== false || strpos($name, 'SENIOR 3') !== false) return 'SS3';
         
         return 'JSS1'; // Default
+    }
+
+    /**
+     * Generate a unique legacy student_id required by the students table.
+     */
+    private function generateStudentId(?string $registrationNumber = null): string
+    {
+        if (!empty($registrationNumber)) {
+            $candidate = strtoupper(trim($registrationNumber));
+            $exists = Student::where('student_id', $candidate)->exists();
+            if (!$exists) {
+                return $candidate;
+            }
+        }
+
+        do {
+            $candidate = 'STD' . now()->format('Y') . str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+        } while (Student::where('student_id', $candidate)->exists());
+
+        return $candidate;
     }
 
     /**
@@ -299,10 +350,27 @@ class StudentController extends Controller
     {
         $student = Student::findOrFail($id);
 
-        $totalExams = $student->examAttempts()->where('status', 'completed')->count();
-        $averageScore = $student->examAttempts()
-            ->where('status', 'completed')
-            ->avg('score') ?? 0;
+        $attempts = $student->examAttempts()
+            ->whereIn('status', ['completed', 'submitted'])
+            ->with('exam')
+            ->get();
+
+        $totalExams = $attempts->count();
+        $averageScore = $attempts->isNotEmpty()
+            ? round((float) $attempts->avg(function ($attempt) {
+                $total = $this->resolveAttemptTotalMarks($attempt);
+                return $total > 0 ? (((float) ($attempt->score ?? 0) / $total) * 100) : 0;
+            }), 2)
+            : 0;
+
+        $passedCount = $attempts->filter(function ($attempt) {
+            $total = $this->resolveAttemptTotalMarks($attempt);
+            $passing = $this->resolveAttemptPassingMarks($attempt, $total);
+            $score = (float) ($attempt->score ?? 0);
+            return $passing !== null ? $score >= $passing : ($total > 0 ? (($score / $total) * 100) >= 50 : false);
+        })->count();
+
+        $passRate = $totalExams > 0 ? round(($passedCount / $totalExams) * 100, 2) : 0;
 
         $now = now();
         $availableExams = \App\Models\Exam::query()
@@ -327,7 +395,8 @@ class StudentController extends Controller
 
         return response()->json([
             'total_exams_taken' => $totalExams,
-            'average_score' => round($averageScore, 2),
+            'average_score' => $averageScore,
+            'pass_rate' => $passRate,
             'available_exams' => $availableExams,
             'registration_number' => $student->registration_number,
             'class_level' => $student->class_level,
@@ -338,9 +407,18 @@ class StudentController extends Controller
     /**
      * Get student by registration number (for exam access code generation)
      */
-    public function getByRegistrationNumber($regNumber)
+    public function getByRegistrationNumber(Request $request, $regNumber = null)
     {
-        $student = Student::where('registration_number', strtoupper($regNumber))
+        $resolvedRegNumber = $regNumber ?? $request->query('reg_number');
+        $resolvedRegNumber = $resolvedRegNumber ? strtoupper(trim((string) $resolvedRegNumber)) : null;
+
+        if (!$resolvedRegNumber) {
+            return response()->json([
+                'message' => 'Registration number is required'
+            ], 422);
+        }
+
+        $student = Student::where('registration_number', $resolvedRegNumber)
             ->with(['department', 'schoolClass'])
             ->first();
 
@@ -358,5 +436,49 @@ class StudentController extends Controller
             'department' => $student->department->name ?? null,
             'class_level' => $student->class_level,
         ]);
+    }
+
+    private function resolveAttemptTotalMarks($attempt): float
+    {
+        $exam = $attempt->exam;
+        if (!$exam) {
+            return 0;
+        }
+
+        $direct = $exam->total_marks ?? null;
+        if ($direct !== null && is_numeric($direct) && (float) $direct > 0) {
+            return (float) $direct;
+        }
+
+        $metaTotal = data_get($exam->metadata, 'total_marks');
+        if ($metaTotal !== null && is_numeric($metaTotal) && (float) $metaTotal > 0) {
+            return (float) $metaTotal;
+        }
+
+        return (float) ($exam->questions()->sum('marks') ?? 0);
+    }
+
+    private function resolveAttemptPassingMarks($attempt, ?float $totalMarks = null): ?float
+    {
+        $exam = $attempt->exam;
+        if (!$exam) {
+            return null;
+        }
+
+        $direct = $exam->passing_marks ?? null;
+        if ($direct !== null && is_numeric($direct)) {
+            return (float) $direct;
+        }
+
+        $metaPassing = data_get($exam->metadata, 'passing_marks');
+        if ($metaPassing !== null && is_numeric($metaPassing)) {
+            return (float) $metaPassing;
+        }
+
+        if ($totalMarks !== null && $totalMarks > 0) {
+            return round($totalMarks * 0.5, 2);
+        }
+
+        return null;
     }
 }

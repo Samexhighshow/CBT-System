@@ -27,15 +27,23 @@ class ResultController extends Controller
         $attempts = $query->paginate($perPage);
 
         $results = $attempts->getCollection()->map(function($attempt) {
+            $totalMarks = $attempt->exam->total_marks
+                ?? ($attempt->exam->metadata['total_marks'] ?? null)
+                ?? $attempt->exam->questions()->sum('marks');
+            $passingMarks = $attempt->exam->passing_marks
+                ?? ($attempt->exam->metadata['passing_marks'] ?? null)
+                ?? 0;
+            $safeTotal = max(1, (int) $totalMarks);
+
             return [
                 'id' => $attempt->id,
                 'exam_title' => $attempt->exam->title,
                 'subject' => $attempt->exam->subject->name,
                 'score' => $attempt->score,
-                'total_marks' => $attempt->exam->total_marks,
-                'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
-                'passing_marks' => $attempt->exam->passing_marks,
-                'passed' => $attempt->score >= $attempt->exam->passing_marks,
+                'total_marks' => $totalMarks,
+                'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
+                'passing_marks' => $passingMarks,
+                'passed' => $attempt->score >= $passingMarks,
                 'started_at' => $attempt->started_at,
                 'completed_at' => $attempt->completed_at,
                 'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
@@ -69,6 +77,14 @@ class ResultController extends Controller
         $attempts = $query->paginate($perPage);
 
         $results = $attempts->getCollection()->map(function($attempt) use ($exam) {
+            $totalMarks = $exam->total_marks
+                ?? ($exam->metadata['total_marks'] ?? null)
+                ?? $exam->questions()->sum('marks');
+            $passingMarks = $exam->passing_marks
+                ?? ($exam->metadata['passing_marks'] ?? null)
+                ?? 0;
+            $safeTotal = max(1, (int) $totalMarks);
+
             return [
                 'id' => $attempt->id,
                 'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
@@ -76,9 +92,9 @@ class ResultController extends Controller
                 'department' => $attempt->student->department->name ?? 'N/A',
                 'class_level' => $attempt->student->class_level,
                 'score' => $attempt->score,
-                'total_marks' => $exam->total_marks,
-                'percentage' => round(($attempt->score / $exam->total_marks) * 100, 2),
-                'passed' => $attempt->score >= $exam->passing_marks,
+                'total_marks' => $totalMarks,
+                'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
+                'passed' => $attempt->score >= $passingMarks,
                 'completed_at' => $attempt->completed_at,
                 'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
             ];
@@ -223,14 +239,17 @@ class ResultController extends Controller
 
         $questions = $attempt->examAnswers->map(function($answer) {
             $correctOption = $answer->question->options->where('is_correct', true)->first();
-            $isCorrect = $answer->selected_option === $correctOption->option_text;
+            $isCorrect = $answer->option_id && $correctOption
+                ? (int) $answer->option_id === (int) $correctOption->id
+                : false;
+            $selectedAnswerText = $answer->option?->option_text ?? $answer->answer_text;
 
             return [
                 'question_text' => $answer->question->question_text,
                 'question_type' => $answer->question->question_type,
                 'marks' => $answer->question->marks,
-                'selected_answer' => $answer->selected_option ?? $answer->answer_text,
-                'correct_answer' => $correctOption->option_text ?? null,
+                'selected_answer' => $selectedAnswerText,
+                'correct_answer' => $correctOption?->option_text,
                 'is_correct' => $isCorrect,
                 'marks_obtained' => $isCorrect ? $answer->question->marks : 0,
             ];
@@ -244,9 +263,15 @@ class ResultController extends Controller
                 'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
                 'registration_number' => $attempt->student->registration_number,
                 'score' => $attempt->score,
-                'total_marks' => $attempt->exam->total_marks,
-                'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
-                'passed' => $attempt->score >= $attempt->exam->passing_marks,
+                'total_marks' => $attempt->exam->total_marks
+                    ?? ($attempt->exam->metadata['total_marks'] ?? null)
+                    ?? $attempt->exam->questions()->sum('marks'),
+                'percentage' => round(($attempt->score / max(1, (int) ($attempt->exam->total_marks
+                    ?? ($attempt->exam->metadata['total_marks'] ?? null)
+                    ?? $attempt->exam->questions()->sum('marks')))) * 100, 2),
+                'passed' => $attempt->score >= ($attempt->exam->passing_marks
+                    ?? ($attempt->exam->metadata['passing_marks'] ?? null)
+                    ?? 0),
                 'started_at' => $attempt->started_at,
                 'completed_at' => $attempt->completed_at,
             ],

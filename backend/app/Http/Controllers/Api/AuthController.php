@@ -11,7 +11,9 @@ use Carbon\Carbon;
 use App\Models\PasswordResetCode;
 use App\Mail\PasswordResetOtpMail;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Student;
 use App\Models\User;
+use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
@@ -24,7 +26,33 @@ class AuthController extends Controller
 
         // Check if user exists
         $user = User::where('email', $credentials['email'])->first();
-        
+
+        // Backfill user account for legacy student records that exist only in students table.
+        if (!$user) {
+            $student = Student::where('email', $credentials['email'])->first();
+            if ($student && !empty($student->password)) {
+                $fullName = trim(
+                    ($student->first_name ?? '') . ' ' .
+                    ($student->last_name ?? '') . ' ' .
+                    ($student->other_names ?? '')
+                );
+
+                $user = User::create([
+                    'name' => $fullName !== '' ? $fullName : $student->email,
+                    'email' => $student->email,
+                    'password' => $student->password,
+                    'phone_number' => $student->phone_number ?? $student->phone ?? null,
+                ]);
+
+                $studentRole = Role::firstOrCreate([
+                    'name' => 'student',
+                    'guard_name' => 'web',
+                ]);
+                $user->assignRole($studentRole);
+                $user->markEmailAsVerified();
+            }
+        }
+
         if (!$user) {
             return response()->json([
                 'message' => 'No account found with this email address.',
@@ -41,6 +69,12 @@ class AuthController extends Controller
 
         $user = $request->user();
 
+        $loginContext = strtolower((string) $request->input('login_context', ''));
+        $roleNames = $user->roles
+            ->map(fn ($role) => strtolower((string) ($role->name ?? $role)))
+            ->values()
+            ->all();
+
         // Check if email is verified (only if NOT the first user/admin who is auto-verified? 
         // Actually, logic: If Main Admin -> allow. If Other Role -> allow. If No Role -> block.
         // We can skip email verification check if user has Main Admin role, or keep it.
@@ -53,6 +87,26 @@ class AuthController extends Controller
                 'message' => 'Your account is pending administrator approval.',
                 'pending_approval' => true
             ], 403);
+        }
+
+        if ($loginContext === 'student' && !in_array('student', $roleNames, true)) {
+            Auth::logout();
+            return response()->json([
+                'message' => 'This account is not permitted on the student portal.',
+                'error_type' => 'role_not_student'
+            ], 403);
+        }
+
+        if ($loginContext === 'admin') {
+            $adminRoles = ['admin', 'main admin', 'teacher'];
+            $hasAdminRole = count(array_intersect($roleNames, $adminRoles)) > 0;
+            if (!$hasAdminRole) {
+                Auth::logout();
+                return response()->json([
+                    'message' => 'This account is not permitted on the admin portal.',
+                    'error_type' => 'role_not_admin'
+                ], 403);
+            }
         }
 
         if (!$user->hasVerifiedEmail()) {

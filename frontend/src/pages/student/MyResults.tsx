@@ -40,20 +40,42 @@ const MyResults: React.FC = () => {
       const student = await getCurrentStudentProfile();
       setStudentId(student.id);
 
-      const [resultsRes, statsRes] = await Promise.all([
+      const [resultsRes, statsRes] = await Promise.allSettled([
         api.get(`/results/student/${student.id}`, { params: { limit: 100 } }),
         api.get(`/analytics/student/${student.id}/dashboard`),
       ]);
 
-      const rows: ResultRow[] = resultsRes.data?.data || [];
-      setResults(rows);
+      if (resultsRes.status === 'fulfilled') {
+        const rows: ResultRow[] = resultsRes.value.data?.data || [];
+        setResults(rows);
+      } else {
+        setResults([]);
+      }
 
-      const analytics = statsRes.data || {};
-      setStats({
-        average_score: Number(analytics.average_score || 0),
-        total_exams: Number(analytics.total_exams_taken || 0),
-        pass_rate: Number(analytics.pass_rate || 0),
-      });
+      if (statsRes.status === 'fulfilled') {
+        const analytics = statsRes.value.data || {};
+        setStats({
+          average_score: Number(analytics.average_score || 0),
+          total_exams: Number(analytics.total_exams_taken || 0),
+          pass_rate: Number(analytics.pass_rate || 0),
+        });
+      } else {
+        try {
+          const fallbackStatsRes = await api.get(`/students/${student.id}/statistics`);
+          const fallbackStats = fallbackStatsRes.data || {};
+          setStats({
+            average_score: Number(fallbackStats.average_score || 0),
+            total_exams: Number(fallbackStats.total_exams_taken || 0),
+            pass_rate: Number(fallbackStats.pass_rate || 0),
+          });
+        } catch {
+          setStats({
+            average_score: 0,
+            total_exams: 0,
+            pass_rate: 0,
+          });
+        }
+      }
     } catch (error: any) {
       console.error('Failed to load student results', error);
       showError(error?.response?.data?.message || 'Failed to load your results.');

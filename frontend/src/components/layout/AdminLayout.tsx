@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import AvatarDropdown from '../AvatarDropdown';
 import useAuthStore from '../../store/authStore';
@@ -6,6 +6,7 @@ import FooterMinimal from '../FooterMinimal';
 import { adminNavLinks, NavLinkConfig } from '../../config/adminNav';
 import { useRoleBasedNav } from '../../hooks/useRoleBasedNav';
 import { TeacherSubjectSelection, StudentSubjectSelection } from '../index';
+import Loading from '../Loading';
 import { api } from '../../services/api';
 import { showSuccess } from '../../utils/alerts';
 
@@ -19,6 +20,7 @@ const AdminLayout: React.FC = () => {
   const [showTeacherSubjects, setShowTeacherSubjects] = useState(false);
   const [showStudentSubjects, setShowStudentSubjects] = useState(false);
   const [checkedFirstLogin, setCheckedFirstLogin] = useState(false);
+  const dropdownCloseTimerRef = useRef<number | null>(null);
   const { loading: navLoading, filterNavLinks } = useRoleBasedNav();
 
   useEffect(() => {
@@ -75,9 +77,22 @@ const AdminLayout: React.FC = () => {
   useEffect(() => {
     setIsSidebarOpen(false);
     setOpenDropdown(null);
+    if (dropdownCloseTimerRef.current) {
+      window.clearTimeout(dropdownCloseTimerRef.current);
+      dropdownCloseTimerRef.current = null;
+    }
   }, [location.pathname]);
 
-  if (!user || navLoading) return null;
+  useEffect(() => () => {
+    if (dropdownCloseTimerRef.current) {
+      window.clearTimeout(dropdownCloseTimerRef.current);
+      dropdownCloseTimerRef.current = null;
+    }
+  }, []);
+
+  if (!user || navLoading) {
+    return <Loading fullScreen message="Loading admin portal..." />;
+  }
 
   // Filter nav links based on user's role-based permissions
   const navLinks: NavLinkConfig[] = filterNavLinks(adminNavLinks);
@@ -89,14 +104,32 @@ const AdminLayout: React.FC = () => {
     return location.pathname.startsWith(path);
   };
 
+  const handleDropdownEnter = (path: string) => {
+    if (dropdownCloseTimerRef.current) {
+      window.clearTimeout(dropdownCloseTimerRef.current);
+      dropdownCloseTimerRef.current = null;
+    }
+    setOpenDropdown(path);
+  };
+
+  const handleDropdownLeave = (path: string) => {
+    if (dropdownCloseTimerRef.current) {
+      window.clearTimeout(dropdownCloseTimerRef.current);
+    }
+    dropdownCloseTimerRef.current = window.setTimeout(() => {
+      setOpenDropdown((current) => (current === path ? null : current));
+      dropdownCloseTimerRef.current = null;
+    }, 140);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col w-full">
       {/* Top Navigation Bar - Desktop */}
-      <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full sticky top-0 z-40">
+      <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full fixed top-0 left-0 right-0 z-40">
         <div className="app-shell">
-          <div className="flex justify-between items-center min-h-[56px] py-2">
-            {/* Left Section: Logo + Desktop Nav */}
-            <div className="flex items-center space-x-2 flex-1">
+          <div className="flex items-center h-[68px]">
+            {/* Left Section: Logo */}
+            <div className="flex min-w-0 items-center space-x-2 md:min-w-[180px]">
               {/* Mobile Hamburger */}
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -107,16 +140,24 @@ const AdminLayout: React.FC = () => {
               </button>
 
               <h1 className="text-lg font-bold text-blue-600 dark:text-blue-400">CBT Admin</h1>
-              
-              {/* Desktop Navigation Links */}
-              <div className="hidden md:flex items-center gap-1.5 flex-wrap">
+            </div>
+
+            {/* Desktop Navigation Links */}
+            <div className="hidden md:flex flex-1 items-center justify-center px-4">
+              <div className="flex items-center justify-center gap-3 lg:gap-4 flex-wrap">
                 {navLinks.map((link) => (
                   link.subItems ? (
                     // Dropdown Menu
-                    <div key={link.path} className="relative">
+                    <div
+                      key={link.path}
+                      className="relative"
+                      onMouseEnter={() => handleDropdownEnter(link.path)}
+                      onMouseLeave={() => handleDropdownLeave(link.path)}
+                    >
                       <button
                         onClick={() => setOpenDropdown(openDropdown === link.path ? null : link.path)}
-                        className={`h-9 px-3 text-xs md:text-sm font-medium rounded-full transition inline-flex items-center gap-1 border ${
+                        onFocus={() => handleDropdownEnter(link.path)}
+                        className={`h-10 px-4 text-sm font-medium rounded-full transition inline-flex items-center gap-1.5 border ${
                           isActivePath(link.path)
                             ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm'
                             : 'text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -127,24 +168,30 @@ const AdminLayout: React.FC = () => {
                         <i className={`bx bx-chevron-down text-xs transition-transform ${openDropdown === link.path ? 'rotate-180' : ''}`}></i>
                       </button>
                       {openDropdown === link.path && (
-                        <div className="absolute left-0 mt-2 w-52 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
-                          {link.subItems.map((subItem) => (
-                            <button
-                              key={subItem.path}
-                              onClick={() => {
-                                navigate(subItem.path);
-                                setOpenDropdown(null);
-                              }}
-                              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 ${
-                                isActivePath(subItem.path)
-                                  ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-semibold'
-                                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                              }`}
-                            >
-                              <i className={`bx ${subItem.icon} text-sm`}></i>
-                              <span>{subItem.name}</span>
-                            </button>
-                          ))}
+                        <div
+                          className="absolute left-1/2 top-full z-50 -translate-x-1/2 pt-2"
+                          onMouseEnter={() => handleDropdownEnter(link.path)}
+                          onMouseLeave={() => handleDropdownLeave(link.path)}
+                        >
+                          <div className="w-56 rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                            {link.subItems.map((subItem) => (
+                              <button
+                                key={subItem.path}
+                                onClick={() => {
+                                  navigate(subItem.path);
+                                  setOpenDropdown(null);
+                                }}
+                                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 ${
+                                  isActivePath(subItem.path)
+                                    ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-semibold'
+                                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                <i className={`bx ${subItem.icon} text-sm`}></i>
+                                <span>{subItem.name}</span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -153,7 +200,7 @@ const AdminLayout: React.FC = () => {
                     <button
                       key={link.path}
                       onClick={() => navigate(link.path)}
-                      className={`h-9 px-3 text-xs md:text-sm font-medium rounded-full transition inline-flex items-center gap-1 border ${
+                      className={`h-10 px-4 text-sm font-medium rounded-full transition inline-flex items-center gap-1.5 border ${
                         isActivePath(link.path)
                           ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 shadow-sm'
                           : 'text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -167,8 +214,8 @@ const AdminLayout: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Section: Avatar - Separated with space */}
-            <div className="flex items-center ml-auto pl-4">
+            {/* Right Section: Avatar */}
+            <div className="ml-auto flex items-center justify-end pl-2 md:min-w-[180px] md:pl-4">
               <AvatarDropdown showSettings={isMainAdmin} />
             </div>
           </div>
@@ -264,11 +311,11 @@ const AdminLayout: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 w-full">
+      <main className="flex-1 w-full overflow-x-hidden pt-[68px] pb-[48px]">
         <Outlet />
       </main>
 
-      <div className="mt-auto">
+      <div className="fixed bottom-0 left-0 right-0 z-30">
         <FooterMinimal />
       </div>
 

@@ -4,6 +4,7 @@ import { Button, Card, Modal, Timer } from '../components';
 import { api } from '../services/api';
 import Dexie from 'dexie';
 import { showError, showSuccess } from '../utils/alerts';
+import { getCurrentStudentProfile } from './student/studentData';
 
 interface Question {
   id: number;
@@ -39,6 +40,7 @@ const ExamPortal: React.FC = () => {
   const navigate = useNavigate();
   
   const [exam, setExam] = useState<Exam | null>(null);
+  const [attemptId, setAttemptId] = useState<number | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [timeRemaining, setTimeRemaining] = useState(3600); // default 60 minutes in seconds
@@ -49,18 +51,30 @@ const ExamPortal: React.FC = () => {
   const loadExam = React.useCallback(async () => {
     try {
       setLoading(true);
-      const examRes = await api.get(`/exams/${examId}`);
-      const questionsRes = await api.get(`/exams/${examId}/questions`);
+      const student = await getCurrentStudentProfile();
+      const [examRes, questionsRes, attemptRes] = await Promise.all([
+        api.get(`/exams/${examId}`),
+        api.get(`/exams/${examId}/questions`),
+        api.post(`/exams/${examId}/start`, { student_id: student.id }),
+      ]);
+
+      const examPayload = examRes.data?.exam || examRes.data || {};
+      const questionPayload = questionsRes.data?.questions || questionsRes.data?.data || questionsRes.data || [];
       const examData: Exam = {
         id: Number(examId),
-        title: examRes.data?.title,
-        duration_minutes: examRes.data?.duration || examRes.data?.duration_minutes || 60,
-        questions: (questionsRes.data || []).map((q: any) => ({
+        title: examPayload.title,
+        duration_minutes: examPayload.duration || examPayload.duration_minutes || 60,
+        questions: (Array.isArray(questionPayload) ? questionPayload : []).map((q: any) => ({
           id: q.id,
           question_text: q.question_text || q.text,
           options: (q.options || []).map((o: any) => ({ id: o.id, option_text: o.option_text || o.text }))
         }))
       };
+
+      const attempt = attemptRes.data?.attempt || attemptRes.data?.data || attemptRes.data;
+      if (attempt?.id) {
+        setAttemptId(attempt.id);
+      }
       setExam(examData);
       setTimeRemaining(examData.duration_minutes * 60);
       setLoading(false);
@@ -86,17 +100,32 @@ const ExamPortal: React.FC = () => {
   }, [examId, navigate]);
 
   const handleSubmit = React.useCallback(() => {
-    // Sync local answers then submit
     (async () => {
       try {
-        await syncAnswers();
+        if (!attemptId) {
+          showError('Unable to submit without an active attempt.');
+          return;
+        }
+
+        const payload = Object.entries(answers).map(([questionId, optionId]) => ({
+          question_id: Number(questionId),
+          option_id: optionId,
+        }));
+
+        await api.post(`/exams/${examId}/submit`, {
+          attempt_id: attemptId,
+          answers: payload,
+          final: true,
+        });
+
+        await examDB.answers.where('examId').equals(Number(examId)).delete();
         showSuccess('Exam submitted!');
         navigate('/student');
       } catch (e) {
         showError('Submission failed. Answers remain saved locally and will sync.');
       }
     })();
-  }, [exam, answers, navigate]);
+  }, [answers, attemptId, examId, navigate]);
 
   const handleSelectAnswer = (questionId: number, optionId: number) => {
     setAnswers(prev => ({
@@ -122,22 +151,17 @@ const ExamPortal: React.FC = () => {
   useEffect(() => {
     loadExam();
   }, [loadExam]);
-  // periodic sync to backend
-  useEffect(() => {
-    const iv = setInterval(() => {
-      syncAnswers();
-    }, 5000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const syncAnswers = async () => {
+  const syncAnswers = React.useCallback(async () => {
     if (syncLock.current) return;
     syncLock.current = true;
     try {
+      if (!attemptId) return;
       const pending = await examDB.answers.where('examId').equals(Number(examId)).toArray();
       if (pending.length === 0) return;
       await api.post(`/exams/${examId}/submit`, {
-        answers: pending.map(p => ({ question_id: p.questionId, option_id: p.answerId }))
+        attempt_id: attemptId,
+        answers: pending.map(p => ({ question_id: p.questionId, option_id: p.answerId })),
+        final: false,
       });
       await examDB.answers.where('examId').equals(Number(examId)).delete();
     } catch (e) {
@@ -145,7 +169,15 @@ const ExamPortal: React.FC = () => {
     } finally {
       syncLock.current = false;
     }
-  };
+  }, [attemptId, examId]);
+
+  // periodic sync to backend
+  useEffect(() => {
+    const iv = setInterval(() => {
+      syncAnswers();
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [syncAnswers]);
 
   useEffect(() => {
     if (timeRemaining <= 0) {

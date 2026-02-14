@@ -4,7 +4,7 @@ import './App.css';
 import { useTeacherSetup } from './hooks/useTeacherSetup';
 import { useTheme } from './hooks/useTheme';
 import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
-import { ErrorBoundary, KeyboardShortcutsHelp, OfflineRouteHandler } from './components';
+import { ErrorBoundary, GlobalLoadingOverlay, KeyboardShortcutsHelp, OfflineRouteHandler } from './components';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -23,7 +23,7 @@ import PasswordOtpReset from './pages/PasswordOtpReset';
 import AdminSignup from './pages/admin/AdminSignup';
 import AdminSettings from './pages/admin/AdminSettings';
 import Profile from './pages/Profile';
-import SubjectSelection from './pages/SubjectSelection';
+import SubjectSelection from './pages/SubjectSelection.tsx';
 import QuestionBank from './pages/admin/QuestionBank';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
@@ -45,6 +45,7 @@ const App: React.FC = () => {
       
       <ErrorBoundary>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <GlobalLoadingOverlay />
           {/* Global Keyboard Shortcuts Help */}
           <KeyboardShortcutsHelp />
           
@@ -90,7 +91,7 @@ const App: React.FC = () => {
           path="/student/*"
           element={
             <RequireAuth>
-              <RequireRole roles={["Student"]}>
+              <RequireRole roles={["Student", "student"]}>
                 <StudentDashboard />
               </RequireRole>
             </RequireAuth>

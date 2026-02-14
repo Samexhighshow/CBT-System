@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, Button } from '../../components';
+import { Link } from 'react-router-dom';
+import { Card } from '../../components';
 import { api } from '../../services/api';
 import { showError } from '../../utils/alerts';
 import { getCurrentStudentProfile } from './studentData';
@@ -29,7 +29,6 @@ const formatDate = (value?: string) => {
 };
 
 const AvailableExams: React.FC = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState<StudentExam[]>([]);
 
@@ -57,7 +56,7 @@ const AvailableExams: React.FC = () => {
     <div className="space-y-5">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Available Exams</h1>
-        <p className="text-sm text-slate-600 mt-1">Start any currently open exam from this list.</p>
+        <p className="text-sm text-slate-600 mt-1">Review open exams and use the CBT portal to begin.</p>
       </div>
 
       {loading ? (
@@ -72,35 +71,50 @@ const AvailableExams: React.FC = () => {
           </div>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {exams.map((exam) => {
             const start = exam.start_datetime || exam.start_time;
             const end = exam.end_datetime || exam.end_time;
 
             return (
               <Card key={exam.id} className="border border-slate-200 hover:border-cyan-300 transition">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h2 className="text-base font-semibold text-slate-900 leading-snug">{exam.title}</h2>
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">{exam.subject?.name || 'General'}</p>
+                      <h2 className="text-lg font-semibold text-slate-900 leading-snug mt-1">{exam.title}</h2>
+                      <p className="text-xs text-slate-600 mt-1">{exam.class_level || 'Class not set'}</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                       {exam.status || 'Open'}
                     </span>
                   </div>
 
-                  <p className="text-xs text-slate-600">
-                    {exam.subject?.name || 'General'} • {exam.class_level || 'Class not set'}
-                  </p>
-
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-1">
-                    <p><span className="font-semibold">Duration:</span> {exam.duration_minutes || 0} minutes</p>
-                    <p><span className="font-semibold">Total Marks:</span> {exam.total_marks || 0}</p>
-                    <p><span className="font-semibold">Start:</span> {formatDate(start)}</p>
-                    <p><span className="font-semibold">End:</span> {formatDate(end)}</p>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 grid gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">Duration</span>
+                      <span>{exam.duration_minutes || 0} minutes</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">Total Marks</span>
+                      <span>{exam.total_marks || 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">Start</span>
+                      <span>{formatDate(start)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">End</span>
+                      <span>{formatDate(end)}</span>
+                    </div>
                   </div>
 
-                  <Button onClick={() => navigate(`/exam/${exam.id}`)} className="w-full">
-                    Start Exam
-                  </Button>
+                  <div className="rounded-lg bg-cyan-50 border border-cyan-100 px-3 py-2 text-xs text-cyan-900">
+                    Use the CBT access portal with your exam code to begin.
+                    <Link to="/cbt" className="ml-2 font-semibold text-cyan-700 hover:text-cyan-800">
+                      Open portal
+                    </Link>
+                  </div>
                 </div>
               </Card>
             );

@@ -5,7 +5,12 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const token = localStorage.getItem('auth_token');
   const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
+  let user = null;
+  try {
+    user = userStr ? JSON.parse(userStr) : null;
+  } catch {
+    user = null;
+  }
 
   // Block access if no token or no user
   if (!token || !user) {

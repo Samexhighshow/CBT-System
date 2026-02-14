@@ -4,11 +4,18 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Exam;
+use App\Models\ExamAnswer;
+use App\Models\ExamAttempt;
+use App\Models\Question;
+use App\Models\Student;
+use App\Models\SystemSetting;
 use App\Models\Subject;
 use App\Models\SchoolClass;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class ExamController extends Controller
@@ -67,8 +74,8 @@ class ExamController extends Controller
         // Attach live question_count metadata from exam_questions
         $ids = $exams->getCollection()->pluck('id')->all();
         if (!empty($ids)) {
-            $counts = \DB::table('exam_questions')
-                ->select('exam_id', \DB::raw('COUNT(*) as cnt'))
+            $counts = DB::table('exam_questions')
+                ->select('exam_id', DB::raw('COUNT(*) as cnt'))
                 ->whereIn('exam_id', $ids)
                 ->groupBy('exam_id')
                 ->pluck('cnt', 'exam_id');
@@ -231,7 +238,7 @@ class ExamController extends Controller
         }
 
         // Attach live question_count metadata
-        $count = \DB::table('exam_questions')->where('exam_id', $exam->id)->count();
+        $count = DB::table('exam_questions')->where('exam_id', $exam->id)->count();
         $exam->metadata = array_merge((array)($exam->metadata ?? []), [
             'question_count' => (int) $count
         ]);
@@ -528,6 +535,309 @@ class ExamController extends Controller
                 ] : null
             ]
         ]);
+    }
+
+    /**
+     * Start an exam attempt for a student.
+     */
+    public function startExam(Request $request, $id)
+    {
+        $exam = Exam::with(['questions'])->findOrFail($id);
+
+        $student = $this->resolveStudentFromRequest($request);
+        if (!$student) {
+            return response()->json(['message' => 'Student authentication required.'], 401);
+        }
+
+        $eligibility = $exam->checkEligibility($student);
+        if (!($eligibility['eligible'] ?? false)) {
+            return response()->json([
+                'message' => $eligibility['message'] ?? 'Exam access denied.',
+                'reason' => $eligibility['reason'] ?? 'not_eligible',
+                'details' => $eligibility['details'] ?? null,
+            ], 403);
+        }
+
+        $existingAttempt = ExamAttempt::where('exam_id', $exam->id)
+            ->where('student_id', $student->id)
+            ->whereIn('status', ['pending', 'in_progress'])
+            ->latest('id')
+            ->first();
+
+        if ($existingAttempt) {
+            return response()->json([
+                'message' => 'Existing attempt resumed.',
+                'attempt' => $existingAttempt,
+                'exam' => [
+                    'id' => $exam->id,
+                    'title' => $exam->title,
+                    'duration_minutes' => $exam->duration_minutes,
+                ],
+            ]);
+        }
+
+        $maxAttempts = (int) ($exam->allowed_attempts ?? 0);
+        if ($maxAttempts <= 0) {
+            $maxAttempts = (int) (SystemSetting::get('max_exam_attempts', 0) ?? 0);
+        }
+
+        if ($maxAttempts > 0) {
+            $completedAttemptsCount = ExamAttempt::where('exam_id', $exam->id)
+                ->where('student_id', $student->id)
+                ->whereIn('status', ['completed', 'submitted'])
+                ->count();
+
+            if ($completedAttemptsCount >= $maxAttempts) {
+                return response()->json([
+                    'message' => 'Maximum allowed attempts reached for this exam.',
+                ], 403);
+            }
+        }
+
+        $startAt = now();
+        $endsAt = $this->computeAttemptEndsAt($exam, $startAt);
+
+        $attempt = ExamAttempt::create([
+            'attempt_uuid' => (string) Str::uuid(),
+            'exam_id' => $exam->id,
+            'student_id' => $student->id,
+            'started_at' => $startAt,
+            'ends_at' => $endsAt,
+            'status' => 'in_progress',
+        ]);
+
+        return response()->json([
+            'message' => 'Exam started successfully.',
+            'attempt' => $attempt,
+            'exam' => [
+                'id' => $exam->id,
+                'title' => $exam->title,
+                'duration_minutes' => $exam->duration_minutes,
+            ],
+        ], 201);
+    }
+
+    /**
+     * Submit or autosave exam answers.
+     */
+    public function submitExam(Request $request, $id)
+    {
+        $exam = Exam::with(['questions.options'])->findOrFail($id);
+
+        $answers = $this->normalizeAnswers($request->input('answers', []));
+        if (empty($answers)) {
+            return response()->json([
+                'message' => 'No answers supplied.',
+            ], 422);
+        }
+
+        $attemptId = $request->input('attempt_id');
+        $attempt = null;
+        if ($attemptId) {
+            $attempt = ExamAttempt::findOrFail($attemptId);
+        } else {
+            $student = $this->resolveStudentFromRequest($request);
+            if (!$student) {
+                return response()->json(['message' => 'Student authentication required.'], 401);
+            }
+
+            $attempt = ExamAttempt::where('exam_id', $exam->id)
+                ->where('student_id', $student->id)
+                ->whereIn('status', ['pending', 'in_progress'])
+                ->latest('id')
+                ->first();
+
+            if (!$attempt) {
+                $startAt = now();
+                $endsAt = $this->computeAttemptEndsAt($exam, $startAt);
+                $attempt = ExamAttempt::create([
+                    'attempt_uuid' => (string) Str::uuid(),
+                    'exam_id' => $exam->id,
+                    'student_id' => $student->id,
+                    'started_at' => $startAt,
+                    'ends_at' => $endsAt,
+                    'status' => 'in_progress',
+                ]);
+            }
+        }
+
+        if ($attempt->exam_id !== $exam->id) {
+            return response()->json(['message' => 'Invalid attempt for this exam.'], 403);
+        }
+
+        $isFinal = $request->boolean('final') || $request->boolean('submit') || $request->boolean('is_final');
+        if ($isFinal && in_array($attempt->status, ['submitted', 'completed'], true)) {
+            return response()->json(['message' => 'This exam attempt has already been submitted.'], 409);
+        }
+
+        $now = now();
+        $questions = $exam->questions->keyBy('id');
+        $score = 0.0;
+        $totalMarks = (float) $exam->questions->sum(fn (Question $question) => (float) ($question->marks ?? 1));
+        $pendingManual = 0;
+
+        DB::transaction(function () use ($answers, $attempt, $questions, $isFinal, $now, &$score, &$pendingManual) {
+            foreach ($answers as $answer) {
+                $questionId = (int) $answer['question_id'];
+                $question = $questions->get($questionId);
+                if (!$question) {
+                    continue;
+                }
+
+                $optionId = $answer['option_id'] ?? null;
+                $answerText = $answer['answer_text'] ?? null;
+
+                $payload = [
+                    'option_id' => $optionId,
+                    'answer_text' => $answerText,
+                    'saved_at' => $now,
+                ];
+
+                if ($isFinal) {
+                    if ($this->requiresManualMarking($question)) {
+                        $payload['is_correct'] = null;
+                        $payload['marks_awarded'] = null;
+                        $pendingManual++;
+                    } else {
+                        $correctOptionIds = $question->options
+                            ->where('is_correct', true)
+                            ->pluck('id')
+                            ->all();
+
+                        $isCorrect = $optionId ? in_array((int) $optionId, $correctOptionIds, true) : false;
+                        $marks = (float) ($question->marks ?? 1);
+                        $payload['is_correct'] = $isCorrect;
+                        $payload['marks_awarded'] = $isCorrect ? $marks : 0.0;
+                        $score += $payload['marks_awarded'];
+                    }
+                }
+
+                ExamAnswer::updateOrCreate(
+                    [
+                        'attempt_id' => $attempt->id,
+                        'question_id' => $questionId,
+                    ],
+                    $payload
+                );
+            }
+
+            if (!$isFinal) {
+                $attempt->update([
+                    'last_activity_at' => $now,
+                    'status' => $attempt->status === 'pending' ? 'in_progress' : $attempt->status,
+                ]);
+                return;
+            }
+
+            $status = $pendingManual > 0 ? 'submitted' : 'completed';
+            $durationSeconds = $attempt->started_at ? $attempt->started_at->diffInSeconds($now) : null;
+
+            $attempt->update([
+                'submitted_at' => $now,
+                'completed_at' => $status === 'completed' ? $now : null,
+                'ended_at' => $now,
+                'duration_seconds' => $durationSeconds,
+                'score' => round($score, 2),
+                'status' => $status,
+            ]);
+        });
+
+        if (!$isFinal) {
+            return response()->json([
+                'message' => 'Answers saved.',
+                'attempt_id' => $attempt->id,
+            ]);
+        }
+
+        $percentage = $totalMarks > 0 ? round(($score / $totalMarks) * 100, 2) : 0.0;
+
+        return response()->json([
+            'message' => 'Exam submitted successfully.',
+            'attempt_id' => $attempt->id,
+            'score' => round($score, 2),
+            'total_marks' => $totalMarks,
+            'percentage' => $percentage,
+            'pending_manual_count' => $pendingManual,
+        ]);
+    }
+
+    private function resolveStudentFromRequest(Request $request): ?Student
+    {
+        if ($request->filled('student_id')) {
+            return Student::find($request->input('student_id'));
+        }
+
+        $user = $request->user();
+        if ($user && $user->email) {
+            return Student::where('email', $user->email)->first();
+        }
+
+        return null;
+    }
+
+    private function computeAttemptEndsAt(Exam $exam, Carbon $startAt): ?Carbon
+    {
+        $duration = (int) ($exam->duration_minutes ?? 0);
+        $endByDuration = $duration > 0 ? $startAt->copy()->addMinutes($duration) : null;
+        $scheduleEnd = $exam->end_datetime ?? $exam->end_time;
+
+        if ($scheduleEnd && $endByDuration) {
+            return $scheduleEnd->lt($endByDuration) ? $scheduleEnd : $endByDuration;
+        }
+
+        return $scheduleEnd ?? $endByDuration;
+    }
+
+    private function requiresManualMarking(?Question $question): bool
+    {
+        if (!$question) {
+            return false;
+        }
+
+        return !in_array($question->question_type, [
+            'multiple_choice_single',
+            'multiple_choice_multiple',
+            'true_false',
+        ], true);
+    }
+
+    private function normalizeAnswers($raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $answers = [];
+
+        $isAssociative = array_keys($raw) !== range(0, count($raw) - 1);
+        if ($isAssociative) {
+            foreach ($raw as $questionId => $optionId) {
+                $answers[] = [
+                    'question_id' => (int) $questionId,
+                    'option_id' => is_array($optionId) ? (int) ($optionId[0] ?? 0) : (int) $optionId,
+                ];
+            }
+            return $answers;
+        }
+
+        foreach ($raw as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $optionId = $entry['option_id'] ?? $entry['selected_option_id'] ?? null;
+            if ($optionId === null && isset($entry['selected_option'])) {
+                $optionId = $entry['selected_option'];
+            }
+
+            $answers[] = [
+                'question_id' => (int) ($entry['question_id'] ?? 0),
+                'option_id' => is_array($optionId) ? (int) ($optionId[0] ?? 0) : ($optionId !== null ? (int) $optionId : null),
+                'answer_text' => $entry['answer_text'] ?? null,
+            ];
+        }
+
+        return $answers;
     }
 
         /**

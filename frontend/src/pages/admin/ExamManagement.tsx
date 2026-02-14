@@ -579,26 +579,40 @@ const ExamManagement: React.FC = () => {
     setShowManageQuestions(true);
     const subjId = (exam as any)?.subject?.id ?? (exam as any)?.subject_id ?? null;
     manageSubjectIdRef.current = subjId;
+    await loadExamQuestions(exam.id);
     await loadBankQuestions('', subjId ?? undefined);
   };
 
   const loadBankQuestions = async (search: string, subjectIdOverride?: number) => {
     try {
       setBankQLoading(true);
-      const params: any = { status: 'Active', per_page: 20 };
+      const params: any = { per_page: 50, status: 'Active' };
       const subjectId = subjectIdOverride ?? manageSubjectIdRef.current ?? (viewingExam?.subject?.id || (viewingExam as any)?.subject_id);
       if (subjectId) params.subject_id = subjectId;
       if (search) params.q = search;
-      const res = await api.get('/bank/questions', { params });
+      let res = await api.get('/bank/questions', { params });
       let items = res.data?.data || res.data || [];
+
+      // If strict subject filter returns nothing, retry without subject filter
+      // so admins can still pick cross-subject questions when needed.
+      if (subjectId && items.length === 0) {
+        const fallbackParams: any = { per_page: 50, status: 'Active' };
+        if (search) fallbackParams.q = search;
+        res = await api.get('/bank/questions', { params: fallbackParams });
+        items = res.data?.data || res.data || [];
+      }
       
       // Filter out questions already added to the exam
       const addedQuestionIds = new Set(examQuestions.map(eq => eq.bank_question_id));
-      items = items.filter((q: any) => !addedQuestionIds.has(q.id));
+      items = items.filter((q: any) => {
+        const isActive = String(q.status || '').toLowerCase() === 'active';
+        return isActive && !addedQuestionIds.has(q.id);
+      });
       
       setBankQuestions(items);
     } catch (e) {
       setBankQuestions([]);
+      showError('Failed to load bank questions');
     } finally {
       setBankQLoading(false);
     }
@@ -612,19 +626,48 @@ const ExamManagement: React.FC = () => {
   };
 
   const toggleSelectAllBank = (checked: boolean) => {
-    if (checked) setSelectedBankQIds(bankQuestions.map((q) => q.id)); else setSelectedBankQIds([]);
+    if (checked) {
+      setSelectedBankQIds(
+        bankQuestions
+          .filter((q) => String(q.status || '').toLowerCase() === 'active')
+          .map((q) => q.id)
+      );
+    } else {
+      setSelectedBankQIds([]);
+    }
   };
   const toggleSelectBank = (id: number, checked: boolean) => {
+    const row = bankQuestions.find((q) => q.id === id);
+    if (checked && String(row?.status || '').toLowerCase() !== 'active') return;
     setSelectedBankQIds((prev) => checked ? Array.from(new Set([...prev, id])) : prev.filter(x => x !== id));
   };
 
   const addSelectedToExam = async () => {
     if (!viewingExam) return;
     try {
-      const items = selectedBankQIds.map((id) => ({ bank_question_id: id }));
+      const activeQuestionIds = new Set(
+        bankQuestions
+          .filter((q) => String(q.status || '').toLowerCase() === 'active')
+          .map((q) => q.id)
+      );
+      const items = selectedBankQIds
+        .filter((id) => activeQuestionIds.has(id))
+        .map((id) => ({ bank_question_id: id }));
+      if (items.length === 0) {
+        showError('Only Active questions can be added to an exam');
+        return;
+      }
       const res = await api.post(`/exams/${viewingExam.id}/questions`, { items });
       const warnings = res.data?.warnings || [];
-      showSuccess('Questions added');
+      const created = res.data?.items || [];
+      const skipped = res.data?.skipped || [];
+      if (created.length > 0) {
+        showSuccess(`Questions added (${created.length})`);
+      } else if (skipped.length > 0) {
+        showError('Selected questions were already added to this exam');
+      } else {
+        showError('No questions were added');
+      }
       if (warnings.length) {
         const msg = warnings.map((w: any) => `#${w.id}: ${w.status}`).join(', ');
         showError(`Added with warnings: ${msg}`);
@@ -1905,7 +1948,7 @@ const ExamManagement: React.FC = () => {
                               type="checkbox"
                               checked={selectedBankQIds.includes(q.id)}
                               onChange={(e)=> toggleSelectBank(q.id, e.target.checked)}
-                              disabled={q.status === 'Archived'}
+                              disabled={String(q.status || '').toLowerCase() !== 'active'}
                             />
                           </td>
                           <td className="p-2 max-w-[360px] truncate" title={q.question_text}>{q.question_text}</td>

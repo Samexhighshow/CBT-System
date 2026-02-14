@@ -80,7 +80,9 @@ const ExamAccess: React.FC = () => {
 
     setSearching(true);
     try {
-      const response = await api.get(`/students/by-reg-number/${regNumber.toUpperCase().trim()}`);
+      const response = await api.get('/students/by-reg-number', {
+        params: { reg_number: regNumber.toUpperCase().trim() },
+      });
       if (response.status === 200) {
         setFoundStudent(response.data);
         setGeneratedCode(null);
@@ -127,12 +129,16 @@ const ExamAccess: React.FC = () => {
           used_at: null,
         });
 
-        showSuccess('Access code generated successfully!');
+        showSuccess(response.data.message || 'Access code generated successfully!');
         fetchGeneratedAccess();
       }
     } catch (error: any) {
       console.error('Failed to generate access:', error);
-      showError(error.response?.data?.message || 'Failed to generate access code');
+      showError(
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        'Failed to generate access code'
+      );
     } finally {
       setLoading(false);
     }
@@ -197,6 +203,7 @@ const ExamAccess: React.FC = () => {
               <ul>
                 <li>This access code is valid for ONE exam only</li>
                 <li>Once used, it cannot be used again</li>
+                <li>If regenerated, older unused code is invalidated</li>
                 <li>Code expires at the end of exam day</li>
                 <li>Keep this code secure and confidential</li>
                 <li>Do not share with other students</li>
@@ -257,7 +264,7 @@ const ExamAccess: React.FC = () => {
             Exam Access Code Generator
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Generate and print one-time access codes for individual students
+            Generate, re-generate, and print exam access codes for individual students
           </p>
         </div>
 
@@ -273,7 +280,7 @@ const ExamAccess: React.FC = () => {
               {/* Select Exam */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Select Exam (Today)
+                  Select Exam (Available)
                 </label>
                 <select
                   value={selectedExam || ''}
@@ -284,7 +291,7 @@ const ExamAccess: React.FC = () => {
                     setRegNumber('');
                   }}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                  title="Select Exam (Today)"
+                  title="Select Exam (Available)"
                 >
                   <option value="">-- Select an exam --</option>
                   {exams.map((exam) => (
@@ -295,7 +302,7 @@ const ExamAccess: React.FC = () => {
                 </select>
                 {exams.length === 0 && (
                   <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
-                    No exams scheduled for today
+                    No published/scheduled exams available for the current window
                   </p>
                 )}
               </div>
@@ -453,7 +460,9 @@ const ExamAccess: React.FC = () => {
                   <ul className="text-sm text-amber-800 dark:text-amber-400 space-y-1 list-disc list-inside">
                     <li>Each code works only once</li>
                     <li>Codes expire at end of day</li>
-                    <li>One student = one code per exam</li>
+                    <li>Regeneration is allowed if token is lost</li>
+                    <li>New code invalidates previous unused code</li>
+                    <li>Token cannot restart exam after attempt exists</li>
                     <li>Invalid reg numbers won't generate</li>
                     <li>Print immediately after generation</li>
                   </ul>

@@ -73,41 +73,89 @@ class AnalyticsController extends Controller
     {
         $student = Student::findOrFail($studentId);
 
-        $completedExams = ExamAttempt::where('student_id', $studentId)
-            ->where('status', 'completed')
-            ->with('exam')
+        $attempts = ExamAttempt::where('student_id', $studentId)
+            ->whereIn('status', ['completed', 'submitted'])
+            ->with('exam.subject')
             ->get();
 
-        $availableExams = $student->department->exams()
+        $now = now();
+        $availableExamsQuery = Exam::query()
             ->where('published', true)
-            ->count();
+            ->whereIn('status', ['scheduled', 'active'])
+            ->when($student->class_id, fn($q) => $q->where('class_id', $student->class_id))
+            ->when(!$student->class_id && $student->class_level, fn($q) => $q->where('class_level', $student->class_level))
+            ->where(function ($query) use ($now) {
+                $query->where(function ($q) {
+                    $q->whereNull('start_datetime')->whereNull('start_time');
+                })
+                ->orWhere('start_datetime', '<=', $now)
+                ->orWhere('start_time', '<=', $now);
+            })
+            ->where(function ($query) use ($now) {
+                $query->where(function ($q) {
+                    $q->whereNull('end_datetime')->whereNull('end_time');
+                })
+                ->orWhere('end_datetime', '>=', $now)
+                ->orWhere('end_time', '>=', $now);
+            });
+
+        $availableExams = $availableExamsQuery->count();
+
+        $attemptMetrics = $attempts->map(function ($attempt) {
+            $score = (float) ($attempt->score ?? 0);
+            $totalMarks = $this->resolveExamTotalMarks($attempt->exam);
+            $passingMarks = $this->resolveExamPassingMarks($attempt->exam, $totalMarks);
+            $percentage = $this->safePercentage($score, $totalMarks) ?? 0;
+
+            return [
+                'attempt' => $attempt,
+                'score' => $score,
+                'total_marks' => $totalMarks,
+                'passing_marks' => $passingMarks,
+                'percentage' => $percentage,
+                'passed' => $passingMarks !== null ? $score >= $passingMarks : ($percentage >= 50),
+            ];
+        });
 
         $stats = [
-            'total_exams_taken' => $completedExams->count(),
+            'total_exams_taken' => $attempts->count(),
             'available_exams' => $availableExams,
-            'average_score' => round($completedExams->avg('score'), 2),
-            'total_marks_obtained' => $completedExams->sum('score'),
-            'highest_score' => $completedExams->max('score'),
-            'pass_rate' => $this->calculatePassRate($completedExams),
+            'average_score' => $attemptMetrics->isNotEmpty()
+                ? round($attemptMetrics->avg('percentage'), 2)
+                : 0,
+            'total_marks_obtained' => round($attemptMetrics->sum('score'), 2),
+            'highest_score' => $attemptMetrics->isNotEmpty()
+                ? round((float) $attemptMetrics->max('score'), 2)
+                : 0,
+            'pass_rate' => $attemptMetrics->isNotEmpty()
+                ? round(($attemptMetrics->where('passed', true)->count() / $attemptMetrics->count()) * 100, 2)
+                : 0,
         ];
 
-        // Recent results
-        $stats['recent_results'] = $completedExams->sortByDesc('ended_at')
+        $stats['recent_results'] = $attemptMetrics
+            ->sortByDesc(function ($metric) {
+                $attempt = $metric['attempt'];
+                return $attempt->completed_at ?? $attempt->submitted_at ?? $attempt->ended_at ?? $attempt->updated_at;
+            })
             ->take(5)
-            ->map(function($attempt) {
+            ->map(function ($metric) {
+                /** @var ExamAttempt $attempt */
+                $attempt = $metric['attempt'];
+                $exam = $attempt->exam;
+
                 return [
-                    'exam_title' => $attempt->exam->title,
-                    'score' => $attempt->score,
-                    'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
-                    'percentage' => $this->safePercentage($attempt->score, $attempt->exam->metadata['total_marks'] ?? null),
-                    'passed' => $this->safePassed($attempt->score, $attempt->exam->metadata['passing_marks'] ?? null),
-                    'completed_at' => $attempt->ended_at,
+                    'exam_title' => $exam?->title,
+                    'score' => $metric['score'],
+                    'total_marks' => $metric['total_marks'],
+                    'percentage' => round((float) $metric['percentage'], 2),
+                    'passed' => (bool) $metric['passed'],
+                    'status' => $attempt->status,
+                    'completed_at' => $attempt->completed_at ?? $attempt->submitted_at ?? $attempt->ended_at,
                 ];
             })
             ->values();
 
-        // Performance by subject
-        $stats['performance_by_subject'] = $this->getStudentPerformanceBySubject($completedExams);
+        $stats['performance_by_subject'] = $this->getStudentPerformanceBySubject($attempts);
 
         return response()->json($stats);
     }
@@ -250,6 +298,49 @@ class AnalyticsController extends Controller
     {
         if ($passing === null) return null;
         return $score >= $passing;
+    }
+
+    private function resolveExamTotalMarks($exam): ?float
+    {
+        if (!$exam) {
+            return null;
+        }
+
+        $direct = $exam->total_marks ?? null;
+        if ($direct !== null && is_numeric($direct) && (float) $direct > 0) {
+            return (float) $direct;
+        }
+
+        $metaTotal = data_get($exam->metadata, 'total_marks');
+        if ($metaTotal !== null && is_numeric($metaTotal) && (float) $metaTotal > 0) {
+            return (float) $metaTotal;
+        }
+
+        $computed = (float) ($exam->questions()->sum('marks') ?? 0);
+        return $computed > 0 ? $computed : null;
+    }
+
+    private function resolveExamPassingMarks($exam, ?float $totalMarks = null): ?float
+    {
+        if (!$exam) {
+            return null;
+        }
+
+        $direct = $exam->passing_marks ?? null;
+        if ($direct !== null && is_numeric($direct)) {
+            return (float) $direct;
+        }
+
+        $metaPassing = data_get($exam->metadata, 'passing_marks');
+        if ($metaPassing !== null && is_numeric($metaPassing)) {
+            return (float) $metaPassing;
+        }
+
+        if ($totalMarks !== null && $totalMarks > 0) {
+            return round($totalMarks * 0.5, 2);
+        }
+
+        return null;
     }
 
     /**

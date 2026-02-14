@@ -164,6 +164,7 @@ class CbtResultsController extends Controller
             'average_score' => $averageScore,
             'pass_rate' => $passRate,
             'total_submissions' => $totalSubmissions,
+            'total_attempts' => $totalSubmissions,
         ]);
     }
 

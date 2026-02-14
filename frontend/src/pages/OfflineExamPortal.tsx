@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Timer } from '../components';
 import { api } from '../services/api';
+import { getCurrentStudentProfile } from './student/studentData';
 import { showError, showSuccess, showWarning } from '../utils/alerts';
 import { useCheatingDetection, CheatingEvent } from '../hooks/useCheatingDetection';
 import { useOfflineExam, OfflineAnswer, offlineExamManager } from '../hooks/useOfflineExam';
@@ -193,7 +194,7 @@ const OfflineExamPortal: React.FC = () => {
     
     const answersArray = Object.entries(answers).map(([questionId, optionId]) => ({
       question_id: parseInt(questionId),
-      selected_option_id: optionId,
+      option_id: optionId,
       timestamp: Date.now(),
     }));
 
@@ -210,10 +211,20 @@ const OfflineExamPortal: React.FC = () => {
 
     try {
       if (isOnline) {
+        let studentId: number | null = null;
+        try {
+          const student = await getCurrentStudentProfile();
+          studentId = student.id;
+        } catch {
+          studentId = null;
+        }
+
         // Submit directly
         await api.post(`/exams/${examId}/submit`, {
+          student_id: studentId ?? undefined,
           answers: answersArray,
           cheating_events: violations,
+          final: true,
         });
         
         // Clear offline data

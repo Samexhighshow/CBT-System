@@ -48,7 +48,10 @@ const AdminLogin: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, formData);
+      const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, {
+        ...formData,
+        login_context: 'admin',
+      });
       const { token, user } = res.data;
       login(user, token);
 
@@ -65,7 +68,9 @@ const AdminLogin: React.FC = () => {
       
       // Handle specific error types
       const errorType = err?.response?.data?.error_type;
-      if (errorType === 'email_not_found') {
+      if (errorType === 'role_not_admin') {
+        errorMessage = '❌ This account is not permitted on the admin portal.';
+      } else if (errorType === 'email_not_found') {
         errorMessage = '❌ Email address not found. Please check your email or sign up for an account.';
       } else if (errorType === 'invalid_password') {
         errorMessage = '❌ Incorrect password. Please try again or reset your password.';

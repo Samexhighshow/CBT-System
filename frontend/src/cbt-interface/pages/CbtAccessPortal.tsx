@@ -1,231 +1,219 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cbtApi } from '../services/cbtApi';
-import { saveStoredSession } from '../services/sessionStore';
 import { CbtOpenExam } from '../types';
+import { cbtFontFamily, cbtTheme } from '../theme';
 
-const getDeviceId = () => {
-  const key = 'cbt-device-id';
-  const existing = localStorage.getItem(key);
-  if (existing) return existing;
-  const generated = `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  localStorage.setItem(key, generated);
-  return generated;
+const formatExamWindow = (value?: string | null): string | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const CbtAccessPortal: React.FC = () => {
   const navigate = useNavigate();
-
   const [exams, setExams] = useState<CbtOpenExam[]>([]);
   const [loadingExams, setLoadingExams] = useState(true);
-  const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
-  const [regNumber, setRegNumber] = useState('');
-  const [accessCode, setAccessCode] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedExam = useMemo(
-    () => exams.find((exam) => exam.id === selectedExamId) || null,
-    [exams, selectedExamId]
-  );
-
-  const loadExams = async (reg?: string) => {
-    try {
-      setLoadingExams(true);
-      const data = await cbtApi.listExams(reg);
-      setExams(data);
-      if (data.length > 0 && !selectedExamId) {
-        setSelectedExamId(data[0].id);
-      }
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to load available exams');
-      setExams([]);
-    } finally {
-      setLoadingExams(false);
-    }
-  };
-
   useEffect(() => {
+    const loadExams = async () => {
+      try {
+        setLoadingExams(true);
+        setError(null);
+        const data = await cbtApi.listExams();
+        setExams(data);
+      } catch (err: any) {
+        setError(err?.response?.data?.message || 'Failed to load available exams.');
+        setExams([]);
+      } finally {
+        setLoadingExams(false);
+      }
+    };
+
     loadExams();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onCheckAvailability = async () => {
-    setError(null);
-    await loadExams(regNumber.trim() || undefined);
-  };
-
-  const onSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-
-    if (!selectedExamId) {
-      setError('Select an exam before proceeding.');
-      return;
-    }
-
-    if (!regNumber.trim() || !accessCode.trim()) {
-      setError('Registration number and access code are required.');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setError(null);
-
-      const verification = await cbtApi.verifyExamAccess(selectedExamId, {
-        reg_number: regNumber.trim().toUpperCase(),
-        access_code: accessCode.trim().toUpperCase(),
-        device_id: getDeviceId(),
-      });
-
-      saveStoredSession({
-        attemptId: verification.attempt_id,
-        sessionToken: verification.session_token,
-        endsAt: verification.ends_at,
-        examTitle: verification.exam?.title,
-        studentName: verification.student?.name,
-        registrationNumber: verification.student?.registration_number,
-      });
-
-      navigate(`/cbt/attempt/${verification.attempt_id}`);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Unable to verify access code.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-slate-100 p-4 md:p-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="mb-8 rounded-2xl border border-slate-700/70 bg-slate-900/80 backdrop-blur px-6 py-5 shadow-2xl">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">CBT Examination Portal</p>
-              <h1 className="mt-1 text-2xl md:text-3xl font-bold">Secure Student Access</h1>
+    <div className="relative min-h-screen overflow-hidden" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>
+      <div
+        className="pointer-events-none absolute -left-32 -top-36 h-[420px] w-[420px] rounded-full opacity-70 blur-3xl"
+        style={{ background: 'radial-gradient(circle, rgba(37,99,235,0.22) 0%, rgba(37,99,235,0) 72%)' }}
+      />
+      <div
+        className="pointer-events-none absolute -right-24 top-24 h-[340px] w-[340px] rounded-full opacity-70 blur-3xl"
+        style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0) 74%)' }}
+      />
+      <div
+        className="pointer-events-none absolute bottom-0 left-1/2 h-[300px] w-[500px] -translate-x-1/2 opacity-60 blur-3xl"
+        style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0) 74%)' }}
+      />
+
+      <header className="relative border-b" style={{ backgroundColor: 'rgba(255,255,255,0.85)', borderColor: cbtTheme.border }}>
+        <div className="mx-auto flex h-[78px] w-full max-w-6xl items-center justify-between px-4 md:px-6">
+          <div className="flex items-center gap-3">
+            <div
+              className="relative flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white shadow-md"
+              style={{ background: 'linear-gradient(145deg, #2D6AF0 0%, #1D4ED8 100%)' }}
+            >
+              SC
             </div>
-            <p className="text-xs md:text-sm text-slate-300 max-w-md">
-              Enter your registration number and exam access code issued from the admin Exam Access portal.
+            <div>
+              <p className="text-[20px] font-semibold tracking-[-0.01em]" style={{ color: cbtTheme.title }}>
+                CBT System
+              </p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: cbtTheme.muted }}>
+                Student Exam Portal
+              </p>
+            </div>
+          </div>
+
+          <div className="hidden rounded-full border px-4 py-1.5 text-xs font-semibold md:block" style={{ borderColor: '#DBEAFE', backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>
+            {exams.length} Exam{exams.length === 1 ? '' : 's'} Available
+          </div>
+        </div>
+      </header>
+
+      <main className="relative mx-auto w-full max-w-6xl px-4 pb-14 pt-10 md:px-6 md:pb-16 md:pt-14">
+        <section
+          className="rounded-[28px] border p-6 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.28)] md:p-10"
+          style={{ backgroundColor: 'rgba(255,255,255,0.78)', borderColor: '#E2E8F0' }}
+        >
+          <div className="text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#1D4ED8' }}>
+              Computer Based Test
+            </p>
+            <h1
+              className="mt-2 text-[34px] font-bold leading-[1.06] tracking-[-0.03em] md:text-[52px]"
+              style={{ color: cbtTheme.title }}
+            >
+              Select Your Exam
+            </h1>
+            <p className="mx-auto mt-4 max-w-2xl text-[15px] leading-7 md:text-base" style={{ color: cbtTheme.muted }}>
+              Choose from published exams below and continue with your unique access code.
             </p>
           </div>
-        </header>
 
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Published Exams</h2>
-              <button
-                type="button"
-                onClick={onCheckAvailability}
-                className="rounded-md border border-cyan-500/50 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/10 transition"
-              >
-                Refresh
-              </button>
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-2.5 md:mt-8">
+            <span className="rounded-full border px-3 py-1.5 text-xs font-semibold" style={{ borderColor: '#D1FAE5', backgroundColor: '#ECFDF5', color: '#047857' }}>
+              Secure Login
+            </span>
+            <span className="rounded-full border px-3 py-1.5 text-xs font-semibold" style={{ borderColor: '#DBEAFE', backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>
+              Auto Save Enabled
+            </span>
+            <span className="rounded-full border px-3 py-1.5 text-xs font-semibold" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB', color: '#B45309' }}>
+              Session Protection Active
+            </span>
+          </div>
+        </section>
+
+        <section className="mx-auto mt-8 max-w-6xl md:mt-10">
+          {loadingExams ? (
+            <div
+              className="rounded-3xl border px-6 py-12 text-center text-[15px]"
+              style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border, color: cbtTheme.muted }}
+            >
+              Loading exams...
             </div>
+          ) : error ? (
+            <div
+              className="rounded-3xl border px-6 py-4 text-sm"
+              style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', color: cbtTheme.danger }}
+            >
+              {error}
+            </div>
+          ) : exams.length === 0 ? (
+            <div
+              className="rounded-3xl border px-6 py-12 text-center text-[15px]"
+              style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border, color: cbtTheme.muted }}
+            >
+              No published exams are open right now.
+            </div>
+          ) : (
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {exams.map((exam, idx) => {
+                const examTitle = `${exam.subject || exam.title} - ${exam.class_level || 'All Classes'}`;
+                const startAt = formatExamWindow(exam.start_datetime);
+                const endAt = formatExamWindow(exam.end_datetime);
+                const delay = idx * 45;
+                return (
+                  <article
+                    key={exam.id}
+                    className="group relative overflow-hidden rounded-3xl border p-6 shadow-[0_10px_28px_-18px_rgba(30,64,175,0.45)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_36px_-18px_rgba(30,64,175,0.36)]"
+                    style={{
+                      backgroundColor: cbtTheme.cardBg,
+                      borderColor: '#DDE4F2',
+                      animation: 'none',
+                      transitionDelay: `${delay}ms`,
+                    }}
+                  >
+                    <div
+                      className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-50 blur-2xl"
+                      style={{ background: 'radial-gradient(circle, rgba(37,99,235,0.35) 0%, rgba(37,99,235,0) 75%)' }}
+                    />
 
-            {loadingExams ? (
-              <div className="py-12 text-center text-slate-400">Loading exams...</div>
-            ) : exams.length === 0 ? (
-              <div className="py-12 text-center text-slate-400">No open exams are currently available.</div>
-            ) : (
-              <div className="space-y-3 max-h-[520px] overflow-auto pr-1">
-                {exams.map((exam) => {
-                  const selected = exam.id === selectedExamId;
-                  return (
-                    <button
-                      key={exam.id}
-                      type="button"
-                      onClick={() => setSelectedExamId(exam.id)}
-                      className={`w-full rounded-xl border px-4 py-3 text-left transition ${
-                        selected
-                          ? 'border-cyan-400 bg-cyan-500/10'
-                          : 'border-slate-700 bg-slate-900 hover:border-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-100">{exam.title}</p>
-                          <p className="text-xs text-slate-400 mt-1">
-                            {exam.subject || 'General'} • {exam.class_level || 'All Classes'} • {exam.duration_minutes} mins
-                          </p>
-                        </div>
+                    <div className="relative">
+                      <div className="flex items-start justify-between gap-3">
                         <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                            exam.can_access
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : 'bg-amber-500/20 text-amber-200'
-                          }`}
+                          className="rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]"
+                          style={{ borderColor: '#DBEAFE', backgroundColor: '#EFF6FF', color: '#1D4ED8' }}
                         >
-                          {exam.can_access ? 'Available' : 'Restricted'}
+                          {exam.subject || 'General'}
+                        </span>
+                        <span
+                          className="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                          style={{
+                            borderColor: exam.can_access ? '#BBF7D0' : '#FDE68A',
+                            backgroundColor: exam.can_access ? '#ECFDF5' : '#FFFBEB',
+                            color: exam.can_access ? '#047857' : '#B45309',
+                          }}
+                        >
+                          {exam.can_access ? 'Open' : 'Restricted'}
                         </span>
                       </div>
-                      {exam.reason && !exam.can_access && (
-                        <p className="mt-2 text-[11px] text-amber-200">{exam.reason}</p>
+
+                      <h2 className="mt-4 text-[22px] font-semibold leading-[1.18] tracking-[-0.015em]" style={{ color: cbtTheme.title }}>
+                        {examTitle}
+                      </h2>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2.5 text-xs">
+                        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: '#E5E7EB', backgroundColor: '#FAFBFD', color: cbtTheme.body }}>
+                          <p className="font-medium" style={{ color: cbtTheme.muted }}>Duration</p>
+                          <p className="mt-0.5 font-semibold">{exam.duration_minutes} mins</p>
+                        </div>
+                        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: '#E5E7EB', backgroundColor: '#FAFBFD', color: cbtTheme.body }}>
+                          <p className="font-medium" style={{ color: cbtTheme.muted }}>Window</p>
+                          <p className="mt-0.5 font-semibold">
+                            {startAt && endAt ? `${startAt} - ${endAt}` : 'Today'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {!exam.can_access && exam.reason && (
+                        <p className="mt-3 text-xs leading-5" style={{ color: '#B45309' }}>
+                          {exam.reason}
+                        </p>
                       )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
 
-          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-xl">
-            <h2 className="text-lg font-semibold mb-4">Exam Login</h2>
-            <form className="space-y-4" onSubmit={onSubmit}>
-              <div>
-                <label className="block text-xs uppercase tracking-wide text-slate-300 mb-1">Selected Exam</label>
-                <div className="rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 min-h-[42px]">
-                  {selectedExam ? selectedExam.title : 'Choose an exam from the list'}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs uppercase tracking-wide text-slate-300 mb-1">Registration Number</label>
-                <input
-                  value={regNumber}
-                  onChange={(e) => setRegNumber(e.target.value.toUpperCase())}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm uppercase outline-none focus:border-cyan-400"
-                  placeholder="e.g. REG001"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs uppercase tracking-wide text-slate-300 mb-1">Access Code</label>
-                <input
-                  value={accessCode}
-                  onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm uppercase tracking-widest outline-none focus:border-cyan-400"
-                  placeholder="8-Character Code"
-                  maxLength={16}
-                  required
-                />
-              </div>
-
-              {error && (
-                <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-md bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-900 hover:bg-cyan-400 disabled:opacity-60 disabled:cursor-not-allowed transition"
-              >
-                {submitting ? 'Verifying Access...' : 'Start / Resume Exam'}
-              </button>
-            </form>
-
-            <div className="mt-5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-1">
-              <p className="font-semibold">Important</p>
-              <p>1. Access code comes from admin Exam Access portal.</p>
-              <p>2. If your previous system hangs, login again to continue.</p>
-              <p>3. Logging in on a new system automatically signs out the old session.</p>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/cbt/login/${exam.id}`)}
+                        disabled={!exam.can_access}
+                        className="mt-6 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition group-hover:gap-2.5 disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)' }}
+                      >
+                        Continue
+                        <span className="text-xs">Next</span>
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-          </section>
-        </div>
-      </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 };

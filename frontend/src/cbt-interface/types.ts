@@ -14,6 +14,8 @@ export interface CbtOpenExam {
 export interface CbtAttemptVerifyResponse {
   attempt_id: number;
   session_token: string;
+  status?: string;
+  started_at?: string | null;
   ends_at?: string | null;
   remaining_seconds: number;
   switch_count: number;
@@ -52,6 +54,7 @@ export interface CbtAttemptState {
   answers: Array<{
     question_id: number;
     option_id?: number | null;
+    option_ids?: number[];
     answer_text?: string | null;
     flagged: boolean;
     saved_at?: string | null;

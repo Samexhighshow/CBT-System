@@ -867,9 +867,17 @@ const QuestionBank: React.FC<{}> = () => {
   };
 
   const handleDownloadSampleCSV = () => {
-    const csvContent = 'question_text,question_type,marks,max_words,marking_rubric,option_1,option_2,option_3,option_4,correct_option\\n' +
-                       'What is 2+2?,multiple_choice,2,0,,4,3,5,6,1\\n' +
-                       'Explain photosynthesis,essay,10,200,Clarity of explanation,,,,,';
+    const subjectValue = selectedSubject ? String(selectedSubject) : '';
+    const selectedSubjectName = selectedSubject
+      ? (subjects.find((s) => s.id === selectedSubject)?.name || '')
+      : '';
+    const classValue = selectedClass || '';
+    const csvRows = [
+      'question_text,question_type,marks,difficulty,subject_id,subject_name,class_level,instructions,option_1,option_2,option_3,option_4,correct_options,status',
+      `"What is 2 + 2?",multiple_choice,2,Easy,${subjectValue},"${selectedSubjectName}","${classValue}","",4,3,5,6,1,Draft`,
+      `"Explain photosynthesis.",long_answer,10,Medium,${subjectValue},"${selectedSubjectName}","${classValue}","Clarity of explanation and key stages",,,,,,Draft`,
+    ];
+    const csvContent = csvRows.join('\\n');
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -914,7 +922,10 @@ const QuestionBank: React.FC<{}> = () => {
 
     try {
       setImportLoading(true);
-      const result = await bankApi.import(importFile);
+      const result = await bankApi.import(importFile, {
+        default_subject_id: selectedSubject || undefined,
+        default_class_level: selectedClass || undefined,
+      });
       setImportResult(result.data);
       showSuccess(`Imported ${result.data.inserted} questions successfully`);
       if (result.data.inserted > 0) {
@@ -1926,10 +1937,10 @@ const QuestionBank: React.FC<{}> = () => {
                     <ul className="text-xs text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-1.5">
                       <li>• <strong>question_text</strong> (required)</li>
                       <li>• <strong>question_type</strong> (required): multiple_choice/multiple_select/true_false/short_answer/long_answer</li>
-                      <li>• <strong>class_id</strong> (required): ID of the class</li>
-                      <li>• <strong>subject_id</strong> (required): ID of the subject</li>
+                      <li>• <strong>subject_id</strong> or <strong>subject_name</strong> (required unless a subject filter is selected above)</li>
+                      <li>• <strong>class_level</strong> (required unless a class filter is selected above)</li>
                       <li>• <strong>marks</strong> (required)</li>
-                      <li>• <strong>difficulty</strong> (required): easy/medium/hard</li>
+                      <li>• <strong>difficulty</strong> (optional): easy/medium/hard (defaults to Medium)</li>
                       <li>• <strong>instructions</strong> (optional)</li>
                       <li>• <strong>status</strong> (optional): draft/active/inactive/archived</li>
                     </ul>

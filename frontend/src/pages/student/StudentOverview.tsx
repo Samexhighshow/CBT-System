@@ -49,23 +49,47 @@ const StudentOverview: React.FC = () => {
         const profile = await getCurrentStudentProfile();
         setStudent(profile);
 
-        const [statsResponse, resultsResponse] = await Promise.all([
+        const [statsResult, resultsResult] = await Promise.allSettled([
           api.get(`/analytics/student/${profile.id}/dashboard`),
           api.get(`/results/student/${profile.id}`, {
             params: { limit: 5 },
           }),
         ]);
 
-        const statsPayload = statsResponse.data || {};
-        setStats({
-          availableExams: Number(statsPayload.available_exams || 0),
-          completedExams: Number(statsPayload.total_exams_taken || 0),
-          averageScore: Number(statsPayload.average_score || 0),
-          passRate: Number(statsPayload.pass_rate || 0),
-        });
+        if (statsResult.status === 'fulfilled') {
+          const statsPayload = statsResult.value.data || {};
+          setStats({
+            availableExams: Number(statsPayload.available_exams || 0),
+            completedExams: Number(statsPayload.total_exams_taken || 0),
+            averageScore: Number(statsPayload.average_score || 0),
+            passRate: Number(statsPayload.pass_rate || 0),
+          });
+        } else {
+          try {
+            const fallbackStatsRes = await api.get(`/students/${profile.id}/statistics`);
+            const fallbackStats = fallbackStatsRes.data || {};
+            setStats({
+              availableExams: Number(fallbackStats.available_exams || 0),
+              completedExams: Number(fallbackStats.total_exams_taken || 0),
+              averageScore: Number(fallbackStats.average_score || 0),
+              passRate: Number(fallbackStats.pass_rate || 0),
+            });
+          } catch {
+            setStats({
+              availableExams: 0,
+              completedExams: 0,
+              averageScore: 0,
+              passRate: 0,
+            });
+          }
+        }
 
-        const rows: ResultPreview[] = resultsResponse.data?.data || [];
-        setRecentResults(rows.slice(0, 4));
+        if (resultsResult.status === 'fulfilled') {
+          const rows: ResultPreview[] = resultsResult.value.data?.data || [];
+          setRecentResults(rows.slice(0, 4));
+        } else {
+          setRecentResults([]);
+        }
       } catch (error) {
         console.error('Failed to load student overview data', error);
       } finally {

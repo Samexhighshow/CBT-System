@@ -50,6 +50,7 @@ Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv'])
 Route::prefix('cbt')->group(function () {
     Route::get('/exams', [CbtInterfaceController::class, 'exams']);
     Route::post('/exams/{examId}/verify', [CbtInterfaceController::class, 'verify'])->middleware('throttle:30,1');
+    Route::post('/attempts/{attemptId}/start', [CbtInterfaceController::class, 'start'])->middleware('throttle:30,1');
     Route::get('/attempts/{attemptId}/state', [CbtInterfaceController::class, 'state']);
     Route::get('/attempts/{attemptId}/questions', [CbtInterfaceController::class, 'questions']);
     Route::post('/attempts/{attemptId}/answer', [CbtInterfaceController::class, 'answer'])->middleware('throttle:120,1');
@@ -75,9 +76,13 @@ Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
 // Admin signup applicant (public)
 Route::post('/admin/signup', [UserController::class, 'store']);
 
+// Current student profile (auth required)
+Route::middleware('auth:sanctum')->get('/student/me', [StudentController::class, 'getCurrentProfile']);
+
 // Students
 Route::prefix('students')->group(function () {
     Route::get('/', [StudentController::class, 'index']);
+    Route::get('/by-reg-number', [StudentController::class, 'getByRegistrationNumber']);
     Route::get('/by-reg-number/{regNumber}', [StudentController::class, 'getByRegistrationNumber']);
     Route::get('/{id}', [StudentController::class, 'show']);
     Route::post('/', [StudentController::class, 'store']);
@@ -450,6 +455,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/attempts/{attemptId}', [MarkingController::class, 'attempt']);
         Route::post('/attempts/{attemptId}/questions/{questionId}/score', [MarkingController::class, 'scoreQuestion']);
         Route::post('/attempts/{attemptId}/finalize', [MarkingController::class, 'finalize']);
+        Route::delete('/attempts/{attemptId}', [MarkingController::class, 'clearAttempt']);
     });
     
     // Announcements Management (Admin)

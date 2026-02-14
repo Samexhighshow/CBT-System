@@ -101,10 +101,28 @@ export const examApi = {
     return api.post<{ data: { exam: Exam; questions: Question[] } }>(`/exams/${examId}/start`);
   },
 
-  submit: (examId: number, answers: { [questionId: number]: number }) => {
+  submit: (
+    examId: number,
+    answers: { [questionId: number]: number } | Array<Record<string, any>>,
+    finalOrOptions: boolean | { final?: boolean; attemptId?: number; studentId?: number } = true
+  ) => {
+    const options = typeof finalOrOptions === 'boolean' ? { final: finalOrOptions } : finalOrOptions || {};
+    const payload: Record<string, any> = {
+      answers,
+      final: options.final ?? true,
+    };
+
+    if (options.attemptId) {
+      payload.attempt_id = options.attemptId;
+    }
+
+    if (options.studentId) {
+      payload.student_id = options.studentId;
+    }
+
     return api.post<{ data: { score: number; total: number; percentage: number } }>(
-      `/exams/${examId}/submit`, 
-      { answers }
+      `/exams/${examId}/submit`,
+      payload
     );
   },
 
@@ -199,9 +217,21 @@ export const bankApi = {
   stats: () => api.get('/bank/questions/stats'),
 
   // Import CSV/Excel
-  import: (file: File) => {
+  import: (
+    file: File,
+    defaults?: {
+      default_subject_id?: number;
+      default_class_level?: string;
+    }
+  ) => {
     const form = new FormData();
     form.append('file', file);
+    if (defaults?.default_subject_id) {
+      form.append('default_subject_id', String(defaults.default_subject_id));
+    }
+    if (defaults?.default_class_level) {
+      form.append('default_class_level', defaults.default_class_level);
+    }
     return api.post('/bank/questions/import', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });

@@ -16,6 +16,39 @@ interface DashboardStats {
   ongoing_exams: number;
 }
 
+const parseExamDateValue = (value: unknown): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value !== 'string') return null;
+
+  const raw = value.trim();
+  if (!raw) return null;
+  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  const parsed = new Date(normalized);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+
+  // Fallback for date-only strings
+  const dateOnly = new Date(`${raw}T00:00:00`);
+  return Number.isNaN(dateOnly.getTime()) ? null : dateOnly;
+};
+
+const getExamStartDate = (exam: any): Date | null =>
+  parseExamDateValue(exam?.start_datetime ?? exam?.start_time ?? exam?.date ?? exam?.exam_date);
+
+const formatExamStartTime = (exam: any, startDate: Date | null): string => {
+  if (startDate) return startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const raw = exam?.start_time;
+  if (typeof raw !== 'string' || raw.trim() === '') return 'TBA';
+  if (/^\d{2}:\d{2}/.test(raw.trim())) return raw.trim().slice(0, 5);
+  return raw;
+};
+
 const AdminOverview: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -69,21 +102,32 @@ const AdminOverview: React.FC = () => {
   const loadUpcomingExams = async () => {
     try {
       const response = await api.get('/exams');
-      if (response.data?.data) {
-        // Filter for upcoming exams (next 7 days)
-        const now = new Date();
-        const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        const upcoming = response.data.data
-          .filter((exam: any) => {
-            const examDate = new Date(exam.date);
-            return examDate >= now && examDate <= nextWeek;
-          })
-          .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
-          .slice(0, 5); // Show max 5 upcoming exams
-        setUpcomingExams(upcoming);
-      }
+      const rows = response.data?.data || response.data || [];
+      const now = new Date();
+      const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+      const upcoming = rows
+        .map((exam: any) => ({
+          ...exam,
+          _startDate: getExamStartDate(exam),
+        }))
+        .filter((exam: any) => {
+          if (!exam._startDate) return false;
+          const isInWindow = exam._startDate >= now && exam._startDate <= nextWeek;
+          if (!isInWindow) return false;
+
+          const isPublished = Boolean(exam.published ?? exam.is_published);
+          const status = String(exam.status || '').toLowerCase();
+          const isEligibleStatus = status === '' || status === 'scheduled' || status === 'active';
+          return isPublished && isEligibleStatus;
+        })
+        .sort((a: any, b: any) => a._startDate.getTime() - b._startDate.getTime())
+        .slice(0, 5);
+
+      setUpcomingExams(upcoming);
     } catch (error) {
       console.error('Failed to fetch upcoming exams:', error);
+      setUpcomingExams([]);
     }
   };
 
@@ -254,22 +298,22 @@ const AdminOverview: React.FC = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold text-gray-900 truncate">{exam.title}</h3>
-                    <p className="text-xs text-gray-600 mt-0.5">{exam.subject?.name || 'No Subject'}</p>
+                    <p className="text-xs text-gray-600 mt-0.5">{exam.subject?.name || exam.subject_name || 'No Subject'}</p>
                     <div className="flex items-center space-x-2 mt-2 text-xs text-gray-500">
                       <div className="flex items-center space-x-1">
                         <i className="bx bx-calendar text-sm"></i>
-                        <span>{new Date(exam.date).toLocaleDateString()}</span>
+                        <span>{exam._startDate ? exam._startDate.toLocaleDateString() : 'No Date'}</span>
                       </div>
                       <div className="flex items-center space-x-1">
                         <i className="bx bx-time text-sm"></i>
-                        <span>{exam.start_time}</span>
+                        <span>{formatExamStartTime(exam, exam._startDate ?? null)}</span>
                       </div>
                     </div>
                     <div className="mt-2">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        exam.is_published ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        (exam.published ?? exam.is_published) ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                       }`}>
-                        {exam.is_published ? 'Published' : 'Draft'}
+                        {(exam.published ?? exam.is_published) ? 'Published' : 'Draft'}
                       </span>
                     </div>
                   </div>

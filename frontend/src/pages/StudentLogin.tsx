@@ -32,12 +32,33 @@ const StudentLogin: React.FC = () => {
     setError('');
 
     try {
-      const res = await axios.post(`${API_URL}/auth/login`, formData);
+      const res = await axios.post(`${API_URL}/auth/login`, {
+        ...formData,
+        login_context: 'student',
+      });
       const { token, user } = res.data;
+      const userRoles = (user?.roles || []).map((r: any) => String(r?.name || r).toLowerCase());
+      const isStudent = userRoles.includes('student');
+
+      if (!isStudent) {
+        setError('This account is not permitted on the student portal.');
+        return;
+      }
+
       login(user, token);
 
-      const subjectsSelected = localStorage.getItem('subjectsSelected');
-      if (!subjectsSelected && user.roles?.some((r: any) => r.name === 'Student')) {
+      try {
+        const prefRes = await axios.get(`${API_URL}/preferences/student/subjects`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const picked = Array.isArray(prefRes.data?.student_subjects) ? prefRes.data.student_subjects.length : 0;
+        if (picked === 0) {
+          localStorage.removeItem('subjectsSelected');
+          navigate('/select-subjects');
+          return;
+        }
+        localStorage.setItem('subjectsSelected', 'true');
+      } catch {
         navigate('/select-subjects');
         return;
       }
@@ -45,7 +66,9 @@ const StudentLogin: React.FC = () => {
       navigate('/student');
     } catch (err: any) {
       const errorType = err?.response?.data?.error_type;
-      if (errorType === 'email_not_found') {
+      if (errorType === 'role_not_student') {
+        setError('This account is not permitted on the student portal.');
+      } else if (errorType === 'email_not_found') {
         setError('Email address not found. Confirm your email or register first.');
       } else if (errorType === 'invalid_password') {
         setError('Incorrect password. Please try again.');
