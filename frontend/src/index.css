@@ -63,11 +63,6 @@ body {
   background: #f8fafc;
 }
 
-html {
-  overflow-y: scroll;
-  scrollbar-gutter: stable;
-}
-
 body,
 #root {
   overflow-x: hidden;
