@@ -188,13 +188,22 @@ const CbtExamSession: React.FC = () => {
 
       const answerMap: Record<number, AnswerValue | undefined> = {};
       const flagMap: Record<number, boolean> = {};
+      const questionTypeById = new Map<number, string>(
+        questionData.map((question) => [question.id, normalizeQuestionType(question.question_type)])
+      );
       stateData.answers.forEach((answer) => {
         const next: AnswerValue = {};
+        const normalizedType = questionTypeById.get(answer.question_id) || '';
         if (typeof answer.option_id === 'number') {
           next.optionId = answer.option_id;
         }
         if (Array.isArray(answer.option_ids) && answer.option_ids.length > 0) {
-          next.optionIds = answer.option_ids;
+          if (isMultiSelectType(normalizedType)) {
+            next.optionIds = answer.option_ids;
+          } else if (typeof next.optionId !== 'number') {
+            // For bank-backed single-choice questions, backend stores selected id in option_ids JSON.
+            next.optionId = answer.option_ids[0];
+          }
         }
         if ((answer.answer_text || '').trim() !== '') {
           next.answerText = answer.answer_text || '';
@@ -452,8 +461,10 @@ const CbtExamSession: React.FC = () => {
         has_text: (value?.answerText || '').trim() !== '',
         flagged: forceFlag ?? flagged[questionId] ?? false,
       });
-    } catch {
+    } catch (err: any) {
       setAutoSaveStatus('Save failed');
+      const message = err?.response?.data?.message || 'Unable to save answer. Retry or notify invigilator.';
+      setTabFencingAlert(message);
     }
   };
 
@@ -720,9 +731,9 @@ const CbtExamSession: React.FC = () => {
       </header>
 
       <div className="mx-auto flex w-full max-w-[1800px] flex-1 flex-col px-4 pb-0 pt-4 md:px-6 md:pb-0 md:pt-5">
-        <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(240px,20%)_minmax(0,60%)_minmax(240px,20%)] lg:grid-rows-[minmax(0,1fr)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(240px,20%)_minmax(0,60%)_minmax(240px,20%)]">
           <aside
-            className={`${showInstructionsMobile ? 'block' : 'hidden'} rounded-2xl border p-5 lg:block lg:h-full lg:overflow-y-auto`}
+            className={`${showInstructionsMobile ? 'block' : 'hidden'} rounded-2xl border p-5 lg:block`}
             style={{ backgroundColor: cbtTheme.panelBg, borderColor: cbtTheme.border }}
           >
             <h2 className="text-sm font-bold uppercase tracking-[0.08em]" style={{ color: '#1F2937' }}>
@@ -745,7 +756,7 @@ const CbtExamSession: React.FC = () => {
             </div>
           </aside>
 
-          <main className="rounded-2xl border p-5 md:p-6 lg:h-full lg:overflow-y-auto" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+          <main className="rounded-2xl border p-5 md:p-6" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-semibold tracking-[0.02em]" style={{ color: cbtTheme.body }}>
                 QUESTION {currentIndex + 1} OF {questions.length}
@@ -917,7 +928,7 @@ const CbtExamSession: React.FC = () => {
           </main>
 
           <aside
-            className={`${showPaletteMobile ? 'block' : 'hidden'} rounded-2xl border p-5 lg:block lg:h-full lg:overflow-y-auto`}
+            className={`${showPaletteMobile ? 'block' : 'hidden'} rounded-2xl border p-5 lg:block`}
             style={{ backgroundColor: cbtTheme.panelBg, borderColor: cbtTheme.border }}
           >
             <h2 className="text-sm font-bold uppercase tracking-[0.08em]" style={{ color: '#1F2937' }}>

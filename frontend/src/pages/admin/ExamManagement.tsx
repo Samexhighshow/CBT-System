@@ -79,6 +79,8 @@ const ExamManagement: React.FC = () => {
   const [bankQLoading, setBankQLoading] = useState(false);
   const [selectedBankQIds, setSelectedBankQIds] = useState<number[]>([]);
   const manageSubjectIdRef = useRef<number | null>(null);
+  const manageExamIdRef = useRef<number | null>(null);
+  const searchDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Modal and form state
   const [showExamModal, setShowExamModal] = useState(false);
@@ -562,8 +564,10 @@ const ExamManagement: React.FC = () => {
         bank_question: x.bank_question || x.bankQuestion || x.bank_question_id ? x.bank_question : undefined,
       }));
       setExamQuestions(items);
+      return items;
     } catch (e) {
       // ignore errors but keep UI responsive
+      return [];
     } finally {
       setExamQuestionsLoading(false);
     }
@@ -572,6 +576,7 @@ const ExamManagement: React.FC = () => {
   const openManageQuestions = async () => {
     setShowManageQuestions(true);
     setSelectedBankQIds([]);
+    manageExamIdRef.current = (viewingExam?.id ?? null);
     manageSubjectIdRef.current = (viewingExam?.subject?.id || (viewingExam as any)?.subject_id) ?? null;
     await loadBankQuestions('');
   };
@@ -581,16 +586,24 @@ const ExamManagement: React.FC = () => {
     setShowViewModal(false);
     setSelectedBankQIds([]);
     setShowManageQuestions(true);
+    manageExamIdRef.current = exam.id;
     const subjId = (exam as any)?.subject?.id ?? (exam as any)?.subject_id ?? null;
     manageSubjectIdRef.current = subjId;
-    await loadExamQuestions(exam.id);
-    await loadBankQuestions('', subjId ?? undefined);
+    const assigned = await loadExamQuestions(exam.id);
+    await loadBankQuestions('', subjId ?? undefined, exam.id, assigned);
   };
 
-  const loadBankQuestions = async (search: string, subjectIdOverride?: number) => {
+  const loadBankQuestions = async (
+    search: string,
+    subjectIdOverride?: number,
+    examIdOverride?: number,
+    assignedRowsOverride?: any[]
+  ) => {
     try {
       setBankQLoading(true);
       const params: any = { per_page: 50, status: 'Active' };
+      const examId = examIdOverride ?? manageExamIdRef.current ?? (viewingExam?.id ?? null);
+      if (examId) params.exclude_exam_id = examId;
       const subjectId = subjectIdOverride ?? manageSubjectIdRef.current ?? (viewingExam?.subject?.id || (viewingExam as any)?.subject_id);
       if (subjectId) params.subject_id = subjectId;
       if (search) params.q = search;
@@ -601,16 +614,22 @@ const ExamManagement: React.FC = () => {
       // so admins can still pick cross-subject questions when needed.
       if (subjectId && items.length === 0) {
         const fallbackParams: any = { per_page: 50, status: 'Active' };
+        if (examId) fallbackParams.exclude_exam_id = examId;
         if (search) fallbackParams.q = search;
         res = await api.get('/bank/questions', { params: fallbackParams });
         items = res.data?.data || res.data || [];
       }
       
       // Filter out questions already added to the exam
-      const addedQuestionIds = new Set(examQuestions.map(eq => eq.bank_question_id));
+      const assignedRows = assignedRowsOverride ?? examQuestions;
+      const addedQuestionIds = new Set(
+        (assignedRows || [])
+          .map((eq: any) => Number(eq.bank_question_id))
+          .filter((id: number) => Number.isFinite(id) && id > 0)
+      );
       items = items.filter((q: any) => {
         const isActive = String(q.status || '').toLowerCase() === 'active';
-        return isActive && !addedQuestionIds.has(q.id);
+        return isActive && !addedQuestionIds.has(Number(q.id));
       });
       
       setBankQuestions(items);
@@ -623,10 +642,9 @@ const ExamManagement: React.FC = () => {
   };
 
   // basic debounce for search
-  let searchDebounceTimer: any;
   const debounceFetchBank = (text: string) => {
-    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(() => loadBankQuestions(text), 400);
+    if (searchDebounceTimerRef.current) clearTimeout(searchDebounceTimerRef.current);
+    searchDebounceTimerRef.current = setTimeout(() => loadBankQuestions(text), 400);
   };
 
   const toggleSelectAllBank = (checked: boolean) => {
@@ -1743,7 +1761,7 @@ const ExamManagement: React.FC = () => {
                               <th className="py-2 pr-3">Type</th>
                               <th className="py-2 pr-3">Difficulty</th>
                               <th className="py-2 pr-3">Version</th>
-                              <th className="py-2 pr-3">Marks</th>
+                              <th className="py-2 pr-3">Exam Marks (Override)</th>
                               <th className="py-2 pr-3">Actions</th>
                             </tr>
                           </thead>
@@ -1758,14 +1776,19 @@ const ExamManagement: React.FC = () => {
                                 <td className="py-2 pr-3">{eq.bank_question?.difficulty || '-'}</td>
                                 <td className="py-2 pr-3">v{eq.version_number || 1}</td>
                                 <td className="py-2 pr-3">
-                                  <input
-                                    type="number"
-                                    className="w-20 px-2 py-1 border rounded"
-                                    value={eq.marks_override ?? eq.bank_question?.marks ?? 0}
-                                    min={0}
-                                    onChange={(e) => handleLocalMarksChange(eq.id, Number(e.target.value))}
-                                    onBlur={(e) => saveMarksOverride(eq.id, Number(e.target.value))}
-                                  />
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="number"
+                                      className="w-20 px-2 py-1 border rounded"
+                                      value={eq.marks_override ?? eq.bank_question?.marks ?? 0}
+                                      min={0}
+                                      onChange={(e) => handleLocalMarksChange(eq.id, Number(e.target.value))}
+                                      onBlur={(e) => saveMarksOverride(eq.id, Number(e.target.value))}
+                                    />
+                                    <span className="text-[11px] text-gray-500 whitespace-nowrap">
+                                      bank: {eq.bank_question?.marks ?? 0}
+                                    </span>
+                                  </div>
                                 </td>
                                 <td className="py-2 pr-3">
                                   <div className="flex items-center gap-2">

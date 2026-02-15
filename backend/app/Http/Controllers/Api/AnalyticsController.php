@@ -8,6 +8,7 @@ use App\Models\ExamAttempt;
 use App\Models\Student;
 use App\Models\Department;
 use App\Models\Subject;
+use App\Models\Question;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -103,7 +104,7 @@ class AnalyticsController extends Controller
 
         $attemptMetrics = $attempts->map(function ($attempt) {
             $score = (float) ($attempt->score ?? 0);
-            $totalMarks = $this->resolveExamTotalMarks($attempt->exam);
+            $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveExamPassingMarks($attempt->exam, $totalMarks);
             $percentage = $this->safePercentage($score, $totalMarks) ?? 0;
 
@@ -298,6 +299,49 @@ class AnalyticsController extends Controller
     {
         if ($passing === null) return null;
         return $score >= $passing;
+    }
+
+    private function resolveAttemptTotalMarks(ExamAttempt $attempt): ?float
+    {
+        $questionIds = collect($attempt->question_order ?: [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        if ($questionIds->isEmpty()) {
+            $questionIds = Question::where('exam_id', $attempt->exam_id)
+                ->orderBy('order_index')
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+        }
+
+        if ($questionIds->isEmpty()) {
+            return $this->resolveExamTotalMarks($attempt->exam);
+        }
+
+        $questions = Question::with('bankQuestion:id,marks')
+            ->whereIn('id', $questionIds)
+            ->get();
+
+        $total = (float) $questions->sum(function (Question $question) {
+            if (($question->marks_override ?? null) !== null) {
+                return (float) $question->marks_override;
+            }
+
+            if (($question->marks ?? null) !== null) {
+                return (float) $question->marks;
+            }
+
+            if (($question->bankQuestion?->marks ?? null) !== null) {
+                return (float) $question->bankQuestion->marks;
+            }
+
+            return 1.0;
+        });
+
+        return $total > 0 ? $total : $this->resolveExamTotalMarks($attempt->exam);
     }
 
     private function resolveExamTotalMarks($exam): ?float

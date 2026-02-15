@@ -91,11 +91,23 @@ class ExamQuestionRandomizationController extends Controller
         if ($request->has('marks_distribution') && $request->marks_distribution !== null && $request->has('total_questions_to_serve')) {
             $distribution = $request->marks_distribution;
             if (is_array($distribution) && count($distribution) > 0) {
-                // Filter out null values and sum only the count values
-                $counts = array_filter(
-                    array_map(fn($item) => is_array($item) ? ($item['count'] ?? null) : null, $distribution),
-                    fn($v) => $v !== null
-                );
+                // Support both formats:
+                // 1) [{marks: 2, count: 5}, ...]
+                // 2) {"2": 5, "5": 3}
+                $counts = [];
+
+                if (array_is_list($distribution)) {
+                    $counts = array_filter(
+                        array_map(fn($item) => is_array($item) ? ($item['count'] ?? null) : null, $distribution),
+                        fn($v) => $v !== null
+                    );
+                } else {
+                    $counts = array_filter(
+                        array_values($distribution),
+                        fn($v) => is_numeric($v)
+                    );
+                }
+
                 if (count($counts) > 0) {
                     $totalFromDistribution = array_sum($counts);
                     if ($totalFromDistribution != $request->total_questions_to_serve) {

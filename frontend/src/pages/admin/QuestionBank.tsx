@@ -69,6 +69,7 @@ const QuestionBank: React.FC<{}> = () => {
   const [editing, setEditing] = useState<Question | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [bulkPreviewLoading, setBulkPreviewLoading] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({});
   const [currentPage, setCurrentPage] = useState(1);
@@ -391,15 +392,16 @@ const QuestionBank: React.FC<{}> = () => {
 
     try {
       setBulkLoading(true);
+      const totalSelected = selectedIds.size;
       await api.post('/bank/questions/bulk-status', {
         ids: Array.from(selectedIds),
         status: status,
       });
-      showSuccess(`${selectedIds.size} question(s) updated successfully`);
+      showSuccess(`${totalSelected} question(s) set to ${status}`);
       setSelectedIds(new Set());
       loadQuestions();
-    } catch (error) {
-      showError('Failed to update questions');
+    } catch (error: any) {
+      showError(error?.response?.data?.message || 'Failed to update questions');
     } finally {
       setBulkLoading(false);
     }
@@ -968,6 +970,7 @@ const QuestionBank: React.FC<{}> = () => {
 
   const handleExport = async () => {
     try {
+      setExportLoading(true);
       const params: any = {};
       if (selectedSubject) params.subject_id = selectedSubject;
       if (selectedClass) params.class_level = selectedClass;
@@ -986,6 +989,8 @@ const QuestionBank: React.FC<{}> = () => {
       showSuccess('Questions exported successfully');
     } catch (error) {
       showError('Failed to export questions');
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -1282,17 +1287,37 @@ const QuestionBank: React.FC<{}> = () => {
               {selectedIds.size > 0 && (
                 <div className="flex flex-wrap gap-2 w-full md:w-auto">
                   <button
-                    onClick={() => {
-                      // Export functionality
-                      console.log('Export selected questions:', Array.from(selectedIds));
-                    }}
-                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                    onClick={handleExport}
+                    disabled={bulkLoading || exportLoading}
+                    className="bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
                   >
-                    <i className='bx bx-download text-sm'></i>Export
+                    <i className='bx bx-download text-sm'></i>{exportLoading ? 'Exporting...' : 'Export'}
+                  </button>
+                  <button
+                    onClick={() => handleBulkStatusUpdate('Active')}
+                    disabled={bulkLoading}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <i className='bx bx-check-shield text-sm'></i>{bulkLoading ? 'Updating...' : 'Set Active'}
+                  </button>
+                  <button
+                    onClick={() => handleBulkStatusUpdate('Draft')}
+                    disabled={bulkLoading}
+                    className="bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <i className='bx bx-note text-sm'></i>Set Draft
+                  </button>
+                  <button
+                    onClick={() => handleBulkStatusUpdate('Inactive')}
+                    disabled={bulkLoading}
+                    className="bg-slate-600 hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <i className='bx bx-pause-circle text-sm'></i>Set Inactive
                   </button>
                   <button
                     onClick={handleBulkDelete}
-                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                    disabled={bulkLoading}
+                    className="bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
                   >
                     <i className='bx bx-trash text-sm'></i>Delete
                   </button>

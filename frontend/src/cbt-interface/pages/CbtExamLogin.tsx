@@ -4,6 +4,7 @@ import { cbtApi } from '../services/cbtApi';
 import { saveStoredSession } from '../services/sessionStore';
 import { CbtOpenExam } from '../types';
 import { cbtFontFamily, cbtTheme } from '../theme';
+import FooterMinimal from '../../components/FooterMinimal';
 
 const getDeviceId = () => {
   const key = 'cbt-device-id';
@@ -12,6 +13,20 @@ const getDeviceId = () => {
   const generated = `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   localStorage.setItem(key, generated);
   return generated;
+};
+
+const formatExamWindow = (value?: string | null): string | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const formatExamDate = (value?: string | null): string | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const CbtExamLogin: React.FC = () => {
@@ -60,6 +75,16 @@ const CbtExamLogin: React.FC = () => {
     return `${exam.subject || exam.title} - ${exam.class_level || 'All Classes'}`;
   }, [exam]);
 
+  const examWindowText = useMemo(() => {
+    if (!exam) return 'Window not set';
+    const start = formatExamWindow(exam.start_datetime);
+    const end = formatExamWindow(exam.end_datetime);
+    const examDate = formatExamDate(exam.start_datetime);
+    if (start && end && examDate) return `${start} - ${end} · ${examDate}`;
+    if (start && end) return `${start} - ${end}`;
+    return examDate || 'Today';
+  }, [exam]);
+
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -104,132 +129,160 @@ const CbtExamLogin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>
-      <header className="border-b" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
-        <div className="mx-auto flex h-[76px] w-full max-w-6xl items-center px-4 md:px-6">
+    <div className="flex min-h-screen flex-col" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>
+      <header className="border-b bg-white" style={{ borderColor: '#E2E8F0' }}>
+        <div className="mx-auto flex h-[74px] w-full max-w-[1200px] items-center justify-between px-5">
           <div className="flex items-center gap-3">
             <div
-              className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
+              className="flex h-11 w-11 items-center justify-center text-sm font-bold text-white"
               style={{ backgroundColor: cbtTheme.primary }}
             >
               SC
             </div>
-            <p className="text-[20px] font-semibold tracking-[-0.01em]" style={{ color: cbtTheme.title }}>
-              CBT System
-            </p>
+            <div>
+              <p className="text-[19px] font-semibold tracking-[-0.01em]" style={{ color: cbtTheme.title }}>
+                CBT System
+              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: cbtTheme.muted }}>
+                Student Exam Portal
+              </p>
+            </div>
           </div>
+          <p className="hidden text-xs font-semibold uppercase tracking-[0.09em] md:block" style={{ color: '#1D4ED8' }}>
+            Exam Verification
+          </p>
         </div>
       </header>
 
-      <main className="mx-auto flex min-h-[calc(100vh-76px)] w-full max-w-6xl items-center justify-center px-4 py-10 md:px-6 md:py-12">
-        <section
-          className="w-full max-w-[560px] rounded-2xl border p-7 shadow-sm md:p-10"
-          style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}
-        >
-          <h1
-            className="text-[28px] font-bold leading-[1.12] tracking-[-0.02em] md:text-[34px]"
-            style={{ color: cbtTheme.title }}
-          >
-            {examTitle}
-          </h1>
-          <p className="mt-3 text-[15px] leading-6 md:text-base" style={{ color: cbtTheme.muted }}>
-            Verify your details to start or resume your exam.
-          </p>
-
-          {loadingExam ? (
-            <p className="mt-8 text-[15px]" style={{ color: cbtTheme.muted }}>
-              Loading exam...
+      <main className="mx-auto flex w-full max-w-[1200px] flex-1 items-center px-5 py-8 md:py-10">
+        <section className="grid w-full gap-0 border bg-white md:grid-cols-[1.05fr_0.95fr]" style={{ borderColor: '#D9E1EE' }}>
+          <div className="border-b px-6 py-7 md:border-b-0 md:border-r md:px-8 md:py-9" style={{ borderColor: '#E2E8F0' }}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.15em]" style={{ color: '#1D4ED8' }}>
+              Access Control
             </p>
-          ) : (
-            <form className="mt-7 space-y-5" onSubmit={onSubmit}>
-              <div>
-                <label
-                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em]"
-                  style={{ color: cbtTheme.body }}
-                >
-                  Registration Number
-                </label>
-                <input
-                  value={regNumber}
-                  onChange={(e) => setRegNumber(e.target.value.toUpperCase())}
-                  placeholder="e.g. REG/2026/0001"
-                  className="h-11 w-full rounded-xl border px-3.5 text-sm uppercase outline-none transition focus:ring-2"
-                  style={{ borderColor: cbtTheme.border }}
-                  required
-                  disabled={verified}
-                />
+            <h1 className="mt-2 text-[34px] font-bold leading-[1.04] tracking-[-0.02em] md:text-[44px]" style={{ color: cbtTheme.title }}>
+              {exam?.subject || 'Exam'} Login
+            </h1>
+            <p className="mt-3 max-w-md text-sm leading-6 md:text-[15px]" style={{ color: cbtTheme.muted }}>
+              Confirm candidate details to start or resume the exam on this device.
+            </p>
+
+            <div className="mt-7 space-y-3 text-xs">
+              <div className="border-l-2 pl-3" style={{ borderColor: '#BFDBFE' }}>
+                <p className="font-semibold uppercase tracking-[0.08em]" style={{ color: '#1E3A8A' }}>Selected Exam</p>
+                <p className="mt-1 text-sm font-semibold leading-6" style={{ color: cbtTheme.body }}>
+                  {examTitle}
+                </p>
               </div>
-
-              <div>
-                <label
-                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em]"
-                  style={{ color: cbtTheme.body }}
-                >
-                  Access Code
-                </label>
-                <input
-                  value={accessCode}
-                  onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
-                  placeholder="Enter exam access code"
-                  className="h-11 w-full rounded-xl border px-3.5 text-sm uppercase outline-none transition focus:ring-2"
-                  style={{ borderColor: cbtTheme.border }}
-                  required
-                  disabled={verified}
-                />
+              <div className="border-l-2 pl-3" style={{ borderColor: '#D1FAE5' }}>
+                <p className="font-semibold uppercase tracking-[0.08em]" style={{ color: '#047857' }}>Schedule</p>
+                <p className="mt-1 text-sm font-semibold leading-6" style={{ color: cbtTheme.body }}>
+                  {examWindowText}
+                </p>
               </div>
+              <div className="border-l-2 pl-3" style={{ borderColor: '#FDE68A' }}>
+                <p className="font-semibold uppercase tracking-[0.08em]" style={{ color: '#B45309' }}>Security</p>
+                <p className="mt-1 text-sm leading-6" style={{ color: cbtTheme.body }}>
+                  Session replacement enabled and autosave active.
+                </p>
+              </div>
+            </div>
+          </div>
 
-              {error && (
-                <div
-                  className="rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', color: cbtTheme.danger }}
-                >
-                  {error}
+          <div className="px-6 py-7 md:px-8 md:py-9">
+            {loadingExam ? (
+              <p className="text-[15px]" style={{ color: cbtTheme.muted }}>
+                Loading exam...
+              </p>
+            ) : (
+              <form className="space-y-5" onSubmit={onSubmit}>
+                <div>
+                  <label
+                    className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.1em]"
+                    style={{ color: cbtTheme.body }}
+                  >
+                    Registration Number
+                  </label>
+                  <input
+                    value={regNumber}
+                    onChange={(e) => setRegNumber(e.target.value.toUpperCase())}
+                    placeholder="E.G. REG/2026/0001"
+                    className="h-12 w-full border-b-2 border-x-0 border-t-0 bg-transparent px-0 text-sm uppercase outline-none transition focus:border-blue-600"
+                    style={{ borderBottomColor: '#CBD5E1' }}
+                    required
+                    disabled={verified}
+                  />
                 </div>
-              )}
 
-              {verified && (
-                <div
-                  className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm"
-                  style={{ backgroundColor: '#ECFDF5', borderColor: '#A7F3D0', color: '#065F46' }}
-                >
-                  <span className="inline-flex h-5 w-5 animate-pulse items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
-                    OK
-                  </span>
-                  Verification successful. Opening exam...
+                <div>
+                  <label
+                    className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.1em]"
+                    style={{ color: cbtTheme.body }}
+                  >
+                    Access Code
+                  </label>
+                  <input
+                    value={accessCode}
+                    onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
+                    placeholder="ENTER EXAM ACCESS CODE"
+                    className="h-12 w-full border-b-2 border-x-0 border-t-0 bg-transparent px-0 text-sm uppercase outline-none transition focus:border-blue-600"
+                    style={{ borderBottomColor: '#CBD5E1' }}
+                    required
+                    disabled={verified}
+                  />
                 </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={submitting || verified || !exam}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
-                style={{ backgroundColor: cbtTheme.primary }}
-              >
-                {submitting ? (
-                  <>
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    Verifying...
-                  </>
-                ) : (
-                  'Verify'
+                {error && (
+                  <div
+                    className="border-l-2 px-3 py-2.5 text-sm"
+                    style={{ backgroundColor: '#FEF2F2', borderLeftColor: '#DC2626', color: cbtTheme.danger }}
+                  >
+                    {error}
+                  </div>
                 )}
-              </button>
-            </form>
-          )}
 
-          <button
-            type="button"
-            onClick={() => navigate('/cbt')}
-            className="mt-5 text-sm font-medium underline-offset-2 hover:underline"
-            style={{ color: cbtTheme.primary }}
-          >
-            Back to exam selection
-          </button>
+                {verified && (
+                  <div
+                    className="border-l-2 px-3 py-2.5 text-sm"
+                    style={{ backgroundColor: '#ECFDF5', borderLeftColor: '#059669', color: '#065F46' }}
+                  >
+                    Verification successful. Opening exam...
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={submitting || verified || !exam}
+                  className="flex h-11 w-full items-center justify-center gap-2 border text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ backgroundColor: cbtTheme.primary, borderColor: cbtTheme.primary }}
+                >
+                  {submitting ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin border-2 border-white border-t-transparent" />
+                      Verifying...
+                    </>
+                  ) : (
+                    'Verify'
+                  )}
+                </button>
+              </form>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigate('/cbt')}
+              className="mt-6 text-sm font-semibold uppercase tracking-[0.08em]"
+              style={{ color: cbtTheme.primary }}
+            >
+              Back to exam selection
+            </button>
+          </div>
         </section>
       </main>
+
+      <FooterMinimal />
     </div>
   );
 };
 
 export default CbtExamLogin;
-

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Subject {
   id: number;
@@ -88,6 +89,7 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
 }) => {
   const [contextMenuId, setContextMenuId] = useState<number | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const [openRowMenu, setOpenRowMenu] = useState<{ question: Question; top: number; left: number } | null>(null);
 
   const handleContextMenu = (e: React.MouseEvent, questionId: number) => {
     e.preventDefault();
@@ -104,6 +106,41 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
       });
     }
   };
+
+  const openActionsMenu = (question: Question, ev: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 224;
+    const menuHeight = onVersionHistory ? 270 : 230;
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+
+    let top = rect.top - menuHeight - 10;
+    if (top < 8) {
+      top = Math.min(rect.bottom + 8, viewportH - menuHeight - 8);
+    }
+
+    let left = Math.max(8, rect.right - menuWidth);
+    if (left + menuWidth > viewportW - 8) {
+      left = viewportW - menuWidth - 8;
+    }
+
+    setOpenRowMenu({ question, top, left });
+  };
+
+  const closeActionsMenu = () => setOpenRowMenu(null);
+
+  useEffect(() => {
+    if (!openRowMenu) return;
+
+    const handleLayoutChange = () => closeActionsMenu();
+    window.addEventListener('resize', handleLayoutChange);
+    window.addEventListener('scroll', handleLayoutChange, true);
+
+    return () => {
+      window.removeEventListener('resize', handleLayoutChange);
+      window.removeEventListener('scroll', handleLayoutChange, true);
+    };
+  }, [openRowMenu]);
 
   const allSelected = questions.length > 0 && questions.every((q) => selectedIds.has(q.id));
 
@@ -235,55 +272,13 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                           <i className='bx bx-edit text-base'></i>
                         </button>
 
-                        {/* Dropdown Menu */}
-                        <div className="relative group">
-                          <button
-                            className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200 transform hover:scale-110"
-                            title="More actions"
-                          >
-                            <i className='bx bx-dots-vertical-rounded text-base'></i>
-                          </button>
-                          
-                          {/* Dropdown menu - shows on hover */}
-                          <div className="absolute right-0 bottom-full mb-1 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
-                            {/* View/Preview */}
-                            <button
-                              onClick={() => onPreview(question.id)}
-                              className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                            >
-                              <i className='bx bx-show text-blue-500'></i>
-                              <span className="font-medium">Preview</span>
-                            </button>
-                            
-                            {onVersionHistory && (
-                              <button
-                                onClick={() => onVersionHistory(question.id)}
-                                className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                              >
-                                <i className='bx bx-history text-purple-500'></i>
-                                <span className="font-medium">View History</span>
-                              </button>
-                            )}
-                            
-                            {/* Duplicate */}
-                            <button
-                              onClick={() => onDuplicate(question.id)}
-                              className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                            >
-                              <i className='bx bx-copy text-green-500'></i>
-                              <span className="font-medium">Duplicate</span>
-                            </button>
-                            
-                            {/* Toggle Status */}
-                            <button
-                              onClick={() => onToggleStatus(question.id)}
-                              className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"
-                            >
-                              <i className='bx bx-toggle-right text-amber-500'></i>
-                              <span className="font-medium">Toggle Status</span>
-                            </button>
-                          </div>
-                        </div>
+                        <button
+                          onClick={(ev) => openActionsMenu(question, ev)}
+                          className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200 transform hover:scale-110"
+                          title="More actions"
+                        >
+                          <i className='bx bx-dots-vertical-rounded text-base'></i>
+                        </button>
 
                         {/* Delete - Red */}
                         <button
@@ -300,6 +295,75 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
               )}
             </tbody>
           </table>
+
+      {/* Row Action Menu (portal to prevent clipping inside scroll containers) */}
+      {openRowMenu && createPortal(
+        <div className="fixed inset-0 z-[9999]" onClick={closeActionsMenu}>
+          <div
+            className="absolute w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+            style={{ top: openRowMenu.top, left: openRowMenu.left }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => {
+                onPreview(openRowMenu.question.id);
+                closeActionsMenu();
+              }}
+              className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+            >
+              <i className='bx bx-show text-blue-500'></i>
+              <span className="font-medium">Preview</span>
+            </button>
+
+            {onVersionHistory && (
+              <button
+                onClick={() => {
+                  onVersionHistory(openRowMenu.question.id);
+                  closeActionsMenu();
+                }}
+                className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+              >
+                <i className='bx bx-history text-purple-500'></i>
+                <span className="font-medium">View History</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                onDuplicate(openRowMenu.question.id);
+                closeActionsMenu();
+              }}
+              className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+            >
+              <i className='bx bx-copy text-green-500'></i>
+              <span className="font-medium">Duplicate</span>
+            </button>
+
+            <button
+              onClick={() => {
+                onToggleStatus(openRowMenu.question.id);
+                closeActionsMenu();
+              }}
+              className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+            >
+              <i className='bx bx-toggle-right text-amber-500'></i>
+              <span className="font-medium">Toggle Status</span>
+            </button>
+
+            <button
+              onClick={() => {
+                onDelete(openRowMenu.question.id);
+                closeActionsMenu();
+              }}
+              className="w-full text-left px-4 py-3 text-sm text-red-700 hover:bg-red-50 flex items-center gap-3 transition-colors"
+            >
+              <i className='bx bx-trash text-red-500'></i>
+              <span className="font-medium">Delete</span>
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Context Menu */}
       {contextMenuId && (

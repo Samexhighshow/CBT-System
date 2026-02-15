@@ -11,6 +11,7 @@ use App\Models\ExamAttemptSession;
 use App\Models\Question;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class MarkingController extends Controller
@@ -50,12 +51,18 @@ class MarkingController extends Controller
             ->orderByDesc('updated_at')
             ->get()
             ->map(function (ExamAttempt $attempt) {
-                [$answeredCount, $pendingCount] = $this->attemptQuestionStats($attempt);
+                $summary = $this->attemptScoreSummary($attempt);
+                $score = (float) ($attempt->score ?? 0);
+                $percentage = $summary['total_marks'] > 0
+                    ? round(($score / $summary['total_marks']) * 100, 2)
+                    : 0.0;
 
                 return [
                     'id' => $attempt->id,
                     'status' => $attempt->status,
-                    'score' => $attempt->score,
+                    'score' => $score,
+                    'total_marks' => $summary['total_marks'],
+                    'percentage' => $percentage,
                     'switch_count' => $attempt->switch_count,
                     'submitted_at' => $attempt->submitted_at?->toIso8601String(),
                     'completed_at' => $attempt->completed_at?->toIso8601String(),
@@ -65,8 +72,11 @@ class MarkingController extends Controller
                         'name' => $attempt->student ? trim($attempt->student->first_name . ' ' . $attempt->student->last_name) : 'Unknown',
                         'class_level' => $attempt->student?->class_level,
                     ],
-                    'answered_count' => $answeredCount,
-                    'pending_manual_count' => $pendingCount,
+                    'question_count' => $summary['question_count'],
+                    'objective_question_count' => $summary['objective_question_count'],
+                    'manual_question_count' => $summary['manual_question_count'],
+                    'answered_count' => $summary['answered_count'],
+                    'pending_manual_count' => $summary['pending_manual_count'],
                     'security_summary' => $this->securitySummary($attempt->id, (int) ($attempt->switch_count ?? 0)),
                 ];
             });
@@ -75,7 +85,7 @@ class MarkingController extends Controller
             'exam' => [
                 'id' => $exam->id,
                 'title' => $exam->title,
-                'total_marks' => $exam->questions()->sum('marks'),
+                'total_marks' => $exam->getTotalMarks(),
             ],
             'data' => $attempts,
         ]);
@@ -97,7 +107,7 @@ class MarkingController extends Controller
 
         $answersByQuestion = $attempt->examAnswers->keyBy('question_id');
 
-        $questions = Question::with(['options', 'bankQuestion'])
+        $questions = Question::with(['options', 'bankQuestion.options'])
             ->whereIn('id', $questionIds)
             ->get()
             ->keyBy('id');
@@ -112,7 +122,8 @@ class MarkingController extends Controller
             /** @var ExamAnswer|null $answer */
             $answer = $answersByQuestion->get($questionId);
 
-            $correctOptionIds = $question->options
+            $options = $this->questionOptions($question);
+            $correctOptionIds = $options
                 ->where('is_correct', true)
                 ->pluck('id')
                 ->values()
@@ -124,9 +135,9 @@ class MarkingController extends Controller
                     ? $question->question_text
                     : ($question->bankQuestion?->question_text ?? ''),
                 'question_type' => $this->resolveQuestionType($question),
-                'marks' => (float) ($question->marks ?? 1),
+                'marks' => $this->questionMarks($question),
                 'requires_manual_marking' => $this->requiresManualMarking($question),
-                'options' => $question->options->map(fn ($opt) => [
+                'options' => $options->map(fn ($opt) => [
                     'id' => $opt->id,
                     'option_text' => $opt->option_text,
                 ])->values(),
@@ -145,7 +156,7 @@ class MarkingController extends Controller
             ];
         })->filter()->values();
 
-        [$answeredCount, $pendingCount] = $this->attemptQuestionStats($attempt);
+        $summary = $this->attemptScoreSummary($attempt);
         $securitySummary = $this->securitySummary($attempt->id, (int) ($attempt->switch_count ?? 0));
         $recentEvents = $this->recentSecurityEvents($attempt->id);
 
@@ -166,8 +177,12 @@ class MarkingController extends Controller
                     'id' => $attempt->exam?->id,
                     'title' => $attempt->exam?->title,
                 ],
-                'answered_count' => $answeredCount,
-                'pending_manual_count' => $pendingCount,
+                'total_marks' => $summary['total_marks'],
+                'question_count' => $summary['question_count'],
+                'objective_question_count' => $summary['objective_question_count'],
+                'manual_question_count' => $summary['manual_question_count'],
+                'answered_count' => $summary['answered_count'],
+                'pending_manual_count' => $summary['pending_manual_count'],
                 'security_summary' => $securitySummary,
             ],
             'questions' => $payloadQuestions,
@@ -183,7 +198,7 @@ class MarkingController extends Controller
         ]);
 
         $attempt = ExamAttempt::with('examAnswers')->findOrFail($attemptId);
-        $question = Question::findOrFail($questionId);
+        $question = Question::with('bankQuestion:id,marks,question_type')->findOrFail($questionId);
 
         $answer = ExamAnswer::where('attempt_id', $attemptId)
             ->where('question_id', $questionId)
@@ -193,7 +208,7 @@ class MarkingController extends Controller
             return response()->json(['message' => 'No answer found for this question in the attempt.'], 404);
         }
 
-        $maxMarks = (float) ($question->marks ?? 1);
+        $maxMarks = $this->questionMarks($question);
         $awarded = min($maxMarks, (float) $validated['marks_awarded']);
 
         $answer->update([
@@ -255,13 +270,64 @@ class MarkingController extends Controller
         ]);
     }
 
+    private function attemptScoreSummary(ExamAttempt $attempt): array
+    {
+        $questionIds = $this->attemptQuestionIds($attempt);
+        $questions = Question::with('bankQuestion:id,question_type,marks')
+            ->whereIn('id', $questionIds)
+            ->get()
+            ->keyBy('id');
+        $answers = ExamAnswer::where('attempt_id', $attempt->id)
+            ->get()
+            ->keyBy('question_id');
+
+        $totalMarks = 0.0;
+        $objectiveCount = 0;
+        $manualCount = 0;
+        $pendingManual = 0;
+
+        foreach ($questionIds as $questionId) {
+            /** @var Question|null $question */
+            $question = $questions->get((int) $questionId);
+            if (!$question) {
+                continue;
+            }
+
+            $totalMarks += $this->questionMarks($question);
+
+            $isManual = $this->requiresManualMarking($question);
+            if ($isManual) {
+                $manualCount++;
+                $answer = $answers->get((int) $questionId);
+                if ($answer && $answer->marks_awarded === null && $this->hasCandidateResponse($answer)) {
+                    $pendingManual++;
+                }
+            } else {
+                $objectiveCount++;
+            }
+        }
+
+        $answeredCount = $answers
+            ->filter(fn (ExamAnswer $answer) => $this->hasCandidateResponse($answer))
+            ->count();
+
+        return [
+            'question_count' => $questionIds->count(),
+            'objective_question_count' => $objectiveCount,
+            'manual_question_count' => $manualCount,
+            'answered_count' => $answeredCount,
+            'pending_manual_count' => $pendingManual,
+            'total_marks' => round($totalMarks, 2),
+        ];
+    }
+
     private function attemptQuestionStats(ExamAttempt $attempt): array
     {
         $answers = ExamAnswer::with('question:id,question_type')
             ->where('attempt_id', $attempt->id)
             ->get();
 
-        $answeredCount = $answers->count();
+        $answeredCount = $answers->filter(fn (ExamAnswer $answer) => $this->hasCandidateResponse($answer))->count();
 
         $pendingCount = $answers->filter(function (ExamAnswer $answer) {
             if (!$answer->question) {
@@ -271,25 +337,45 @@ class MarkingController extends Controller
             return $this->requiresManualMarking($answer->question) && $answer->marks_awarded === null;
         })->count();
 
-        return [$answeredCount, $pendingCount];
+        return [(int) $answeredCount, (int) $pendingCount];
     }
 
     private function recalculateAttemptScore(ExamAttempt $attempt, bool $finalize = false): array
     {
-        $answers = ExamAnswer::with('question:id,marks,question_type')
+        $questionIds = $this->attemptQuestionIds($attempt);
+        $questions = Question::with('bankQuestion:id,question_type,marks')
+            ->whereIn('id', $questionIds)
+            ->get()
+            ->keyBy('id');
+        $answers = ExamAnswer::with('question:id,question_type')
             ->where('attempt_id', $attempt->id)
-            ->get();
+            ->get()
+            ->keyBy('question_id');
 
         $score = 0.0;
         $totalMarks = 0.0;
         $pendingManual = 0;
 
-        foreach ($answers as $answer) {
-            $marks = (float) ($answer->question?->marks ?? 1);
+        foreach ($questionIds as $questionId) {
+            /** @var Question|null $question */
+            $question = $questions->get((int) $questionId);
+            if (!$question) {
+                continue;
+            }
+
+            $marks = $this->questionMarks($question);
             $totalMarks += $marks;
 
-            if ($this->requiresManualMarking($answer->question) && $answer->marks_awarded === null) {
-                $pendingManual++;
+            /** @var ExamAnswer|null $answer */
+            $answer = $answers->get((int) $questionId);
+            if (!$answer) {
+                continue;
+            }
+
+            if ($this->requiresManualMarking($question) && $answer->marks_awarded === null) {
+                if ($this->hasCandidateResponse($answer)) {
+                    $pendingManual++;
+                }
                 continue;
             }
 
@@ -301,7 +387,7 @@ class MarkingController extends Controller
         $attempt->update([
             'score' => round($score, 2),
             'status' => $status,
-            'completed_at' => $status === 'completed' ? now() : null,
+            'completed_at' => $status === 'completed' ? ($attempt->completed_at ?? now()) : null,
         ]);
 
         return [
@@ -338,6 +424,86 @@ class MarkingController extends Controller
         }
 
         return strtolower(trim((string) ($question->question_type ?? '')));
+    }
+
+    private function questionMarks(Question $question): float
+    {
+        if (($question->marks_override ?? null) !== null) {
+            return (float) $question->marks_override;
+        }
+
+        if (($question->marks ?? null) !== null) {
+            return (float) $question->marks;
+        }
+
+        if (($question->bankQuestion?->marks ?? null) !== null) {
+            return (float) $question->bankQuestion->marks;
+        }
+
+        return 1.0;
+    }
+
+    private function questionOptions(Question $question): Collection
+    {
+        $options = $question->options
+            ->sortBy(fn ($opt) => [$opt->order_index ?? 0, $opt->id])
+            ->values();
+
+        if ($options->isNotEmpty()) {
+            return $options;
+        }
+
+        return $question->bankQuestion?->options
+            ? $question->bankQuestion->options
+                ->sortBy(fn ($opt) => [$opt->sort_order ?? 0, $opt->id])
+                ->values()
+            : collect();
+    }
+
+    private function attemptQuestionIds(ExamAttempt $attempt): Collection
+    {
+        $questionIds = collect($attempt->question_order ?: [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        if ($questionIds->isNotEmpty()) {
+            return $questionIds;
+        }
+
+        return Question::where('exam_id', $attempt->exam_id)
+            ->orderBy('order_index')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+    }
+
+    private function hasCandidateResponse(ExamAnswer $answer): bool
+    {
+        if ($answer->option_id) {
+            return true;
+        }
+
+        if (count($this->extractSelectedOptionIds($answer)) > 0) {
+            return true;
+        }
+
+        $text = trim((string) ($answer->answer_text ?? ''));
+        if ($text === '') {
+            return false;
+        }
+
+        $decoded = json_decode($text, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $textAnswer = trim((string) ($decoded['answer_text'] ?? ''));
+            $optionIds = $decoded['option_ids'] ?? $decoded['selected_option_ids'] ?? [];
+            if ($textAnswer === '' && (!is_array($optionIds) || count($optionIds) === 0)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function extractSelectedOptionIds(ExamAnswer $answer): array

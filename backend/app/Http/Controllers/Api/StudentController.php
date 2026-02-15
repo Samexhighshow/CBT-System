@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\SystemSetting;
+use App\Models\Question;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -440,22 +441,47 @@ class StudentController extends Controller
 
     private function resolveAttemptTotalMarks($attempt): float
     {
-        $exam = $attempt->exam;
-        if (!$exam) {
+        if (!$attempt) {
             return 0;
         }
 
-        $direct = $exam->total_marks ?? null;
-        if ($direct !== null && is_numeric($direct) && (float) $direct > 0) {
-            return (float) $direct;
+        $questionIds = collect($attempt->question_order ?: [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        if ($questionIds->isEmpty()) {
+            $questionIds = Question::where('exam_id', $attempt->exam_id)
+                ->orderBy('order_index')
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
         }
 
-        $metaTotal = data_get($exam->metadata, 'total_marks');
-        if ($metaTotal !== null && is_numeric($metaTotal) && (float) $metaTotal > 0) {
-            return (float) $metaTotal;
+        if ($questionIds->isEmpty()) {
+            return 0;
         }
 
-        return (float) ($exam->questions()->sum('marks') ?? 0);
+        $questions = Question::with('bankQuestion:id,marks')
+            ->whereIn('id', $questionIds)
+            ->get();
+
+        return (float) $questions->sum(function (Question $question) {
+            if (($question->marks_override ?? null) !== null) {
+                return (float) $question->marks_override;
+            }
+
+            if (($question->marks ?? null) !== null) {
+                return (float) $question->marks;
+            }
+
+            if (($question->bankQuestion?->marks ?? null) !== null) {
+                return (float) $question->bankQuestion->marks;
+            }
+
+            return 1.0;
+        });
     }
 
     private function resolveAttemptPassingMarks($attempt, ?float $totalMarks = null): ?float

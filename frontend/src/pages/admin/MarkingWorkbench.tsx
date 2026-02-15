@@ -114,6 +114,66 @@ const formatEventDate = (value?: string | null) => {
   return date.toLocaleString();
 };
 
+const extractFirstNonEmptyString = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = extractFirstNonEmptyString(item);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  if (value && typeof value === 'object') {
+    for (const entry of Object.values(value as Record<string, unknown>)) {
+      const found = extractFirstNonEmptyString(entry);
+      if (found) return found;
+    }
+  }
+
+  return null;
+};
+
+const normalizeStudentText = (raw?: string | null): string | null => {
+  if (!raw) return null;
+
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+  if (!looksLikeJson) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+
+    if (typeof parsed === 'string') {
+      const normalized = parsed.trim();
+      return normalized.length > 0 ? normalized : null;
+    }
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const parsedObj = parsed as Record<string, unknown>;
+      const priorityKeys = ['answer_text', 'text', 'response', 'value'];
+
+      for (const key of priorityKeys) {
+        const candidate = extractFirstNonEmptyString(parsedObj[key]);
+        if (candidate) return candidate;
+      }
+    }
+
+    return extractFirstNonEmptyString(parsed);
+  } catch {
+    // If backend saved plain text that happens to start with "{" or "[", keep it visible.
+    return trimmed;
+  }
+};
+
 const MarkingWorkbench: React.FC = () => {
   const [exams, setExams] = useState<MarkingExamRow[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
@@ -437,6 +497,7 @@ const MarkingWorkbench: React.FC = () => {
                     ...(typeof question.answer.option_id === 'number' ? [question.answer.option_id] : []),
                     ...(question.answer.option_ids || []),
                   ]));
+                  const studentText = normalizeStudentText(question.answer.answer_text);
                   const selectedOptionText = question.options
                     .filter((option) => selectedOptionIds.includes(option.id))
                     .map((option) => option.option_text)
@@ -456,7 +517,7 @@ const MarkingWorkbench: React.FC = () => {
                       <div className="mt-2 text-xs text-gray-700 space-y-1">
                         <p><span className="font-semibold">Type:</span> {question.question_type}</p>
                         {selectedOptionText && <p><span className="font-semibold">Student Answer:</span> {selectedOptionText}</p>}
-                        {question.answer.answer_text && <p><span className="font-semibold">Student Text:</span> {question.answer.answer_text}</p>}
+                        {studentText && <p><span className="font-semibold">Student Text:</span> {studentText}</p>}
                         {correctOptionText && <p><span className="font-semibold">Correct:</span> {correctOptionText}</p>}
                         {question.answer.flagged && <p className="text-amber-700 font-semibold">Flagged by student for review</p>}
                       </div>

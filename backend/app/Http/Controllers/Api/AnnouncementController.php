@@ -72,6 +72,13 @@ class AnnouncementController extends Controller
      */
     public function store(Request $request)
     {
+        if ($request->has('published')) {
+            $normalizedPublished = filter_var($request->input('published'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($normalizedPublished !== null) {
+                $request->merge(['published' => $normalizedPublished]);
+            }
+        }
+
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'content' => 'required|string|min:10',
@@ -128,6 +135,20 @@ class AnnouncementController extends Controller
      */
     public function update(Request $request, $id)
     {
+        if ($request->has('published')) {
+            $normalizedPublished = filter_var($request->input('published'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($normalizedPublished !== null) {
+                $request->merge(['published' => $normalizedPublished]);
+            }
+        }
+
+        if ($request->has('remove_image')) {
+            $normalizedRemoveImage = filter_var($request->input('remove_image'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($normalizedRemoveImage !== null) {
+                $request->merge(['remove_image' => $normalizedRemoveImage]);
+            }
+        }
+
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|string|max:255',
             'content' => 'sometimes|string|min:10',

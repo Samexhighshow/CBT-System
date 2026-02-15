@@ -125,11 +125,11 @@ const AdminLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col w-full">
       {/* Top Navigation Bar - Desktop */}
-      <nav className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 w-full fixed top-0 left-0 right-0 z-40">
-        <div className="app-shell">
+      <nav className="sticky top-0 z-40 w-full border-b bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="mx-auto w-full max-w-[1200px] px-5">
           <div className="flex items-center h-[68px]">
             {/* Left Section: Logo */}
-            <div className="flex min-w-0 items-center space-x-2 md:min-w-[180px]">
+            <div className="flex min-w-0 items-center gap-2 md:min-w-[180px]">
               {/* Mobile Hamburger */}
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -311,11 +311,11 @@ const AdminLayout: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 w-full overflow-x-hidden pt-[68px] pb-[48px]">
+      <main className="flex-1 w-full overflow-x-hidden">
         <Outlet />
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30">
+      <div className="sticky bottom-0 z-30">
         <FooterMinimal />
       </div>
 

@@ -15,6 +15,7 @@ use App\Models\SystemSetting;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -152,7 +153,16 @@ class CbtInterfaceController extends Controller
                 ], 403);
             }
 
-            $questionOrder = $this->buildQuestionOrder($exam);
+            $questionSeed = null;
+            if (
+                strtolower((string) ($exam->question_selection_mode ?? 'fixed')) === 'random'
+                || $this->shouldShuffleQuestionOrder($exam)
+            ) {
+                // Fresh seed per attempt ensures a new randomized selection/order on each restart.
+                $questionSeed = Str::random(24);
+            }
+
+            $questionOrder = $this->buildQuestionOrder($exam, (int) $student->id, $questionSeed);
             if (count($questionOrder) === 0) {
                 return response()->json([
                     'message' => 'Exam has no questions assigned yet.',
@@ -398,7 +408,7 @@ class CbtInterfaceController extends Controller
 
     public function questions(Request $request, int $attemptId): JsonResponse
     {
-        $attempt = ExamAttempt::with('exam:id,title,randomize_options')->findOrFail($attemptId);
+        $attempt = ExamAttempt::with('exam:id,title,randomize_options,shuffle_option_order,randomize_questions,shuffle_question_order,question_selection_mode,total_questions_to_serve,question_distribution,difficulty_distribution,marks_distribution,question_reuse_policy')->findOrFail($attemptId);
 
         $session = $this->validateSession($request, $attempt);
         if ($session instanceof JsonResponse) {
@@ -408,7 +418,7 @@ class CbtInterfaceController extends Controller
         $questionIds = collect($attempt->question_order ?: [])->map(fn ($id) => (int) $id)->filter()->values();
 
         if ($questionIds->isEmpty()) {
-            $questionIds = $attempt->exam->questions()->orderBy('id')->pluck('id');
+            $questionIds = collect($this->buildQuestionOrder($attempt->exam, (int) $attempt->student_id));
             $attempt->question_order = $questionIds->values()->all();
             $attempt->save();
         }
@@ -418,14 +428,14 @@ class CbtInterfaceController extends Controller
             ->get()
             ->keyBy('id');
 
-        $ordered = $questionIds->map(function (int $id) use ($questions) {
+        $ordered = $questionIds->map(function (int $id) use ($questions, $attempt) {
             /** @var Question|null $question */
             $question = $questions->get($id);
             if (!$question) {
                 return null;
             }
 
-            $options = $this->questionOptions($question)
+            $options = $this->questionOptionsForAttempt($attempt, $question)
                 ->values()
                 ->map(fn ($opt) => [
                     'id' => $opt->id,
@@ -546,32 +556,30 @@ class CbtInterfaceController extends Controller
                     return response()->json(['message' => 'Selected option is invalid for this question.'], 422);
                 }
 
-                $answer->option_id = $optionId;
-                if ($optionId !== null) {
-                    $isCorrect = $this->isCorrectOptionForQuestion($question, $optionId);
-                    $answer->is_correct = $isCorrect;
-                    $answer->marks_awarded = $isCorrect ? $this->questionMarks($question) : 0;
-                } else {
-                    $answer->is_correct = null;
-                    $answer->marks_awarded = null;
-                }
+                $this->applySingleObjectiveSelection($question, $answer, $optionId);
             }
 
             if ($hasAnswerTextPayload && $questionType === 'true_false') {
                 $raw = trim((string) ($validated['answer_text'] ?? ''));
                 $normalized = strtolower($raw);
-                $answer->answer_text = $raw !== '' ? $raw : null;
                 if (in_array($normalized, ['true', 'false'], true)) {
                     $matching = $this->questionOptions($question)
                         ->first(function ($opt) use ($normalized) {
                             return strtolower(trim((string) ($opt->option_text ?? ''))) === $normalized;
                         });
                     if ($matching) {
-                        $answer->option_id = (int) $matching->id;
-                        $isCorrect = (bool) ($matching->is_correct ?? false);
-                        $answer->is_correct = $isCorrect;
-                        $answer->marks_awarded = $isCorrect ? $this->questionMarks($question) : 0;
+                        $this->applySingleObjectiveSelection($question, $answer, (int) $matching->id);
+                    } else {
+                        $answer->option_id = null;
+                        $answer->answer_text = $raw !== '' ? $raw : null;
+                        $answer->is_correct = null;
+                        $answer->marks_awarded = null;
                     }
+                } else {
+                    $answer->option_id = null;
+                    $answer->answer_text = $raw !== '' ? $raw : null;
+                    $answer->is_correct = null;
+                    $answer->marks_awarded = null;
                 }
             }
         } else {
@@ -854,17 +862,172 @@ class CbtInterfaceController extends Controller
         return $session;
     }
 
-    private function buildQuestionOrder(Exam $exam): array
+    private function buildQuestionOrder(Exam $exam, ?int $studentId = null, ?string $seedNonce = null): array
     {
-        $query = $exam->questions()->select('id');
+        $questions = Question::with('bankQuestion:id,difficulty,marks,status')
+            ->where('exam_id', $exam->id)
+            ->where(function ($query) {
+                // Questions linked to bank must remain Active in bank.
+                // Standalone/manual exam questions (no bank_question_id) are also allowed.
+                $query->whereNull('bank_question_id')
+                    ->orWhereHas('bankQuestion', fn ($bq) => $bq->where('status', 'Active'));
+            })
+            ->orderBy('order_index')
+            ->orderBy('id')
+            ->get();
 
-        if ($exam->randomize_questions) {
-            $query->inRandomOrder();
-        } else {
-            $query->orderBy('order_index')->orderBy('id');
+        if ($questions->isEmpty()) {
+            return [];
         }
 
-        return $query->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+        $selectionMode = strtolower((string) ($exam->question_selection_mode ?? 'fixed'));
+        $distributionMode = strtolower((string) ($exam->question_distribution ?? ''));
+        if (!in_array($distributionMode, ['same_for_all', 'unique_per_student'], true)) {
+            // Default to student-unique distribution for CBT security.
+            $distributionMode = 'unique_per_student';
+        }
+
+        $seedScope = $distributionMode === 'unique_per_student' && $studentId
+            ? "exam:{$exam->id}:student:{$studentId}"
+            : "exam:{$exam->id}:shared";
+
+        if (is_string($seedNonce) && trim($seedNonce) !== '') {
+            $seedScope .= ":{$seedNonce}";
+        }
+
+        $selected = $questions->values();
+
+        if ($selectionMode === 'random') {
+            $targetCount = (int) ($exam->total_questions_to_serve ?? 0);
+            if ($targetCount <= 0 || $targetCount > $questions->count()) {
+                $targetCount = $questions->count();
+            }
+
+            $selected = collect();
+            $remaining = $questions->values();
+
+            $difficultyDistribution = $this->normalizeDifficultyDistribution($exam->difficulty_distribution);
+            $marksDistribution = $this->normalizeMarksDistribution($exam->marks_distribution);
+
+            if (!empty($difficultyDistribution)) {
+                foreach ($difficultyDistribution as $difficulty => $count) {
+                    if ($count <= 0) {
+                        continue;
+                    }
+
+                    $pool = $remaining
+                        ->filter(fn (Question $q) => $this->normalizedQuestionDifficulty($q) === $difficulty)
+                        ->values();
+
+                    if ($pool->isEmpty()) {
+                        continue;
+                    }
+
+                    $picked = $this->stableSortQuestions($pool, "{$seedScope}:difficulty:{$difficulty}")
+                        ->take($count)
+                        ->values();
+
+                    if ($picked->isNotEmpty()) {
+                        $selected = $selected->concat($picked);
+                        $pickedIds = $picked->pluck('id')->map(fn ($id) => (int) $id)->all();
+                        $remaining = $remaining->reject(fn (Question $q) => in_array((int) $q->id, $pickedIds, true))->values();
+                    }
+                }
+            } elseif (!empty($marksDistribution)) {
+                foreach ($marksDistribution as $marks => $count) {
+                    if ($count <= 0) {
+                        continue;
+                    }
+
+                    $pool = $remaining
+                        ->filter(fn (Question $q) => (int) round($this->questionMarks($q)) === (int) $marks)
+                        ->values();
+
+                    if ($pool->isEmpty()) {
+                        continue;
+                    }
+
+                    $picked = $this->stableSortQuestions($pool, "{$seedScope}:marks:{$marks}")
+                        ->take($count)
+                        ->values();
+
+                    if ($picked->isNotEmpty()) {
+                        $selected = $selected->concat($picked);
+                        $pickedIds = $picked->pluck('id')->map(fn ($id) => (int) $id)->all();
+                        $remaining = $remaining->reject(fn (Question $q) => in_array((int) $q->id, $pickedIds, true))->values();
+                    }
+                }
+            }
+
+            if ($selected->count() < $targetCount) {
+                $needed = $targetCount - $selected->count();
+                $fill = $this->stableSortQuestions($remaining, "{$seedScope}:fill")
+                    ->take($needed)
+                    ->values();
+                $selected = $selected->concat($fill);
+                $fillIds = $fill->pluck('id')->map(fn ($id) => (int) $id)->all();
+                $remaining = $remaining->reject(fn (Question $q) => in_array((int) $q->id, $fillIds, true))->values();
+            }
+
+            if (($exam->question_reuse_policy ?? 'allow_reuse') === 'no_reuse_until_exhausted' && $studentId) {
+                $usedByOtherStudents = ExamAttempt::where('exam_id', $exam->id)
+                    ->where('student_id', '!=', $studentId)
+                    ->whereNotNull('question_order')
+                    ->get(['question_order'])
+                    ->flatMap(function (ExamAttempt $attempt) {
+                        return is_array($attempt->question_order) ? $attempt->question_order : [];
+                    })
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->unique()
+                    ->values();
+
+                if ($usedByOtherStudents->isNotEmpty()) {
+                    $unusedSelected = $selected
+                        ->reject(fn (Question $q) => $usedByOtherStudents->contains((int) $q->id))
+                        ->values();
+
+                    if ($unusedSelected->count() < $targetCount) {
+                        $needed = $targetCount - $unusedSelected->count();
+                        $fillUnused = $this->stableSortQuestions(
+                            $questions->reject(fn (Question $q) => $usedByOtherStudents->contains((int) $q->id))
+                                ->reject(fn (Question $q) => $unusedSelected->contains(fn (Question $sq) => (int) $sq->id === (int) $q->id))
+                                ->values(),
+                            "{$seedScope}:reuse"
+                        )->take($needed)->values();
+
+                        $unusedSelected = $unusedSelected->concat($fillUnused)->values();
+                    }
+
+                    if ($unusedSelected->count() < $targetCount) {
+                        $needed = $targetCount - $unusedSelected->count();
+                        $fallbackFill = $this->stableSortQuestions(
+                            $questions->reject(fn (Question $q) => $unusedSelected->contains(fn (Question $sq) => (int) $sq->id === (int) $q->id))
+                                ->values(),
+                            "{$seedScope}:reuse:fallback"
+                        )->take($needed)->values();
+
+                        $unusedSelected = $unusedSelected->concat($fallbackFill)->values();
+                    }
+
+                    $selected = $unusedSelected->take($targetCount)->values();
+                }
+            }
+
+            if ($selected->count() > $targetCount) {
+                $selected = $selected->take($targetCount)->values();
+            }
+        }
+
+        if ($this->shouldShuffleQuestionOrder($exam)) {
+            $selected = $this->stableSortQuestions($selected, "{$seedScope}:order")->values();
+        } else {
+            $selected = $selected
+                ->sortBy(fn (Question $q) => [($q->order_index ?? PHP_INT_MAX), $q->id])
+                ->values();
+        }
+
+        return $selected->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
     }
 
     private function computeEndsAt(Exam $exam, Carbon $startedAt): Carbon
@@ -927,7 +1090,7 @@ class CbtInterfaceController extends Controller
     {
         $questionIds = collect($attempt->question_order ?: []);
         if ($questionIds->isEmpty()) {
-            $questionIds = $attempt->exam->questions()->orderBy('id')->pluck('id');
+            $questionIds = collect($this->buildQuestionOrder($attempt->exam, (int) $attempt->student_id));
         }
 
         $questions = Question::with(['options', 'bankQuestion.options'])
@@ -971,8 +1134,11 @@ class CbtInterfaceController extends Controller
                     sort($selectedIds);
                     sort($correctIds);
                     $isCorrect = count($selectedIds) > 0 && $selectedIds === $correctIds;
-                } elseif ($answer->option_id) {
-                    $isCorrect = $this->isCorrectOptionForQuestion($question, (int) $answer->option_id);
+                } else {
+                    $selectedSingleOptionId = $this->extractSingleSelectedOptionId($answer);
+                    if ($selectedSingleOptionId !== null) {
+                        $isCorrect = $this->isCorrectOptionForQuestion($question, $selectedSingleOptionId);
+                    }
                 }
 
                 $awarded = $isCorrect ? $marks : 0.0;
@@ -1063,12 +1229,12 @@ class CbtInterfaceController extends Controller
 
     private function questionMarks(Question $question): float
     {
-        if ($question->marks !== null) {
-            return (float) $question->marks;
-        }
-
         if (($question->marks_override ?? null) !== null) {
             return (float) $question->marks_override;
+        }
+
+        if ($question->marks !== null) {
+            return (float) $question->marks;
         }
 
         if (($question->bankQuestion?->marks ?? null) !== null) {
@@ -1095,9 +1261,143 @@ class CbtInterfaceController extends Controller
             : collect();
     }
 
+    private function questionOptionsForAttempt(ExamAttempt $attempt, Question $question)
+    {
+        $options = $this->questionOptions($question);
+        if (!$attempt->exam || !$this->shouldShuffleOptions($attempt->exam)) {
+            return $options;
+        }
+
+        $seed = "attempt:{$attempt->id}:question:{$question->id}:options";
+        return $options->sortBy(fn ($opt) => sha1($seed . ':' . (int) $opt->id))->values();
+    }
+
+    private function shouldShuffleQuestionOrder(Exam $exam): bool
+    {
+        return (bool) (
+            ($exam->shuffle_question_order ?? false)
+            || ($exam->randomize_questions ?? false)
+            || ($exam->shuffle_questions ?? false)
+        );
+    }
+
+    private function shouldShuffleOptions(Exam $exam): bool
+    {
+        return (bool) (
+            ($exam->shuffle_option_order ?? false)
+            || ($exam->randomize_options ?? false)
+        );
+    }
+
+    private function normalizeDifficultyDistribution(mixed $distribution): array
+    {
+        if (!is_array($distribution)) {
+            return [];
+        }
+
+        $levels = ['easy', 'medium', 'hard'];
+        $normalized = [];
+
+        foreach ($levels as $level) {
+            $raw = $distribution[$level] ?? $distribution[ucfirst($level)] ?? null;
+            $count = is_numeric($raw) ? max(0, (int) $raw) : 0;
+            if ($count > 0) {
+                $normalized[$level] = $count;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeMarksDistribution(mixed $distribution): array
+    {
+        if (!is_array($distribution)) {
+            return [];
+        }
+
+        $normalized = [];
+        $isList = array_values(array_keys($distribution)) === array_keys($distribution);
+
+        if ($isList) {
+            foreach ($distribution as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $marks = isset($item['marks']) && is_numeric($item['marks']) ? (int) $item['marks'] : 0;
+                $count = isset($item['count']) && is_numeric($item['count']) ? max(0, (int) $item['count']) : 0;
+                if ($marks > 0 && $count > 0) {
+                    $normalized[$marks] = ($normalized[$marks] ?? 0) + $count;
+                }
+            }
+        } else {
+            foreach ($distribution as $marks => $count) {
+                $m = is_numeric($marks) ? (int) $marks : 0;
+                $c = is_numeric($count) ? max(0, (int) $count) : 0;
+                if ($m > 0 && $c > 0) {
+                    $normalized[$m] = ($normalized[$m] ?? 0) + $c;
+                }
+            }
+        }
+
+        ksort($normalized);
+        return $normalized;
+    }
+
+    private function normalizedQuestionDifficulty(Question $question): ?string
+    {
+        $raw = $question->bankQuestion?->difficulty
+            ?? $question->difficulty_level
+            ?? null;
+
+        if ($raw === null) {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) $raw));
+        if (in_array($normalized, ['easy', 'medium', 'hard'], true)) {
+            return $normalized;
+        }
+
+        return null;
+    }
+
+    private function stableSortQuestions(Collection $questions, string $seed): Collection
+    {
+        return $questions
+            ->sortBy(fn (Question $q) => sha1($seed . ':' . (int) $q->id))
+            ->values();
+    }
+
     private function isValidOptionForQuestion(Question $question, int $optionId): bool
     {
         return $this->questionOptions($question)->contains(fn ($opt) => (int) $opt->id === $optionId);
+    }
+
+    private function isQuestionOptionRecord(Question $question, int $optionId): bool
+    {
+        return $question->options()->where('id', $optionId)->exists();
+    }
+
+    private function applySingleObjectiveSelection(Question $question, ExamAnswer $answer, ?int $optionId): void
+    {
+        if ($optionId === null) {
+            $answer->option_id = null;
+            $answer->answer_text = null;
+            $answer->is_correct = null;
+            $answer->marks_awarded = null;
+            return;
+        }
+
+        // option_id column references question_options only; bank option ids are stored in answer_text JSON.
+        $answer->option_id = $this->isQuestionOptionRecord($question, $optionId) ? $optionId : null;
+        $answer->answer_text = json_encode([
+            'selected_option_id' => $optionId,
+            'option_ids' => [$optionId],
+        ], JSON_UNESCAPED_UNICODE);
+
+        $isCorrect = $this->isCorrectOptionForQuestion($question, $optionId);
+        $answer->is_correct = $isCorrect;
+        $answer->marks_awarded = $isCorrect ? $this->questionMarks($question) : 0;
     }
 
     private function areValidOptionsForQuestion(Question $question, array $optionIds): bool
@@ -1169,6 +1469,20 @@ class CbtInterfaceController extends Controller
         }
 
         return $this->normalizeOptionIds($selected);
+    }
+
+    private function extractSingleSelectedOptionId(ExamAnswer $answer): ?int
+    {
+        if ($answer->option_id) {
+            return (int) $answer->option_id;
+        }
+
+        $selected = $this->extractSelectedOptionIds($answer);
+        if (empty($selected)) {
+            return null;
+        }
+
+        return (int) $selected[0];
     }
 
     private function isTabWarningEvent(string $eventType): bool

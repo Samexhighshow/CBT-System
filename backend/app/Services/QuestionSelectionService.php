@@ -57,10 +57,13 @@ class QuestionSelectionService
      */
     protected function selectQuestions(Exam $exam, $studentId = null, $userId = null): array
     {
-        // Start with all exam questions
-        $query = Question::where('exam_id', $exam->id)
-            ->where('status', 'active')
-            ->where('is_archived', false);
+        // Start with all exam questions. For bank-linked questions, enforce Active bank status.
+        $query = Question::with(['bankQuestion.options', 'options'])
+            ->where('exam_id', $exam->id)
+            ->where(function ($q) {
+                $q->whereNull('bank_question_id')
+                    ->orWhereHas('bankQuestion', fn ($bq) => $bq->where('status', 'Active'));
+            });
 
         // Apply topic filters if specified
         if ($exam->topic_filters && is_array($exam->topic_filters) && count($exam->topic_filters) > 0) {
@@ -78,7 +81,7 @@ class QuestionSelectionService
             $questions = $availableQuestions->pluck('id')->toArray();
             
             // Apply shuffle if enabled
-            if ($exam->shuffle_question_order) {
+            if ($exam->shuffle_question_order || $exam->randomize_questions) {
                 shuffle($questions);
             }
             
@@ -111,7 +114,7 @@ class QuestionSelectionService
         }
 
         // Apply shuffle if enabled
-        if ($exam->shuffle_question_order) {
+        if ($exam->shuffle_question_order || $exam->randomize_questions) {
             shuffle($selectedIds);
         }
 
@@ -126,7 +129,9 @@ class QuestionSelectionService
         $selected = [];
 
         foreach ($distribution as $difficulty => $count) {
-            $available = $questions->where('difficulty_level', $difficulty)->shuffle();
+            $available = $questions
+                ->filter(fn ($q) => $this->effectiveDifficulty($q) === strtolower((string) $difficulty))
+                ->shuffle();
             $picked = $available->take($count)->pluck('id')->toArray();
             $selected = array_merge($selected, $picked);
 
@@ -145,7 +150,9 @@ class QuestionSelectionService
         $selected = [];
 
         foreach ($distribution as $marks => $count) {
-            $available = $questions->where('marks', (int)$marks)->shuffle();
+            $available = $questions
+                ->filter(fn ($q) => (int) $this->effectiveMarks($q) === (int) $marks)
+                ->shuffle();
             $picked = $available->take($count)->pluck('id')->toArray();
             $selected = array_merge($selected, $picked);
 
@@ -208,7 +215,7 @@ class QuestionSelectionService
     protected function getLeastUsedQuestions(Exam $exam, array $excludeIds, int $count): array
     {
         return Question::where('exam_id', $exam->id)
-            ->whereIn('id', $excludeIds)
+            ->whereNotIn('id', $excludeIds)
             ->orderBy('usage_count', 'asc')
             ->orderBy(DB::raw('RAND()'))
             ->take($count)
@@ -228,10 +235,14 @@ class QuestionSelectionService
         $shuffles = [];
 
         foreach ($questionIds as $questionId) {
-            $question = Question::with('options')->find($questionId);
+            $question = Question::with(['options', 'bankQuestion.options'])->find($questionId);
             
-            if ($question && in_array($question->question_type, ['mcq', 'multiple_choice', 'multiple_response'])) {
-                $optionIds = $question->options->pluck('id')->toArray();
+            if ($question && in_array(strtolower((string) $this->effectiveQuestionType($question)), ['mcq', 'multiple_choice', 'multiple_choice_single', 'multiple_select', 'multiple_choice_multiple', 'true_false'], true)) {
+                $options = $question->options->isNotEmpty() ? $question->options : ($question->bankQuestion?->options ?? collect());
+                $optionIds = $options->pluck('id')->toArray();
+                if (count($optionIds) < 2) {
+                    continue;
+                }
                 shuffle($optionIds);
                 $shuffles[$questionId] = $optionIds;
             }
@@ -245,14 +256,27 @@ class QuestionSelectionService
      */
     protected function calculateDistribution(Collection $questions): array
     {
+        $difficulty = ['easy' => 0, 'medium' => 0, 'hard' => 0];
+        $byMarks = [];
+        $byType = [];
+
+        foreach ($questions as $question) {
+            $diff = $this->effectiveDifficulty($question);
+            if ($diff && array_key_exists($diff, $difficulty)) {
+                $difficulty[$diff]++;
+            }
+
+            $marks = (int) $this->effectiveMarks($question);
+            $byMarks[$marks] = ($byMarks[$marks] ?? 0) + 1;
+
+            $type = (string) $this->effectiveQuestionType($question);
+            $byType[$type] = ($byType[$type] ?? 0) + 1;
+        }
+
         return [
-            'by_difficulty' => [
-                'easy' => $questions->where('difficulty_level', 'easy')->count(),
-                'medium' => $questions->where('difficulty_level', 'medium')->count(),
-                'hard' => $questions->where('difficulty_level', 'hard')->count(),
-            ],
-            'by_marks' => $questions->groupBy('marks')->map->count()->toArray(),
-            'by_type' => $questions->groupBy('question_type')->map->count()->toArray(),
+            'by_difficulty' => $difficulty,
+            'by_marks' => $byMarks,
+            'by_type' => $byType,
         ];
     }
 
@@ -262,9 +286,12 @@ class QuestionSelectionService
     public function generatePreview(Exam $exam): array
     {
         // Get available questions
-        $query = Question::where('exam_id', $exam->id)
-            ->where('status', 'active')
-            ->where('is_archived', false);
+        $query = Question::with('bankQuestion')
+            ->where('exam_id', $exam->id)
+            ->where(function ($q) {
+                $q->whereNull('bank_question_id')
+                    ->orWhereHas('bankQuestion', fn ($bq) => $bq->where('status', 'Active'));
+            });
 
         if ($exam->topic_filters && is_array($exam->topic_filters) && count($exam->topic_filters) > 0) {
             $query->where(function ($q) use ($exam) {
@@ -291,7 +318,9 @@ class QuestionSelectionService
             }
 
             foreach ($exam->difficulty_distribution as $diff => $count) {
-                $available = $availableQuestions->where('difficulty_level', $diff)->count();
+                $available = $availableQuestions
+                    ->filter(fn ($q) => $this->effectiveDifficulty($q) === strtolower((string) $diff))
+                    ->count();
                 if ($count > $available) {
                     $errors[] = "Requested {$count} {$diff} questions but only {$available} available";
                 }
@@ -300,7 +329,9 @@ class QuestionSelectionService
 
         if ($exam->marks_distribution) {
             foreach ($exam->marks_distribution as $marks => $count) {
-                $available = $availableQuestions->where('marks', (int)$marks)->count();
+                $available = $availableQuestions
+                    ->filter(fn ($q) => (int) $this->effectiveMarks($q) === (int) $marks)
+                    ->count();
                 if ($count > $available) {
                     $errors[] = "Requested {$count} questions worth {$marks} marks but only {$available} available";
                 }
@@ -334,38 +365,52 @@ class QuestionSelectionService
         if ($exam->difficulty_distribution) {
             $selected = collect();
             foreach ($exam->difficulty_distribution as $diff => $count) {
-                $picked = $questions->where('difficulty_level', $diff)->take($count);
+                $picked = $questions
+                    ->filter(fn ($q) => $this->effectiveDifficulty($q) === strtolower((string) $diff))
+                    ->take($count);
                 $selected = $selected->merge($picked);
             }
         } elseif ($exam->marks_distribution) {
             $selected = collect();
             foreach ($exam->marks_distribution as $marks => $count) {
-                $picked = $questions->where('marks', (int)$marks)->take($count);
+                $picked = $questions
+                    ->filter(fn ($q) => (int) $this->effectiveMarks($q) === (int) $marks)
+                    ->take($count);
                 $selected = $selected->merge($picked);
             }
         } elseif ($exam->total_questions_to_serve) {
             $selected = $questions->take($exam->total_questions_to_serve);
         }
 
+        $byDifficulty = ['easy' => 0, 'medium' => 0, 'hard' => 0];
+        $byMarks = [];
+        $byType = [];
+        foreach ($selected as $question) {
+            $diff = $this->effectiveDifficulty($question);
+            if ($diff && isset($byDifficulty[$diff])) {
+                $byDifficulty[$diff]++;
+            }
+            $marks = (int) $this->effectiveMarks($question);
+            $byMarks[$marks] = ($byMarks[$marks] ?? 0) + 1;
+            $type = (string) $this->effectiveQuestionType($question);
+            $byType[$type] = ($byType[$type] ?? 0) + 1;
+        }
+
         return [
             'count' => $selected->count(),
-            'marks' => $selected->sum('marks'),
+            'marks' => $selected->sum(fn ($q) => (int) $this->effectiveMarks($q)),
             'distribution' => [
-                'by_difficulty' => [
-                    'easy' => $selected->where('difficulty_level', 'easy')->count(),
-                    'medium' => $selected->where('difficulty_level', 'medium')->count(),
-                    'hard' => $selected->where('difficulty_level', 'hard')->count(),
-                ],
-                'by_marks' => $selected->groupBy('marks')->map->count()->toArray(),
-                'by_type' => $selected->groupBy('question_type')->map->count()->toArray(),
+                'by_difficulty' => $byDifficulty,
+                'by_marks' => $byMarks,
+                'by_type' => $byType,
             ],
             'sample' => $selected->take(5)->map(function ($q) {
                 return [
                     'id' => $q->id,
-                    'text' => substr($q->question_text, 0, 100) . '...',
-                    'type' => $q->question_type,
-                    'marks' => $q->marks,
-                    'difficulty' => $q->difficulty_level,
+                    'text' => substr((string) ($q->question_text ?? $q->bankQuestion?->question_text ?? ''), 0, 100) . '...',
+                    'type' => $this->effectiveQuestionType($q),
+                    'marks' => $this->effectiveMarks($q),
+                    'difficulty' => $this->effectiveDifficulty($q),
                 ];
             })->toArray(),
         ];
@@ -389,5 +434,46 @@ class QuestionSelectionService
     {
         Question::whereIn('id', $questionIds)->increment('usage_count');
         Question::whereIn('id', $questionIds)->update(['last_used_at' => now()]);
+    }
+
+    private function effectiveDifficulty($question): ?string
+    {
+        $raw = $question->bankQuestion?->difficulty
+            ?? $question->difficulty_level
+            ?? $question->difficulty
+            ?? null;
+
+        if ($raw === null) {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) $raw));
+        return in_array($normalized, ['easy', 'medium', 'hard'], true) ? $normalized : null;
+    }
+
+    private function effectiveMarks($question): int
+    {
+        if (($question->marks_override ?? null) !== null) {
+            return (int) $question->marks_override;
+        }
+
+        if (($question->marks ?? null) !== null) {
+            return (int) $question->marks;
+        }
+
+        if (($question->bankQuestion?->marks ?? null) !== null) {
+            return (int) $question->bankQuestion->marks;
+        }
+
+        return 1;
+    }
+
+    private function effectiveQuestionType($question): string
+    {
+        return (string) (
+            $question->bankQuestion?->question_type
+            ?? $question->question_type
+            ?? 'mcq'
+        );
     }
 }

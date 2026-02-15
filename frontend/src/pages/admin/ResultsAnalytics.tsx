@@ -17,6 +17,9 @@ interface AttemptSummary {
   class_level: string;
   score: number;
   total_marks: number;
+  question_count: number;
+  answered_count: number;
+  pending_manual_count: number;
   status?: string;
   percentage?: number;
   completed_at?: string;
@@ -139,7 +142,7 @@ const ResultsAnalytics: React.FC = () => {
         const mapped: AttemptSummary[] = Array.isArray(rows)
           ? rows.map((row: any) => {
               const score = Number(row.score ?? 0);
-              const totalMarks = Number(attemptsRes.data?.exam?.total_marks ?? 0);
+              const totalMarks = Number(row.total_marks ?? 0);
               const percentage = totalMarks > 0 ? (score / totalMarks) * 100 : 0;
 
               return {
@@ -150,6 +153,9 @@ const ResultsAnalytics: React.FC = () => {
                 class_level: row.student?.class_level || 'N/A',
                 score,
                 total_marks: totalMarks,
+                question_count: Number(row.question_count ?? 0),
+                answered_count: Number(row.answered_count ?? 0),
+                pending_manual_count: Number(row.pending_manual_count ?? 0),
                 status: String(row.status || '').toLowerCase(),
                 percentage,
                 completed_at: row.completed_at || row.submitted_at,
@@ -157,6 +163,23 @@ const ResultsAnalytics: React.FC = () => {
             })
           : [];
         setAttempts(mapped);
+
+        if (mapped.length > 0) {
+          const totalSubmissions = mapped.length;
+          const avgScore = mapped.reduce((sum, row) => sum + (row.percentage ?? 0), 0) / totalSubmissions;
+          const passCount = mapped.filter((row) => (row.percentage ?? 0) >= 50).length;
+          setAnalytics({
+            average_score: Number.isFinite(avgScore) ? avgScore : 0,
+            pass_rate: totalSubmissions > 0 ? (passCount / totalSubmissions) * 100 : 0,
+            total_attempts: totalSubmissions,
+          });
+        } else {
+          setAnalytics({
+            average_score: 0,
+            pass_rate: 0,
+            total_attempts: 0,
+          });
+        }
       } else {
         setAttempts([]);
       }
@@ -383,7 +406,7 @@ const ResultsAnalytics: React.FC = () => {
                   <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
                     <th className="px-3 py-2 text-left font-semibold">Student</th>
                     <th className="px-3 py-2 text-left font-semibold">Class</th>
-                    <th className="px-3 py-2 text-left font-semibold">Score</th>
+                    <th className="px-3 py-2 text-left font-semibold">Score (Marks)</th>
                     <th className="px-3 py-2 text-left font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -398,7 +421,11 @@ const ResultsAnalytics: React.FC = () => {
                       <td className="px-3 py-2 text-sm text-slate-700">{a.student_name}</td>
                       <td className="px-3 py-2 text-sm text-slate-700">{a.class_level}</td>
                       <td className="px-3 py-2 text-sm text-slate-700">
-                        {a.score}/{a.total_marks} ({(a.percentage ?? 0).toFixed(1)}%)
+                        <div>{a.score}/{a.total_marks} marks ({(a.percentage ?? 0).toFixed(1)}%)</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {a.answered_count}/{a.question_count} answered
+                          {a.pending_manual_count > 0 ? ` · ${a.pending_manual_count} pending manual` : ''}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-sm">
                         <span

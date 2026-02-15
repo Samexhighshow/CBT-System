@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ExamAttempt;
 use App\Models\Student;
 use App\Models\Exam;
+use App\Models\Question;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -27,13 +28,9 @@ class ResultController extends Controller
         $attempts = $query->paginate($perPage);
 
         $results = $attempts->getCollection()->map(function($attempt) {
-            $totalMarks = $attempt->exam->total_marks
-                ?? ($attempt->exam->metadata['total_marks'] ?? null)
-                ?? $attempt->exam->questions()->sum('marks');
-            $passingMarks = $attempt->exam->passing_marks
-                ?? ($attempt->exam->metadata['passing_marks'] ?? null)
-                ?? 0;
-            $safeTotal = max(1, (int) $totalMarks);
+            $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+            $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+            $safeTotal = max(1, (float) $totalMarks);
 
             return [
                 'id' => $attempt->id,
@@ -43,10 +40,12 @@ class ResultController extends Controller
                 'total_marks' => $totalMarks,
                 'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
                 'passing_marks' => $passingMarks,
-                'passed' => $attempt->score >= $passingMarks,
+                'passed' => $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false,
                 'started_at' => $attempt->started_at,
                 'completed_at' => $attempt->completed_at,
-                'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
+                'duration' => ($attempt->started_at && $attempt->completed_at)
+                    ? $attempt->started_at->diffInMinutes($attempt->completed_at)
+                    : null,
             ];
         });
 
@@ -77,13 +76,9 @@ class ResultController extends Controller
         $attempts = $query->paginate($perPage);
 
         $results = $attempts->getCollection()->map(function($attempt) use ($exam) {
-            $totalMarks = $exam->total_marks
-                ?? ($exam->metadata['total_marks'] ?? null)
-                ?? $exam->questions()->sum('marks');
-            $passingMarks = $exam->passing_marks
-                ?? ($exam->metadata['passing_marks'] ?? null)
-                ?? 0;
-            $safeTotal = max(1, (int) $totalMarks);
+            $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+            $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+            $safeTotal = max(1, (float) $totalMarks);
 
             return [
                 'id' => $attempt->id,
@@ -94,9 +89,11 @@ class ResultController extends Controller
                 'score' => $attempt->score,
                 'total_marks' => $totalMarks,
                 'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
-                'passed' => $attempt->score >= $passingMarks,
+                'passed' => $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false,
                 'completed_at' => $attempt->completed_at,
-                'duration' => $attempt->started_at->diffInMinutes($attempt->completed_at),
+                'duration' => ($attempt->started_at && $attempt->completed_at)
+                    ? $attempt->started_at->diffInMinutes($attempt->completed_at)
+                    : null,
             ];
         });
 
@@ -162,7 +159,9 @@ class ResultController extends Controller
         }
 
         $passed = $results->filter(function($attempt) {
-            return $attempt->score >= $attempt->exam->passing_marks;
+            $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+            $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+            return $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false;
         })->count();
 
         return round(($passed / $results->count()) * 100, 2);
@@ -181,7 +180,8 @@ class ResultController extends Controller
         ];
 
         foreach ($results as $attempt) {
-            $percentage = ($attempt->score / $attempt->exam->total_marks) * 100;
+            $total = max(1, (float) $this->resolveAttemptTotalMarks($attempt));
+            $percentage = ((float) $attempt->score / $total) * 100;
             
             if ($percentage <= 25) {
                 $distribution['0-25%']++;
@@ -255,6 +255,10 @@ class ResultController extends Controller
             ];
         });
 
+        $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+        $safeTotal = max(1, (float) $totalMarks);
+        $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+
         return response()->json([
             'attempt' => [
                 'id' => $attempt->id,
@@ -263,19 +267,78 @@ class ResultController extends Controller
                 'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
                 'registration_number' => $attempt->student->registration_number,
                 'score' => $attempt->score,
-                'total_marks' => $attempt->exam->total_marks
-                    ?? ($attempt->exam->metadata['total_marks'] ?? null)
-                    ?? $attempt->exam->questions()->sum('marks'),
-                'percentage' => round(($attempt->score / max(1, (int) ($attempt->exam->total_marks
-                    ?? ($attempt->exam->metadata['total_marks'] ?? null)
-                    ?? $attempt->exam->questions()->sum('marks')))) * 100, 2),
-                'passed' => $attempt->score >= ($attempt->exam->passing_marks
-                    ?? ($attempt->exam->metadata['passing_marks'] ?? null)
-                    ?? 0),
+                'total_marks' => $totalMarks,
+                'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
+                'passed' => $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false,
                 'started_at' => $attempt->started_at,
                 'completed_at' => $attempt->completed_at,
             ],
             'questions' => $questions,
         ]);
+    }
+
+    private function resolveAttemptTotalMarks(ExamAttempt $attempt): float
+    {
+        $questionIds = collect($attempt->question_order ?: [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        if ($questionIds->isEmpty()) {
+            $questionIds = Question::where('exam_id', $attempt->exam_id)
+                ->orderBy('order_index')
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+        }
+
+        if ($questionIds->isEmpty()) {
+            return 0;
+        }
+
+        $questions = Question::with('bankQuestion:id,marks')
+            ->whereIn('id', $questionIds)
+            ->get();
+
+        return (float) $questions->sum(function (Question $question) {
+            if (($question->marks_override ?? null) !== null) {
+                return (float) $question->marks_override;
+            }
+
+            if (($question->marks ?? null) !== null) {
+                return (float) $question->marks;
+            }
+
+            if (($question->bankQuestion?->marks ?? null) !== null) {
+                return (float) $question->bankQuestion->marks;
+            }
+
+            return 1.0;
+        });
+    }
+
+    private function resolveAttemptPassingMarks(ExamAttempt $attempt, ?float $totalMarks = null): ?float
+    {
+        $exam = $attempt->exam;
+        if (!$exam) {
+            return null;
+        }
+
+        $direct = $exam->passing_marks ?? null;
+        if ($direct !== null && is_numeric($direct)) {
+            return (float) $direct;
+        }
+
+        $metaPassing = data_get($exam->metadata, 'passing_marks');
+        if ($metaPassing !== null && is_numeric($metaPassing)) {
+            return (float) $metaPassing;
+        }
+
+        if ($totalMarks !== null && $totalMarks > 0) {
+            return round($totalMarks * 0.5, 2);
+        }
+
+        return null;
     }
 }

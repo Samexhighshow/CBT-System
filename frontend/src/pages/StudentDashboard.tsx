@@ -64,7 +64,7 @@ const StudentDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <nav className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
-        <div className="app-shell">
+        <div className="mx-auto w-full max-w-[1200px] px-5">
           <div className="flex h-[68px] items-center">
             <div className="flex min-w-0 items-center gap-2 md:min-w-[190px]">
               <div className="h-9 w-9 rounded-lg bg-cyan-600 text-white flex items-center justify-center">
@@ -93,7 +93,7 @@ const StudentDashboard: React.FC = () => {
         </div>
       </nav>
 
-      <main className="app-shell w-full pt-6 pb-[72px] flex-1">
+      <main className="mx-auto w-full max-w-[1200px] flex-1 px-5 py-6">
         <Routes>
           <Route index element={<StudentOverview />} />
           <Route path="exams" element={<AvailableExams />} />
@@ -104,7 +104,7 @@ const StudentDashboard: React.FC = () => {
         </Routes>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30">
+      <div className="sticky bottom-0 z-30">
         <FooterMinimal />
       </div>
     </div>

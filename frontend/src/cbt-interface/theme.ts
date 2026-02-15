@@ -14,5 +14,4 @@ export const cbtTheme = {
 };
 
 export const cbtFontFamily =
-  'Inter, Poppins, Manrope, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-
+  '"Plus Jakarta Sans", "Manrope", "Sora", "Segoe UI", sans-serif';

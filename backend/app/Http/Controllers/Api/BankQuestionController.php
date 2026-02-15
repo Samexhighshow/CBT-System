@@ -37,6 +37,15 @@ class BankQuestionController extends Controller
             ->when($request->filled('question_type'), fn($q) => $q->where('question_type', $request->get('question_type')))
             ->when($request->filled('status'), fn($q) => $q->where('status', $request->get('status')))
             ->when($request->filled('difficulty'), fn($q) => $q->where('difficulty', $request->get('difficulty')))
+            ->when($request->filled('exclude_exam_id'), function ($q) use ($request) {
+                $examId = (int) $request->get('exclude_exam_id');
+                $q->whereNotIn('id', function ($subQuery) use ($examId) {
+                    $subQuery->from('exam_questions')
+                        ->select('bank_question_id')
+                        ->where('exam_id', $examId)
+                        ->whereNotNull('bank_question_id');
+                });
+            })
             ->when(!$includeInactive && !$request->filled('status'), fn($q) => $q->where('status', '!=', 'Inactive'))
             ->when($request->filled('tag_id'), function ($q) use ($request) {
                 $q->whereHas('tags', fn($tq) => $tq->where('bank_question_tags.id', $request->integer('tag_id')));
