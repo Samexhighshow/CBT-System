@@ -117,7 +117,9 @@
     <p>
       It looks like you've lost your internet connection. Don't worry, the CBT System works offline too!
     </p>
-    <button onclick="location.reload()">Try Again</button>
+    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+      <button onclick="location.href='/cbt'">Go to CBT Portal</button>
+    </div>
     
     <div class="info-box">
       <h3>Available Offline:</h3>
@@ -137,7 +139,7 @@
       if (navigator.onLine) {
         statusEl.textContent = 'Back Online!';
         statusEl.className = 'status online';
-        setTimeout(() => location.reload(), 1500);
+        setTimeout(() => location.href = '/cbt', 800);
       } else {
         statusEl.textContent = 'No Internet Connection';
         statusEl.className = 'status';
@@ -154,7 +156,7 @@
     // Auto-retry every 5 seconds
     setInterval(() => {
       if (navigator.onLine) {
-        location.reload();
+        location.href = '/cbt';
       }
     }, 5000);
   </script>

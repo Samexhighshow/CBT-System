@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CbtStudentExam;
 use App\Models\User;
 use App\Models\TeacherSubject;
+use App\Services\GradingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
@@ -120,6 +121,7 @@ class CbtResultsController extends Controller
     // Aggregated analytics for results page
     public function analytics(Request $request)
     {
+        $grading = app(GradingService::class);
         $user = $request->user();
         $subjectId = $request->query('subject_id');
         $classLevel = $request->query('class_level');
@@ -154,7 +156,7 @@ class CbtResultsController extends Controller
             ? round($attempts->avg(fn ($a) => $a->getPercentage() ?? 0), 1)
             : 0;
 
-        $passCount = $attempts->filter(fn ($a) => ($a->getPercentage() ?? 0) >= 50)->count();
+        $passCount = $attempts->filter(fn ($a) => $grading->didPassPercentage($a->getPercentage()))->count();
         $passRate = $totalSubmissions > 0
             ? round(($passCount / $totalSubmissions) * 100, 1)
             : 0;
@@ -171,6 +173,7 @@ class CbtResultsController extends Controller
     // Per-student report cards with teacher/admin scoping
     public function reportCards(Request $request)
     {
+        $grading = app(GradingService::class);
         $user = $request->user();
         $studentName = $request->query('student_name');
         $classLevel = $request->query('class_level');
@@ -218,12 +221,13 @@ class CbtResultsController extends Controller
                     'total_marks' => (float) $a->total_marks,
                     'percentage' => $a->getPercentage(),
                     'grade' => $a->getGrade(),
+                    'position_grade' => $grading->positionBandFromPercentage($a->getPercentage()),
                     'status' => $a->status,
                     'submitted_at' => optional($a->submitted_at)->toDateTimeString(),
                 ]);
 
                 $average = round($results->avg(fn ($r) => $r['percentage'] ?? 0), 1);
-                $passCount = $results->filter(fn ($r) => ($r['percentage'] ?? 0) >= 50)->count();
+                $passCount = $results->filter(fn ($r) => $grading->didPassPercentage($r['percentage'] ?? null))->count();
                 $totalSubjects = $results->count();
                 $passRate = $totalSubjects > 0 ? round(($passCount / $totalSubjects) * 100, 1) : 0;
 
@@ -285,6 +289,7 @@ class CbtResultsController extends Controller
 
     private function buildReportCardPayload(Collection $attempts): array
     {
+        $grading = app(GradingService::class);
         /** @var CbtStudentExam $first */
         $first = $attempts->first();
         $student = $first->student;
@@ -296,12 +301,13 @@ class CbtResultsController extends Controller
             'total_marks' => (float) $a->total_marks,
             'percentage' => $a->getPercentage(),
             'grade' => $a->getGrade(),
+            'position_grade' => $grading->positionBandFromPercentage($a->getPercentage()),
             'status' => $a->status,
             'submitted_at' => optional($a->submitted_at)->toDateTimeString(),
         ]);
 
         $average = round($results->avg(fn ($r) => $r['percentage'] ?? 0), 1);
-        $passCount = $results->filter(fn ($r) => ($r['percentage'] ?? 0) >= 50)->count();
+        $passCount = $results->filter(fn ($r) => $grading->didPassPercentage($r['percentage'] ?? null))->count();
         $totalSubjects = $results->count();
         $passRate = $totalSubjects > 0 ? round(($passCount / $totalSubjects) * 100, 1) : 0;
 

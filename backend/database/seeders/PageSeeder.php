@@ -29,7 +29,7 @@ class PageSeeder extends Seeder
             ['name' => 'Results & Marking', 'path' => '/admin/results', 'category' => 'Analytics'],
             ['name' => 'Marking Workbench', 'path' => '/admin/marking', 'category' => 'Analytics'],
             ['name' => 'Users', 'path' => '/admin/users', 'category' => 'Admin'],
-            ['name' => 'System Settings', 'path' => '/admin/system-settings', 'category' => 'Admin'],
+            ['name' => 'System Settings', 'path' => '/admin/settings', 'category' => 'Admin'],
             ['name' => 'Activity Logs', 'path' => '/admin/activity-logs', 'category' => 'Admin'],
             ['name' => 'Roles', 'path' => '/admin/roles', 'category' => 'Admin'],
         ];

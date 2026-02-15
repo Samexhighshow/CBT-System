@@ -130,7 +130,12 @@ Route::prefix('exams')->group(function () {
 
     // Offline exam support
     Route::get('/{id}/download', [OfflineExamController::class, 'downloadExam']);
+    Route::get('/{id}/package', [OfflineExamController::class, 'package']);
 });
+
+// Offline sync endpoints (cloud and LAN)
+Route::post('/sync/attempt', [OfflineExamController::class, 'syncAttempt']);
+Route::post('/local-sync/attempt', [OfflineExamController::class, 'syncAttempt']);
 
 // Questions
 Route::prefix('questions')->group(function () {
@@ -260,8 +265,8 @@ Route::put('/settings/theme', [\App\Http\Controllers\Api\SystemSettingController
 // Restricted Main Admin operations
 Route::middleware(['auth:sanctum', 'main.admin'])->group(function () {
     Route::get('/settings', [\App\Http\Controllers\Api\SystemSettingController::class, 'index']);
-    Route::put('/settings/{key}', [\App\Http\Controllers\Api\SystemSettingController::class, 'update']);
     Route::put('/settings/bulk', [\App\Http\Controllers\Api\SystemSettingController::class, 'bulkUpdate']);
+    Route::put('/settings/{key}', [\App\Http\Controllers\Api\SystemSettingController::class, 'update']);
 });
 
 // Auth logout
@@ -307,20 +312,29 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/student/me', [StudentController::class, 'getCurrentProfile']);
 
     // User management (Main Admin only - enforced by middleware in controller)
-    Route::get('/users', [UserController::class, 'index']);
-    Route::get('/roles', [RoleController::class, 'listRoles']);
-    Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
+    Route::middleware('role:Admin|Main Admin')->group(function () {
+        Route::get('/users', [UserController::class, 'index']);
+        Route::get('/roles', [RoleController::class, 'listRoles']);
+        Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
+    });
 
     // Role & page permissions management (Admin/Main Admin)
     Route::middleware('role:Admin|Main Admin')->group(function () {
         Route::get('/admin/roles', [RoleManagementController::class, 'listRoles']);
         Route::get('/admin/users', [RoleManagementController::class, 'listUsers']);
-        Route::post('/admin/users/{user}/roles', [RoleManagementController::class, 'assignRole']);
+        Route::post('/admin/users/{userId}/roles', [RoleManagementController::class, 'assignRole']);
         Route::get('/admin/pages', [PagePermissionController::class, 'index']);
         Route::get('/admin/pages/role-map', [PagePermissionController::class, 'rolePageMap']);
         Route::post('/admin/pages/sync', [PagePermissionController::class, 'syncPages']);
-        Route::post('/admin/roles/{role}/pages', [PagePermissionController::class, 'assignToRole']);
+        Route::post('/admin/roles/{roleId}/pages', [PagePermissionController::class, 'assignToRole']);
         Route::post('/admin/roles/modules', [PagePermissionController::class, 'updateRoleModules']);
+
+        Route::middleware('main.admin')->group(function () {
+            Route::post('/admin/roles', [RoleManagementController::class, 'createRole']);
+            Route::put('/admin/roles/{roleId}', [RoleManagementController::class, 'updateRole']);
+            Route::delete('/admin/roles/{roleId}', [RoleManagementController::class, 'deleteRole']);
+            Route::post('/admin/roles/sync-defaults', [RoleManagementController::class, 'syncDefaults']);
+        });
     });
     // Import questions to a subject
     Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);

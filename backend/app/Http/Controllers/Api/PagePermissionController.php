@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Page;
+use App\Services\RolePermissionSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -12,10 +13,15 @@ use Spatie\Permission\Models\Role;
 
 class PagePermissionController extends Controller
 {
+    public function __construct(
+        private readonly RolePermissionSyncService $rolePermissionSyncService
+    ) {
+    }
+
     public function index()
     {
         $pages = Page::orderBy('category')->orderBy('name')->get();
-        $roles = Role::orderBy('name')->get();
+        $roles = $this->rolePermissionSyncService->listAdminAssignableRoles();
 
         $pagesWithRoles = $pages->map(function (Page $page) use ($roles) {
             $roleMatches = $roles->filter(function (Role $role) use ($page) {
@@ -37,7 +43,9 @@ class PagePermissionController extends Controller
 
     public function rolePageMap()
     {
-        $roles = Role::orderBy('id')->get();
+        $roles = $this->rolePermissionSyncService->listAdminAssignableRoles()
+            ->sortBy('id')
+            ->values();
         $pages = Page::all();
 
         $map = $roles->map(function (Role $role) use ($pages) {
@@ -75,7 +83,6 @@ class PagePermissionController extends Controller
         }
 
         $synced = [];
-        $allPermissions = [];
         
         foreach ($request->pages as $pageData) {
             $slug = Str::slug($pageData['path'], '-');
@@ -92,59 +99,11 @@ class PagePermissionController extends Controller
                 ]
             );
 
-            Permission::firstOrCreate(['name' => $permissionName]);
-            $allPermissions[] = $permissionName;
+            Permission::firstOrCreate(['name' => $permissionName, 'guard_name' => 'web']);
             $synced[] = $page;
         }
 
-        // Auto-assign permissions to roles based on page names
-        $pagesByName = [];
-        foreach ($synced as $page) {
-            $pagesByName[$page->name] = $page->permission_name;
-        }
-
-        // Pages exclusive to Main Admin only
-        $mainAdminOnlyPages = ['System Settings', 'Activity Logs', 'Users', 'Roles'];
-
-        $roleDefaults = [
-            'Main Admin' => $allPermissions, // Main Admin gets EVERYTHING
-            'Admin' => array_values(array_filter($pagesByName, function($name) {
-                // Admin gets everything except Main Admin exclusive pages
-                $excluded = ['System Settings', 'Activity Logs', 'Users', 'Roles'];
-                return !in_array($name, $excluded);
-            }, ARRAY_FILTER_USE_KEY)),
-            'Sub-Admin' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 
-                'Academic Management', 'Announcements', 'Allocation System', 'View Allocations', 
-                'Generate Allocation', 'Teacher Assignment', 'Halls'
-            ]))),
-            'Moderator' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Exams', 'Exam Access', 'Students', 'Results & Marking'
-            ]))),
-            'Teacher' => array_values(array_intersect_key($pagesByName, array_flip([
-                'Overview', 'Questions', 'Results & Marking'
-            ]))),
-        ];
-
-        foreach ($roleDefaults as $roleName => $permissions) {
-            $role = Role::where('name', $roleName)->first();
-            if (!$role) continue;
-
-            try {
-                $existingPermissions = $role->permissions()->pluck('name');
-                $nonPagePermissions = $existingPermissions->filter(fn ($name) => !str_starts_with($name, 'access:'));
-                $role->syncPermissions($nonPagePermissions->merge($permissions));
-            } catch (\Exception $e) {
-                // If sync fails, just assign the new permissions individually
-                foreach ($permissions as $permission) {
-                    try {
-                        $role->givePermissionTo($permission);
-                    } catch (\Exception $ex) {
-                        // Skip if already assigned
-                    }
-                }
-            }
-        }
+        $this->rolePermissionSyncService->syncDefaultPagePermissions(collect($synced));
 
         return response()->json(['message' => 'Pages synced and default permissions assigned', 'pages' => $synced]);
     }
@@ -164,13 +123,16 @@ class PagePermissionController extends Controller
         }
 
         $role = Role::findOrFail($roleId);
+        if (strtolower((string) $role->name) === 'student') {
+            return response()->json([
+                'message' => 'Student role is excluded from admin page permission management.',
+            ], 422);
+        }
+
         $pages = Page::whereIn('id', $request->page_ids)->get();
         $pagePermissions = $pages->pluck('permission_name');
 
-        $existingPermissions = $role->permissions()->pluck('name');
-        $nonPagePermissions = $existingPermissions->filter(fn ($name) => !str_starts_with($name, 'access:'));
-
-        $role->syncPermissions($nonPagePermissions->merge($pagePermissions));
+        $this->rolePermissionSyncService->syncRolePagePermissions($role, $pagePermissions);
 
         return response()->json(['message' => 'Role page permissions updated']);
     }
@@ -189,16 +151,17 @@ class PagePermissionController extends Controller
         }
 
         foreach ($request->role_modules as $roleName => $moduleNames) {
+            if (strtolower((string) $roleName) === 'student') {
+                continue;
+            }
+
             $role = Role::where('name', $roleName)->first();
             if (!$role) continue;
 
             $pages = Page::whereIn('name', $moduleNames)->get();
             $pagePermissions = $pages->pluck('permission_name');
 
-            $existingPermissions = $role->permissions()->pluck('name');
-            $nonPagePermissions = $existingPermissions->filter(fn ($name) => !str_starts_with($name, 'access:'));
-
-            $role->syncPermissions($nonPagePermissions->merge($pagePermissions));
+            $this->rolePermissionSyncService->syncRolePagePermissions($role, $pagePermissions);
         }
 
         return response()->json(['message' => 'Role module permissions updated successfully']);

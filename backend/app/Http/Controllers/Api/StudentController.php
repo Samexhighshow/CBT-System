@@ -7,6 +7,7 @@ use App\Models\Student;
 use App\Models\SystemSetting;
 use App\Models\Question;
 use App\Models\User;
+use App\Services\GradingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -368,7 +369,7 @@ class StudentController extends Controller
             $total = $this->resolveAttemptTotalMarks($attempt);
             $passing = $this->resolveAttemptPassingMarks($attempt, $total);
             $score = (float) ($attempt->score ?? 0);
-            return $passing !== null ? $score >= $passing : ($total > 0 ? (($score / $total) * 100) >= 50 : false);
+            return $this->hasPassed($score, $total, $passing);
         })->count();
 
         $passRate = $totalExams > 0 ? round(($passedCount / $totalExams) * 100, 2) : 0;
@@ -502,9 +503,29 @@ class StudentController extends Controller
         }
 
         if ($totalMarks !== null && $totalMarks > 0) {
-            return round($totalMarks * 0.5, 2);
+            $passMarkPercent = $this->gradingService()->passMarkPercentage() / 100;
+            return round($totalMarks * $passMarkPercent, 2);
         }
 
         return null;
+    }
+
+    private function hasPassed(float $score, float $totalMarks, ?float $passingMarks = null): bool
+    {
+        if ($passingMarks !== null) {
+            return $score >= $passingMarks;
+        }
+
+        if ($totalMarks <= 0) {
+            return false;
+        }
+
+        $percentage = ($score / max(1, $totalMarks)) * 100;
+        return $this->gradingService()->didPassPercentage($percentage);
+    }
+
+    private function gradingService(): GradingService
+    {
+        return app(GradingService::class);
     }
 }

@@ -4,27 +4,43 @@ import { showSuccess, showError, showConfirm } from '../../utils/alerts';
 import { Card } from '../../components';
 import { adminNavLinks } from '../../config/adminNav';
 
-interface Role { name: string; }
+interface Role {
+  id?: number;
+  name: string;
+  users_count?: number;
+  permissions_count?: number;
+}
 interface User { id: number; name: string; email: string; email_verified_at?: string | null; roles: Role[]; }
 
 const AdminUserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
-  const [roles, setRoles] = useState<string[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [onlyApplicants, setOnlyApplicants] = useState(true);
   const [showRoleDetails, setShowRoleDetails] = useState(false);
   const [syncingPages, setSyncingPages] = useState(false);
+  const [syncingRoleDefaults, setSyncingRoleDefaults] = useState(false);
   const [roleModulesState, setRoleModulesState] = useState<Record<string, string[]>>({});
+  const [newRoleName, setNewRoleName] = useState('');
+  const [editingRoleId, setEditingRoleId] = useState<number | null>(null);
+  const [editingRoleName, setEditingRoleName] = useState('');
+  const [creatingRole, setCreatingRole] = useState(false);
+  const [updatingRole, setUpdatingRole] = useState(false);
+  const [deletingRoleId, setDeletingRoleId] = useState<number | null>(null);
   
-  // Get current logged-in user ID
-  const currentUserId = (() => {
+  // Get current logged-in user info
+  const currentUser = (() => {
     try {
       const userData = localStorage.getItem('user');
-      return userData ? JSON.parse(userData).id : null;
+      return userData ? JSON.parse(userData) : null;
     } catch {
       return null;
     }
   })();
+  const currentUserId = currentUser?.id ?? null;
+  const isMainAdmin = Boolean(
+    currentUser?.roles?.some((role: any) => String(role?.name || role).toLowerCase() === 'main admin')
+  );
 
   // Use shared api client which injects `auth_token` automatically
   const [editMode, setEditMode] = useState(false);
@@ -113,19 +129,20 @@ const AdminUserManagement: React.FC = () => {
     }
   }, [onlyApplicants]);
 
+  const loadRoles = useCallback(async () => {
+    try {
+      const res = await api.get(`/admin/roles`);
+      setRoles((res.data || []) as Role[]);
+    } catch {
+      setRoles([]);
+    }
+  }, []);
+
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => {
-    const loadRoles = async () => {
-      try {
-        const res = await api.get(`/roles`);
-        setRoles(res.data as any);
-      } catch (e) {
-        // ignore
-      }
-    };
     loadRoles();
     loadRolePermissions(); // Load initial permissions from database
-  }, [loadRolePermissions]);
+  }, [loadRolePermissions, loadRoles]);
 
   const assignRole = async (userId: number, roleName: string) => {
     // Prevent assigning role to current user
@@ -137,12 +154,99 @@ const AdminUserManagement: React.FC = () => {
     const confirm = await showConfirm(`Assign role "${roleName}"?`);
     if (!confirm) return;
     try {
-      await api.post(`/roles/assign/${userId}`, { role: roleName });
+      await api.post(`/admin/users/${userId}/roles`, { role: roleName });
       showSuccess('Role assigned');
       fetchUsers();
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to assign role';
       showError(msg);
+    }
+  };
+
+  const createRole = async () => {
+    const name = newRoleName.trim();
+    if (!name) {
+      showError('Role name is required');
+      return;
+    }
+
+    try {
+      setCreatingRole(true);
+      await api.post('/admin/roles', { name });
+      setNewRoleName('');
+      await loadRoles();
+      await loadRolePermissions();
+      showSuccess('Role created successfully');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to create role');
+    } finally {
+      setCreatingRole(false);
+    }
+  };
+
+  const startEditRole = (role: Role) => {
+    if (!role.id) return;
+    setEditingRoleId(role.id);
+    setEditingRoleName(role.name);
+  };
+
+  const cancelEditRole = () => {
+    setEditingRoleId(null);
+    setEditingRoleName('');
+  };
+
+  const saveEditRole = async () => {
+    if (!editingRoleId) return;
+
+    const name = editingRoleName.trim();
+    if (!name) {
+      showError('Role name is required');
+      return;
+    }
+
+    try {
+      setUpdatingRole(true);
+      await api.put(`/admin/roles/${editingRoleId}`, { name });
+      cancelEditRole();
+      await loadRoles();
+      await loadRolePermissions();
+      showSuccess('Role updated successfully');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to update role');
+    } finally {
+      setUpdatingRole(false);
+    }
+  };
+
+  const removeRole = async (role: Role) => {
+    if (!role.id) return;
+
+    const ok = await showConfirm(`Delete role "${role.name}"?`);
+    if (!ok) return;
+
+    try {
+      setDeletingRoleId(role.id);
+      await api.delete(`/admin/roles/${role.id}`);
+      await loadRoles();
+      await loadRolePermissions();
+      showSuccess('Role deleted successfully');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to delete role');
+    } finally {
+      setDeletingRoleId(null);
+    }
+  };
+
+  const syncRoleDefaults = async () => {
+    try {
+      setSyncingRoleDefaults(true);
+      await api.post('/admin/roles/sync-defaults');
+      await loadRolePermissions();
+      showSuccess('Role defaults synced from navigation permissions');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to sync role defaults');
+    } finally {
+      setSyncingRoleDefaults(false);
     }
   };
   
@@ -194,6 +298,15 @@ const AdminUserManagement: React.FC = () => {
                 <span>{syncingPages ? 'Syncing...' : 'Sync Navigation Modules'}</span>
               </button>
               <button
+                onClick={syncRoleDefaults}
+                className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs md:text-sm flex items-center gap-2 disabled:opacity-60 hover:bg-indigo-700"
+                disabled={syncingRoleDefaults || !isMainAdmin}
+                title={isMainAdmin ? 'Sync role defaults' : 'Only Main Admin can sync role defaults'}
+              >
+                <i className={`bx ${syncingRoleDefaults ? 'bx-loader-alt animate-spin' : 'bx-refresh'} text-lg`}></i>
+                <span>{syncingRoleDefaults ? 'Syncing...' : 'Sync Role Defaults'}</span>
+              </button>
+              <button
                 onClick={() => setEditMode(!editMode)}
                 className="px-2 py-1.5 text-xs md:text-sm border rounded hover:bg-gray-50"
               >
@@ -204,6 +317,87 @@ const AdminUserManagement: React.FC = () => {
           <p className="text-xs md:text-sm text-gray-600 mb-3">
             This table shows which modules each role can access in the system.
           </p>
+          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-600 mb-2">Dynamic Role CRUD</p>
+            <div className="flex flex-col md:flex-row gap-2">
+              <input
+                type="text"
+                value={newRoleName}
+                onChange={(e) => setNewRoleName(e.target.value)}
+                className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder="Create new role (e.g. Exam Supervisor)"
+                disabled={!isMainAdmin}
+              />
+              <button
+                onClick={createRole}
+                disabled={creatingRole || !isMainAdmin}
+                className="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-60"
+                title={isMainAdmin ? 'Create role' : 'Only Main Admin can create roles'}
+              >
+                {creatingRole ? 'Creating...' : 'Create Role'}
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {roles.map((role) => (
+                <div key={role.id || role.name} className="flex flex-col md:flex-row md:items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2">
+                  {editingRoleId === role.id ? (
+                    <>
+                      <input
+                        value={editingRoleName}
+                        onChange={(e) => setEditingRoleName(e.target.value)}
+                        className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={saveEditRole}
+                          disabled={updatingRole || !isMainAdmin}
+                          className="px-2.5 py-1.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          {updatingRole ? 'Saving...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={cancelEditRole}
+                          className="px-2.5 py-1.5 border border-gray-300 rounded text-xs hover:bg-gray-100"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-800">{role.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {role.users_count ?? 0} users • {role.permissions_count ?? 0} permissions
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => startEditRole(role)}
+                          disabled={!isMainAdmin}
+                          className="px-2.5 py-1.5 border border-gray-300 rounded text-xs hover:bg-gray-100 disabled:opacity-60"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={() => removeRole(role)}
+                          disabled={deletingRoleId === role.id || !isMainAdmin}
+                          className="px-2.5 py-1.5 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:opacity-60"
+                        >
+                          {deletingRoleId === role.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+            {!isMainAdmin && (
+              <p className="text-xs text-amber-700 mt-2">
+                Only Main Admin can create, rename, or delete roles.
+              </p>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border border-gray-200 text-sm">
               <thead>
@@ -372,8 +566,15 @@ const AdminUserManagement: React.FC = () => {
                         title={u.id === currentUserId ? 'You cannot modify your own roles' : 'Select role to assign'}
                       >
                         <option value="" disabled>Select role to assign</option>
-                        {roles.filter(r => r !== 'Student').map(r => (
-                          <option key={r} value={r}>{r}</option>
+                        {roles
+                          .filter((r) => {
+                            const normalized = String(r.name || '').toLowerCase();
+                            if (normalized === 'student') return false;
+                            if (!isMainAdmin && normalized === 'main admin') return false;
+                            return true;
+                          })
+                          .map((r) => (
+                          <option key={r.id || r.name} value={r.name}>{r.name}</option>
                         ))}
                       </select>
                     </td>

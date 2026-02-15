@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 // Routes that work offline
 const OFFLINE_ENABLED_ROUTES = [
+  '/cbt',
   '/student',
   '/student/exams',
   '/student/results',
@@ -107,23 +108,23 @@ export const isOfflineRoute = (path: string): boolean => {
  */
 export const getOfflineFallbackRoute = (): string => {
   const user = localStorage.getItem('user');
-  
+
   if (!user) {
-    return '/offline.html';
+    return '/cbt';
   }
-  
+
   try {
     const userData = JSON.parse(user);
     const roles = userData.roles?.map((r: any) => r.name || r) || [];
-    
+
     // Students go to exams page
     if (roles.includes('Student')) {
       return '/student/exams';
     }
-    
-    // Admin/teachers can't access admin features offline
-    return '/offline.html';
+
+    // Default offline landing to CBT access portal
+    return '/cbt';
   } catch {
-    return '/offline.html';
+    return '/cbt';
   }
 };

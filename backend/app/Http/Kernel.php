@@ -41,6 +41,7 @@ class Kernel extends HttpKernel
 
         'api' => [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+            \App\Http\Middleware\EnforceEndpointSettings::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
@@ -71,5 +72,6 @@ class Kernel extends HttpKernel
         'registration.open' => \App\Http\Middleware\EnsureRegistrationOpen::class,
         'main.admin' => \App\Http\Middleware\EnsureMainAdmin::class,
         'throttle.strict' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':10,1',
+        'endpoint.settings' => \App\Http\Middleware\EnforceEndpointSettings::class,
     ];
 }

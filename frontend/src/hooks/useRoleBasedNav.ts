@@ -68,6 +68,10 @@ export const useRoleBasedNav = () => {
 
   // Filter navigation links based on user permissions
   const filterNavLinks = (navLinks: NavLinkConfig[]): NavLinkConfig[] => {
+    if (userPages.length === 0) {
+      return navLinks;
+    }
+
     return navLinks
       .map(link => {
         if (!link.subItems) {

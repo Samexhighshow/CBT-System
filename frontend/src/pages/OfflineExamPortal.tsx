@@ -2,11 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Timer } from '../components';
-import { api } from '../services/api';
 import { getCurrentStudentProfile } from './student/studentData';
 import { showError, showSuccess, showWarning } from '../utils/alerts';
 import { useCheatingDetection, CheatingEvent } from '../hooks/useCheatingDetection';
-import { useOfflineExam, OfflineAnswer, offlineExamManager } from '../hooks/useOfflineExam';
+import { useOfflineExam, OfflineAnswerInput } from '../hooks/useOfflineExam';
+import useConnectivity from '../hooks/useConnectivity';
+import { getReachableBaseUrl } from '../services/reachability';
+import offlineDB from '../services/offlineDB';
 
 interface Question {
   id: number;
@@ -26,6 +28,13 @@ interface Exam {
   questions: Question[];
 }
 
+interface ExamPackagePayload {
+  examId: number;
+  packageVersion?: string;
+  exam: Exam;
+  questions?: Question[];
+}
+
 const OfflineExamPortal: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
   const navigate = useNavigate();
@@ -38,11 +47,26 @@ const OfflineExamPortal: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [examStartTime] = useState(new Date().toISOString());
   const [showViolationWarning, setShowViolationWarning] = useState(false);
+  const [studentId, setStudentId] = useState<number | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
 
   const examIdNum = parseInt(examId || '0');
   
+  const connectivity = useConnectivity();
+
   // Offline exam hook
-  const { isOnline, pendingSync, loadExamData, storeExam, saveAnswer } = useOfflineExam(examIdNum);
+  const {
+    examPackage,
+    attempt,
+    pendingSync,
+    loadExamPackage,
+    storeExamPackage,
+    getOrCreateAttempt,
+    saveAnswer,
+    submitAttempt,
+    loadAnswers,
+  } = useOfflineExam(examIdNum, studentId);
   
   // Cheating detection
   const {
@@ -51,6 +75,7 @@ const OfflineExamPortal: React.FC = () => {
     isFullscreen,
     requestFullscreen,
   } = useCheatingDetection({
+    attemptId: attempt?.attemptId,
     enableTabSwitchDetection: true,
     enableCopyPasteDetection: true,
     enableRightClickBlock: true,
@@ -73,69 +98,107 @@ const OfflineExamPortal: React.FC = () => {
   // Load exam data
   useEffect(() => {
     loadExamFromSourceOrCache();
-  }, [examId]);
+  }, [examId, connectivity.status]);
+
+  useEffect(() => {
+    const loadStudentId = async () => {
+      const cached = localStorage.getItem('student_id');
+      if (cached) {
+        setStudentId(Number(cached));
+        return;
+      }
+
+      if (connectivity.status === 'OFFLINE') {
+        return;
+      }
+
+      try {
+        const student = await getCurrentStudentProfile();
+        if (student?.id) {
+          localStorage.setItem('student_id', String(student.id));
+          setStudentId(student.id);
+        }
+      } catch {
+        setStudentId(null);
+      }
+    };
+
+    loadStudentId();
+  }, [connectivity.status]);
+
+  useEffect(() => {
+    const loadSyncMeta = async () => {
+      const lastSync = await offlineDB.meta.get('lastSyncTime');
+      const lastError = await offlineDB.meta.get('lastSyncError');
+      setLastSyncTime(lastSync?.value || null);
+      setLastSyncError(lastError?.value || null);
+    };
+
+    loadSyncMeta();
+    const interval = window.setInterval(loadSyncMeta, 5000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const loadExamFromSourceOrCache = async () => {
     try {
       setLoading(true);
-      
-      // Try to load from network first
-      if (isOnline) {
-        const response = await api.get(`/exams/${examId}`);
-        if (response.data) {
-          setExam(response.data);
-          setTimeRemaining(response.data.duration_minutes * 60);
-          
-          // Store for offline use
-          await storeExam(response.data, response.data.questions);
-          
-          // Load any existing answers from IndexedDB
-          const cached = await loadExamData();
-          if (cached && cached.answers.length > 0) {
-            const answerMap: Record<number, number> = {};
-            cached.answers.forEach(a => {
-              if (a.selected_option_id) {
-                answerMap[a.question_id] = a.selected_option_id;
-              }
-            });
-            setAnswers(answerMap);
-          }
+      const baseUrl = getReachableBaseUrl(connectivity);
+
+      if (baseUrl) {
+        const response = await fetch(`${baseUrl}/exams/${examId}/package`, { cache: 'no-store' });
+        if (response.ok) {
+          const payload: ExamPackagePayload = await response.json();
+          const examData = payload.exam || (payload as any).data?.exam;
+          const questions = payload.questions || examData?.questions || (payload as any).data?.questions || [];
+          const pkg = {
+            examId: examIdNum,
+            downloadedAt: new Date().toISOString(),
+            packageVersion: String(payload.packageVersion || (payload as any).package_version || '1'),
+            data: {
+              exam: examData,
+              questions,
+            },
+          };
+
+          await storeExamPackage(pkg);
         }
-      } else {
-        // Load from IndexedDB when offline
-        const cached = await loadExamData();
-        if (cached) {
-          setExam(cached.exam);
-          setTimeRemaining(cached.exam.duration_minutes * 60);
-          
-          // Restore answers
+      }
+
+      const cached = await loadExamPackage();
+      if (cached) {
+        const pkgData = cached.data || {};
+        const examInfo = pkgData.exam || pkgData;
+        const questions = pkgData.questions || examInfo?.questions || [];
+
+        setExam({
+          ...examInfo,
+          questions,
+        });
+        setTimeRemaining((examInfo?.duration_minutes || 0) * 60);
+
+        const currentAttempt = await getOrCreateAttempt();
+        if (currentAttempt) {
+          const storedAnswers = await loadAnswers();
           const answerMap: Record<number, number> = {};
-          cached.answers.forEach(a => {
-            if (a.selected_option_id) {
-              answerMap[a.question_id] = a.selected_option_id;
+          storedAnswers.forEach((answer) => {
+            if (answer.answer?.optionId) {
+              answerMap[answer.questionId] = answer.answer.optionId;
             }
           });
           setAnswers(answerMap);
-          
-          showWarning('You are offline. Answers will be synced when connection is restored.');
-        } else {
-          showError('Exam data not available offline. Please connect to the internet.');
-          navigate('/student/exams');
         }
+
+        if (connectivity.status === 'OFFLINE') {
+          showWarning('You are offline. Answers will sync when connection is restored.');
+        }
+      } else {
+        showError('Exam package not available offline. Please connect to download it.');
+        navigate('/cbt');
       }
     } catch (error) {
       console.error('Failed to load exam:', error);
-      
-      // Try to load from cache
-      const cached = await loadExamData();
-      if (cached) {
-        setExam(cached.exam);
-        setTimeRemaining(cached.exam.duration_minutes * 60);
-        showWarning('Loaded exam from cache. You are working offline.');
-      } else {
-        showError('Failed to load exam');
-        navigate('/student/exams');
-      }
+      showError('Failed to load exam package.');
+      navigate('/cbt');
     } finally {
       setLoading(false);
     }
@@ -170,12 +233,11 @@ const OfflineExamPortal: React.FC = () => {
     setAnswers(prev => ({ ...prev, [questionId]: optionId }));
     
     // Save answer offline
-    const answer: OfflineAnswer = {
-      question_id: questionId,
-      selected_option_id: optionId,
-      timestamp: Date.now(),
+    const answer: OfflineAnswerInput = {
+      questionId,
+      answer: { optionId },
     };
-    
+
     await saveAnswer(answer);
   };
 
@@ -193,57 +255,17 @@ const OfflineExamPortal: React.FC = () => {
     setShowSubmitModal(false);
     
     const answersArray = Object.entries(answers).map(([questionId, optionId]) => ({
-      question_id: parseInt(questionId),
-      option_id: optionId,
-      timestamp: Date.now(),
+      questionId: parseInt(questionId, 10),
+      answer: { optionId },
     }));
 
-    const submissionData = {
-      exam_id: examIdNum,
-      student_id: parseInt(localStorage.getItem('user_id') || '0'),
-      answers: answersArray,
-      cheating_events: violations,
-      started_at: examStartTime,
-      submitted_at: new Date().toISOString(),
-      synced: false,
-      token: localStorage.getItem('token') || '',
-    };
-
     try {
-      if (isOnline) {
-        let studentId: number | null = null;
-        try {
-          const student = await getCurrentStudentProfile();
-          studentId = student.id;
-        } catch {
-          studentId = null;
-        }
-
-        // Submit directly
-        await api.post(`/exams/${examId}/submit`, {
-          student_id: studentId ?? undefined,
-          answers: answersArray,
-          cheating_events: violations,
-          final: true,
-        });
-        
-        // Clear offline data
-        await offlineExamManager.clearExamData(examIdNum);
-        
-        showSuccess('Exam submitted successfully!');
-        navigate('/student/results');
-      } else {
-        // Store for later sync
-        await offlineExamManager.storeSubmission(submissionData);
-        showSuccess('Exam saved offline. Will sync when online.');
-        navigate('/student/exams');
-      }
+      await submitAttempt();
+      showSuccess('Submitted locally. Pending sync will upload when reachable.');
+      navigate('/student/exams');
     } catch (error) {
       console.error('Submission error:', error);
-      
-      // Store offline if submission fails
-      await offlineExamManager.storeSubmission(submissionData);
-      showWarning('Exam saved offline. Will retry submission when online.');
+      showWarning('Submission saved locally. Will retry sync when reachable.');
       navigate('/student/exams');
     }
   };
@@ -277,16 +299,40 @@ const OfflineExamPortal: React.FC = () => {
     <div className="min-h-screen bg-gray-100 p-4">
       {/* Connection Status */}
       <div className="fixed top-4 right-4 z-50">
-        {!isOnline && (
+        {connectivity.status === 'OFFLINE' && (
           <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
             <i className='bx bx-wifi-off'></i>
             <span className="font-medium">Offline Mode</span>
+          </div>
+        )}
+        {connectivity.status === 'LAN_ONLY' && (
+          <div className="bg-blue-100 border border-blue-400 text-blue-800 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+            <i className='bx bx-wifi'></i>
+            <span className="font-medium">LAN Only</span>
+          </div>
+        )}
+        {connectivity.status === 'ONLINE' && (
+          <div className="bg-emerald-100 border border-emerald-400 text-emerald-800 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+            <i className='bx bx-cloud'></i>
+            <span className="font-medium">Online</span>
           </div>
         )}
         {pendingSync > 0 && (
           <div className="bg-blue-100 border border-blue-400 text-blue-800 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 mt-2">
             <i className='bx bx-sync'></i>
             <span>{pendingSync} pending sync(s)</span>
+          </div>
+        )}
+        {lastSyncTime && (
+          <div className="bg-slate-100 border border-slate-300 text-slate-800 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 mt-2">
+            <i className='bx bx-time'></i>
+            <span>Last sync: {new Date(lastSyncTime).toLocaleString()}</span>
+          </div>
+        )}
+        {lastSyncError && (
+          <div className="bg-red-100 border border-red-300 text-red-800 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 mt-2">
+            <i className='bx bx-error'></i>
+            <span>Sync error: {lastSyncError}</span>
           </div>
         )}
       </div>
@@ -447,7 +493,7 @@ const OfflineExamPortal: React.FC = () => {
                 Note: {violationCount} violation(s) will be recorded with your submission.
               </p>
             )}
-            {!isOnline && (
+            {connectivity.status === 'OFFLINE' && (
               <p className="text-yellow-600 mb-4">
                 You are offline. Exam will be submitted when connection is restored.
               </p>

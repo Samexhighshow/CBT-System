@@ -15,6 +15,8 @@ export { default as DashboardCharts } from './DashboardCharts';
 export { default as OfflineRouteHandler } from './OfflineRouteHandler';
 export { default as RouteTransitionLoader } from './RouteTransitionLoader';
 export { default as GlobalLoadingOverlay } from './GlobalLoadingOverlay';
+export { default as BuildVersionWatcher } from './BuildVersionWatcher';
+export { default as SyncBootstrap } from './SyncBootstrap';
 export { default as AnnouncementsCarousel } from './AnnouncementsCarousel';
 export { SkeletonCard, SkeletonList } from './Skeleton';
 export { default as SkeletonTable } from './SkeletonTable';

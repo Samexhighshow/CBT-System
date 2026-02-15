@@ -7,8 +7,8 @@ use App\Models\ExamAttempt;
 use App\Models\Student;
 use App\Models\Exam;
 use App\Models\Question;
+use App\Services\GradingService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class ResultController extends Controller
 {
@@ -18,6 +18,7 @@ class ResultController extends Controller
     public function getStudentResults(Request $request, $studentId)
     {
         $student = Student::findOrFail($studentId);
+        $grading = $this->gradingService();
         
         $query = ExamAttempt::with(['exam.subject'])
             ->where('student_id', $studentId)
@@ -27,10 +28,12 @@ class ResultController extends Controller
         $perPage = $request->input('limit', 15);
         $attempts = $query->paginate($perPage);
 
-        $results = $attempts->getCollection()->map(function($attempt) {
+        $results = $attempts->getCollection()->map(function($attempt) use ($grading) {
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
             $safeTotal = max(1, (float) $totalMarks);
+            $percentage = round(($attempt->score / $safeTotal) * 100, 2);
+            $passed = $this->hasPassed((float) ($attempt->score ?? 0), $totalMarks, $passingMarks);
 
             return [
                 'id' => $attempt->id,
@@ -38,9 +41,11 @@ class ResultController extends Controller
                 'subject' => $attempt->exam->subject->name,
                 'score' => $attempt->score,
                 'total_marks' => $totalMarks,
-                'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
+                'percentage' => $percentage,
                 'passing_marks' => $passingMarks,
-                'passed' => $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false,
+                'passed' => $passed,
+                'grade' => $grading->gradeFromPercentage($percentage),
+                'position_grade' => $grading->positionBandFromPercentage($percentage),
                 'started_at' => $attempt->started_at,
                 'completed_at' => $attempt->completed_at,
                 'duration' => ($attempt->started_at && $attempt->completed_at)
@@ -66,6 +71,7 @@ class ResultController extends Controller
     public function getExamResults(Request $request, $examId)
     {
         $exam = Exam::findOrFail($examId);
+        $grading = $this->gradingService();
         
         $query = ExamAttempt::with(['student.department'])
             ->where('exam_id', $examId)
@@ -74,11 +80,15 @@ class ResultController extends Controller
 
         $perPage = $request->input('limit', 15);
         $attempts = $query->paginate($perPage);
+        $rankings = $this->buildExamRankingMap((int) $examId);
 
-        $results = $attempts->getCollection()->map(function($attempt) use ($exam) {
+        $results = $attempts->getCollection()->map(function($attempt) use ($exam, $grading, $rankings) {
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
             $safeTotal = max(1, (float) $totalMarks);
+            $percentage = round(($attempt->score / $safeTotal) * 100, 2);
+            $passed = $this->hasPassed((float) ($attempt->score ?? 0), $totalMarks, $passingMarks);
+            $rank = $rankings[$attempt->id] ?? null;
 
             return [
                 'id' => $attempt->id,
@@ -88,8 +98,12 @@ class ResultController extends Controller
                 'class_level' => $attempt->student->class_level,
                 'score' => $attempt->score,
                 'total_marks' => $totalMarks,
-                'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
-                'passed' => $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false,
+                'percentage' => $percentage,
+                'passed' => $passed,
+                'grade' => $grading->gradeFromPercentage($percentage),
+                'position_grade' => $grading->positionBandFromPercentage($percentage),
+                'rank_position' => $rank,
+                'rank_label' => $grading->ordinalPosition($rank),
                 'completed_at' => $attempt->completed_at,
                 'duration' => ($attempt->started_at && $attempt->completed_at)
                     ? $attempt->started_at->diffInMinutes($attempt->completed_at)
@@ -161,7 +175,7 @@ class ResultController extends Controller
         $passed = $results->filter(function($attempt) {
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
-            return $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false;
+            return $this->hasPassed((float) ($attempt->score ?? 0), $totalMarks, $passingMarks);
         })->count();
 
         return round(($passed / $results->count()) * 100, 2);
@@ -231,6 +245,7 @@ class ResultController extends Controller
      */
     public function getAttemptDetails($attemptId)
     {
+        $grading = $this->gradingService();
         $attempt = ExamAttempt::with([
             'exam.subject',
             'student.department',
@@ -258,6 +273,10 @@ class ResultController extends Controller
         $totalMarks = $this->resolveAttemptTotalMarks($attempt);
         $safeTotal = max(1, (float) $totalMarks);
         $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+        $percentage = round(($attempt->score / $safeTotal) * 100, 2);
+        $passed = $this->hasPassed((float) ($attempt->score ?? 0), $totalMarks, $passingMarks);
+        $rankings = $this->buildExamRankingMap((int) $attempt->exam_id);
+        $rank = $rankings[$attempt->id] ?? null;
 
         return response()->json([
             'attempt' => [
@@ -268,8 +287,12 @@ class ResultController extends Controller
                 'registration_number' => $attempt->student->registration_number,
                 'score' => $attempt->score,
                 'total_marks' => $totalMarks,
-                'percentage' => round(($attempt->score / $safeTotal) * 100, 2),
-                'passed' => $passingMarks !== null ? ((float) $attempt->score >= $passingMarks) : false,
+                'percentage' => $percentage,
+                'passed' => $passed,
+                'grade' => $grading->gradeFromPercentage($percentage),
+                'position_grade' => $grading->positionBandFromPercentage($percentage),
+                'rank_position' => $rank,
+                'rank_label' => $grading->ordinalPosition($rank),
                 'started_at' => $attempt->started_at,
                 'completed_at' => $attempt->completed_at,
             ],
@@ -336,9 +359,59 @@ class ResultController extends Controller
         }
 
         if ($totalMarks !== null && $totalMarks > 0) {
-            return round($totalMarks * 0.5, 2);
+            $passMarkPercent = $this->gradingService()->passMarkPercentage() / 100;
+            return round($totalMarks * $passMarkPercent, 2);
         }
 
         return null;
+    }
+
+    private function hasPassed(float $score, float $totalMarks, ?float $passingMarks = null): bool
+    {
+        if ($passingMarks !== null) {
+            return $score >= $passingMarks;
+        }
+
+        if ($totalMarks <= 0) {
+            return false;
+        }
+
+        $percentage = ($score / max(1, $totalMarks)) * 100;
+        return $this->gradingService()->didPassPercentage($percentage);
+    }
+
+    private function gradingService(): GradingService
+    {
+        return app(GradingService::class);
+    }
+
+    private function buildExamRankingMap(int $examId): array
+    {
+        $attempts = ExamAttempt::query()
+            ->where('exam_id', $examId)
+            ->where('status', 'completed')
+            ->orderByDesc('score')
+            ->orderBy('completed_at')
+            ->orderBy('id')
+            ->get(['id', 'score']);
+
+        $rankMap = [];
+        $currentRank = 0;
+        $position = 0;
+        $previousScore = null;
+
+        foreach ($attempts as $attempt) {
+            $position++;
+            $score = (float) ($attempt->score ?? 0);
+
+            if ($previousScore === null || $score < $previousScore) {
+                $currentRank = $position;
+                $previousScore = $score;
+            }
+
+            $rankMap[$attempt->id] = $currentRank;
+        }
+
+        return $rankMap;
     }
 }

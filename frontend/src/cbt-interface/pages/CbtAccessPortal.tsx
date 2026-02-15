@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { cbtApi } from '../services/cbtApi';
 import { CbtOpenExam } from '../types';
 import { cbtFontFamily, cbtTheme } from '../theme';
 import FooterMinimal from '../../components/FooterMinimal';
+import offlineDB, { ExamPackage } from '../../services/offlineDB';
+import useConnectivity from '../../hooks/useConnectivity';
+import { getReachableBaseUrl } from '../../services/reachability';
 
 const formatExamWindow = (value?: string | null): string | null => {
   if (!value) return null;
@@ -24,16 +26,42 @@ const CbtAccessPortal: React.FC = () => {
   const [exams, setExams] = useState<CbtOpenExam[]>([]);
   const [loadingExams, setLoadingExams] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cachedPackages, setCachedPackages] = useState<Record<number, ExamPackage>>({});
+  const [downloadBusy, setDownloadBusy] = useState<number | null>(null);
+  const connectivity = useConnectivity();
+
+  const refreshCachedPackages = async () => {
+    const packages = await offlineDB.examPackages.toArray();
+    const map: Record<number, ExamPackage> = {};
+    packages.forEach((pkg) => {
+      map[pkg.examId] = pkg;
+    });
+    setCachedPackages(map);
+  };
 
   useEffect(() => {
     const loadExams = async () => {
       try {
         setLoadingExams(true);
         setError(null);
-        const data = await cbtApi.listExams();
-        setExams(data);
+        await refreshCachedPackages();
+
+        const baseUrl = getReachableBaseUrl(connectivity);
+        if (!baseUrl) {
+          setExams([]);
+          return;
+        }
+
+        const response = await fetch(`${baseUrl}/cbt/exams`, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error('Failed to load available exams.');
+        }
+
+        const payload = await response.json();
+        const data = payload?.data || payload || [];
+        setExams(Array.isArray(data) ? data : []);
       } catch (err: any) {
-        setError(err?.response?.data?.message || 'Failed to load available exams.');
+        setError(err?.message || 'Failed to load available exams.');
         setExams([]);
       } finally {
         setLoadingExams(false);
@@ -41,7 +69,38 @@ const CbtAccessPortal: React.FC = () => {
     };
 
     loadExams();
-  }, []);
+  }, [connectivity.status]);
+
+  const handleDownload = async (examId: number) => {
+    try {
+      const baseUrl = getReachableBaseUrl(connectivity);
+      if (!baseUrl) {
+        setError('Offline: connect to download exam packages.');
+        return;
+      }
+
+      setDownloadBusy(examId);
+      const response = await fetch(`${baseUrl}/exams/${examId}/package`, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error('Failed to download exam package.');
+      }
+
+      const payload = await response.json();
+      const pkg: ExamPackage = {
+        examId,
+        downloadedAt: new Date().toISOString(),
+        packageVersion: String(payload?.packageVersion || payload?.version || '1'),
+        data: payload?.data || payload,
+      };
+
+      await offlineDB.examPackages.put(pkg);
+      await refreshCachedPackages();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to download exam package.');
+    } finally {
+      setDownloadBusy(null);
+    }
+  };
 
   const availableCount = exams.filter((exam) => exam.can_access).length;
 
@@ -108,6 +167,7 @@ const CbtAccessPortal: React.FC = () => {
                   const startAt = formatExamWindow(exam.start_datetime);
                   const endAt = formatExamWindow(exam.end_datetime);
                   const examDate = formatExamDate(exam.start_datetime);
+                  const cached = cachedPackages[exam.id];
 
                   return (
                     <article
@@ -176,6 +236,23 @@ const CbtAccessPortal: React.FC = () => {
                             {exam.can_access ? 'Continue' : 'Locked'}
                           </button>
                         </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(exam.id)}
+                          disabled={connectivity.status === 'OFFLINE' || downloadBusy === exam.id}
+                          className="rounded-lg border px-2.5 py-1 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                          style={{ borderColor: '#D9E1EE', backgroundColor: '#F8FAFC', color: '#1F2937' }}
+                        >
+                          {downloadBusy === exam.id ? 'Downloading...' : cached ? 'Update Offline Package' : 'Download for Offline'}
+                        </button>
+                        {cached && (
+                          <span style={{ color: cbtTheme.muted }}>
+                            Cached {new Date(cached.downloadedAt).toLocaleString()}
+                          </span>
+                        )}
                       </div>
                     </article>
                   );

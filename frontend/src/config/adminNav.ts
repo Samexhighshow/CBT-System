@@ -32,6 +32,7 @@ export const adminNavLinks: NavLinkConfig[] = [
     icon: 'bx-layer',
     subItems: [
       { name: 'Announcements', path: '/admin/announcements', icon: 'bx-megaphone' },
+      { name: 'Offline Sync', path: '/admin/sync', icon: 'bx-sync' },
       { name: 'View Allocations', path: '/admin/allocations', icon: 'bx-list-ul' },
       { name: 'Generate Allocation', path: '/admin/allocations/generate', icon: 'bx-plus-circle' },
       { name: 'Teacher Assignment', path: '/admin/teachers/assign', icon: 'bx-user-check' },

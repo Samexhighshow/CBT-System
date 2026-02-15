@@ -4,7 +4,7 @@ import './App.css';
 import { useTeacherSetup } from './hooks/useTeacherSetup';
 import { useTheme } from './hooks/useTheme';
 import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
-import { ErrorBoundary, GlobalLoadingOverlay, KeyboardShortcutsHelp, OfflineRouteHandler } from './components';
+import { BuildVersionWatcher, ErrorBoundary, GlobalLoadingOverlay, KeyboardShortcutsHelp, OfflineRouteHandler, SyncBootstrap } from './components';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -45,6 +45,8 @@ const App: React.FC = () => {
       
       <ErrorBoundary>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <BuildVersionWatcher />
+          <SyncBootstrap />
           <GlobalLoadingOverlay />
           {/* Global Keyboard Shortcuts Help */}
           <KeyboardShortcutsHelp />

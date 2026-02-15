@@ -97,6 +97,10 @@ export const examApi = {
     return api.get<{ data: Question[] }>(`/exams/${examId}/questions`);
   },
 
+  getPackage: (examId: number) => {
+    return api.get(`/exams/${examId}/package`);
+  },
+
   start: (examId: number) => {
     return api.post<{ data: { exam: Exam; questions: Question[] } }>(`/exams/${examId}/start`);
   },

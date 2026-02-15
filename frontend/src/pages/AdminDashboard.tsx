@@ -17,6 +17,7 @@ import TeacherAssignment from './admin/TeacherAssignment';
 import ExamAccess from './admin/ExamAccess';
 import AdminAnnouncements from './admin/Announcements';
 import MarkingWorkbench from './admin/MarkingWorkbench';
+import SyncDashboard from './admin/SyncDashboard';
 
 // Admin Dashboard with shared layout
 const AdminDashboard: React.FC = () => {
@@ -37,6 +38,7 @@ const AdminDashboard: React.FC = () => {
         <Route path="teachers/assign" element={<TeacherAssignment />} />
         <Route path="results" element={<ResultsAnalytics />} />
         <Route path="marking" element={<MarkingWorkbench />} />
+        <Route path="sync" element={<SyncDashboard />} />
         <Route path="users" element={<AdminUserManagement />} />
         <Route path="activity-logs" element={<ActivityLogs />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />

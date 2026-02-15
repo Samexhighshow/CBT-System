@@ -9,6 +9,7 @@ use App\Models\ExamAttempt;
 use App\Models\ExamAttemptEvent;
 use App\Models\ExamAttemptSession;
 use App\Models\Question;
+use App\Services\GradingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -16,6 +17,11 @@ use Illuminate\Support\Facades\DB;
 
 class MarkingController extends Controller
 {
+    public function __construct(
+        private readonly GradingService $gradingService
+    ) {
+    }
+
     public function exams(): JsonResponse
     {
         $exams = Exam::with(['subject:id,name', 'schoolClass:id,name'])
@@ -44,18 +50,20 @@ class MarkingController extends Controller
     public function attempts(int $examId): JsonResponse
     {
         $exam = Exam::findOrFail($examId);
+        $rankings = $this->attemptRankingMapForExam($examId);
 
         $attempts = ExamAttempt::with('student:id,registration_number,first_name,last_name,class_level')
             ->where('exam_id', $examId)
             ->orderByRaw("CASE WHEN status = 'submitted' THEN 0 ELSE 1 END")
             ->orderByDesc('updated_at')
             ->get()
-            ->map(function (ExamAttempt $attempt) {
+            ->map(function (ExamAttempt $attempt) use ($rankings) {
                 $summary = $this->attemptScoreSummary($attempt);
                 $score = (float) ($attempt->score ?? 0);
                 $percentage = $summary['total_marks'] > 0
                     ? round(($score / $summary['total_marks']) * 100, 2)
                     : 0.0;
+                $rank = $rankings[$attempt->id] ?? null;
 
                 return [
                     'id' => $attempt->id,
@@ -63,6 +71,10 @@ class MarkingController extends Controller
                     'score' => $score,
                     'total_marks' => $summary['total_marks'],
                     'percentage' => $percentage,
+                    'grade' => $this->gradingService->gradeFromPercentage($percentage),
+                    'position_grade' => $this->gradingService->positionBandFromPercentage($percentage),
+                    'rank_position' => $rank,
+                    'rank_label' => $this->gradingService->ordinalPosition($rank),
                     'switch_count' => $attempt->switch_count,
                     'submitted_at' => $attempt->submitted_at?->toIso8601String(),
                     'completed_at' => $attempt->completed_at?->toIso8601String(),
@@ -89,6 +101,36 @@ class MarkingController extends Controller
             ],
             'data' => $attempts,
         ]);
+    }
+
+    private function attemptRankingMapForExam(int $examId): array
+    {
+        $attempts = ExamAttempt::query()
+            ->where('exam_id', $examId)
+            ->whereIn('status', ['completed', 'submitted'])
+            ->orderByDesc('score')
+            ->orderBy('completed_at')
+            ->orderBy('id')
+            ->get(['id', 'score']);
+
+        $rankMap = [];
+        $currentRank = 0;
+        $position = 0;
+        $previousScore = null;
+
+        foreach ($attempts as $attempt) {
+            $position++;
+            $score = (float) ($attempt->score ?? 0);
+
+            if ($previousScore === null || $score < $previousScore) {
+                $currentRank = $position;
+                $previousScore = $score;
+            }
+
+            $rankMap[$attempt->id] = $currentRank;
+        }
+
+        return $rankMap;
     }
 
     public function attempt(int $attemptId): JsonResponse

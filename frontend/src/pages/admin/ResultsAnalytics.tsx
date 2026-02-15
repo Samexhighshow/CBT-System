@@ -22,6 +22,9 @@ interface AttemptSummary {
   pending_manual_count: number;
   status?: string;
   percentage?: number;
+  grade?: string | null;
+  position_grade?: string | null;
+  rank_label?: string | null;
   completed_at?: string;
 }
 
@@ -158,6 +161,9 @@ const ResultsAnalytics: React.FC = () => {
                 pending_manual_count: Number(row.pending_manual_count ?? 0),
                 status: String(row.status || '').toLowerCase(),
                 percentage,
+                grade: row.grade || null,
+                position_grade: row.position_grade || null,
+                rank_label: row.rank_label || null,
                 completed_at: row.completed_at || row.submitted_at,
               };
             })
@@ -401,12 +407,14 @@ const ResultsAnalytics: React.FC = () => {
           {!loading && sortedAttempts.length > 0 && (
             <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[780px] text-xs border-collapse bg-white">
+                <table className="w-full min-w-[980px] text-xs border-collapse bg-white">
                 <thead>
                   <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
                     <th className="px-3 py-2 text-left font-semibold">Student</th>
                     <th className="px-3 py-2 text-left font-semibold">Class</th>
                     <th className="px-3 py-2 text-left font-semibold">Score (Marks)</th>
+                    <th className="px-3 py-2 text-left font-semibold">Grade</th>
+                    <th className="px-3 py-2 text-left font-semibold">Position</th>
                     <th className="px-3 py-2 text-left font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -426,6 +434,13 @@ const ResultsAnalytics: React.FC = () => {
                           {a.answered_count}/{a.question_count} answered
                           {a.pending_manual_count > 0 ? ` · ${a.pending_manual_count} pending manual` : ''}
                         </div>
+                      </td>
+                      <td className="px-3 py-2 text-sm text-slate-700">
+                        {a.grade || '-'}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-slate-700">
+                        <div>{a.rank_label || '-'}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{a.position_grade || '-'}</div>
                       </td>
                       <td className="px-3 py-2 text-sm">
                         <span

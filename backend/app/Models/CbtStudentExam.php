@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Services\GradingService;
 use Carbon\Carbon;
 
 class CbtStudentExam extends Model
@@ -181,16 +182,6 @@ class CbtStudentExam extends Model
     public function getGrade(): ?string
     {
         $percentage = $this->getPercentage();
-        
-        if ($percentage === null) {
-            return null;
-        }
-
-        if ($percentage >= 70) return 'A';
-        if ($percentage >= 60) return 'B';
-        if ($percentage >= 50) return 'C';
-        if ($percentage >= 45) return 'D';
-        if ($percentage >= 40) return 'E';
-        return 'F';
+        return app(GradingService::class)->gradeFromPercentage($percentage);
     }
 }

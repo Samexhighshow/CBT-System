@@ -11,6 +11,28 @@ interface Setting {
   description?: string;
 }
 
+interface EndpointToggles {
+  students: boolean;
+  exams: boolean;
+  questions: boolean;
+  academics: boolean;
+  results: boolean;
+  announcements: boolean;
+  allocations: boolean;
+  admin_users_roles: boolean;
+}
+
+const defaultEndpointToggles: EndpointToggles = {
+  students: true,
+  exams: true,
+  questions: true,
+  academics: true,
+  results: true,
+  announcements: true,
+  allocations: true,
+  admin_users_roles: true,
+};
+
 const findSettingValue = (key: string, settingsList: Setting[]) =>
   settingsList.find(setting => setting.key === key)?.value;
 
@@ -18,8 +40,34 @@ const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
   const [systemName, setSystemName] = useState('');
+  const [endpointToggles, setEndpointToggles] = useState<EndpointToggles>(defaultEndpointToggles);
+  const [gradingScheme, setGradingScheme] = useState<'waec' | 'letter'>('waec');
+  const [waecScaleText, setWaecScaleText] = useState('');
+  const [letterScaleText, setLetterScaleText] = useState('');
+  const [positionScaleText, setPositionScaleText] = useState('');
+  const [passMarkPercentage, setPassMarkPercentage] = useState('50');
   const { theme, changeTheme } = useTheme();
   // Token is injected via axios interceptor in `api` using `auth_token` key
+
+  const parseJsonSetting = (value: any, fallback: any) => {
+    if (value === undefined || value === null || value === '') {
+      return fallback;
+    }
+
+    if (typeof value === 'object') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return fallback;
+      }
+    }
+
+    return fallback;
+  };
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -29,6 +77,33 @@ const AdminSettings: React.FC = () => {
       
       // Load system name
       setSystemName(findSettingValue('system_name', res.data) || 'CBT System');
+
+      const endpointValue = findSettingValue('endpoint_toggles', res.data);
+      const parsedToggles = parseJsonSetting(endpointValue, defaultEndpointToggles);
+      setEndpointToggles({ ...defaultEndpointToggles, ...parsedToggles });
+
+      const scheme = String(findSettingValue('grading_scheme', res.data) || 'waec').toLowerCase();
+      setGradingScheme(scheme === 'letter' ? 'letter' : 'waec');
+
+      const waecScale = findSettingValue('grading_scale_waec', res.data)
+        || [{"grade":"A1","min":75},{"grade":"B2","min":70},{"grade":"B3","min":65},{"grade":"C4","min":60},{"grade":"C5","min":55},{"grade":"C6","min":50},{"grade":"D7","min":45},{"grade":"E8","min":40},{"grade":"F9","min":0}];
+      setWaecScaleText(
+        typeof waecScale === 'string' ? waecScale : JSON.stringify(waecScale, null, 2)
+      );
+
+      const letterScale = findSettingValue('grading_scale_letter', res.data)
+        || [{"grade":"A","min":70},{"grade":"B","min":60},{"grade":"C","min":50},{"grade":"D","min":45},{"grade":"E","min":40},{"grade":"F","min":0}];
+      setLetterScaleText(
+        typeof letterScale === 'string' ? letterScale : JSON.stringify(letterScale, null, 2)
+      );
+
+      const positionScale = findSettingValue('position_grading_scale', res.data)
+        || [{"label":"1st","min":70},{"label":"2nd","min":60},{"label":"3rd","min":50},{"label":"Pass","min":40},{"label":"Fail","min":0}];
+      setPositionScaleText(
+        typeof positionScale === 'string' ? positionScale : JSON.stringify(positionScale, null, 2)
+      );
+
+      setPassMarkPercentage(String(findSettingValue('pass_mark_percentage', res.data) || '50'));
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to load settings');
     } finally {
@@ -51,6 +126,50 @@ const AdminSettings: React.FC = () => {
   const getValue = (key: string, settingsList?: Setting[]) => {
     const list = settingsList || settings;
     return list.find(s => s.key === key)?.value;
+  };
+
+  const updateJsonSetting = async (key: string, value: any) => {
+    try {
+      await api.put(`/settings/${key}`, { value, type: 'json' });
+      showSuccess('Setting updated');
+      fetchSettings();
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to update setting');
+    }
+  };
+
+  const updateEndpointToggle = async (moduleKey: keyof EndpointToggles, enabled: boolean) => {
+    const next = { ...endpointToggles, [moduleKey]: enabled };
+    setEndpointToggles(next);
+    await updateJsonSetting('endpoint_toggles', next);
+  };
+
+  const saveGradingSettings = async () => {
+    try {
+      const parsedWaec = JSON.parse(waecScaleText);
+      const parsedLetter = JSON.parse(letterScaleText);
+      const parsedPosition = JSON.parse(positionScaleText);
+      const passMark = Math.min(100, Math.max(0, Number(passMarkPercentage || 50)));
+
+      await api.put('/settings/bulk', {
+        settings: [
+          { key: 'grading_scheme', value: gradingScheme, type: 'string' },
+          { key: 'grading_scale_waec', value: parsedWaec, type: 'json' },
+          { key: 'grading_scale_letter', value: parsedLetter, type: 'json' },
+          { key: 'position_grading_scale', value: parsedPosition, type: 'json' },
+          { key: 'pass_mark_percentage', value: String(passMark), type: 'string' },
+        ],
+      });
+
+      showSuccess('Grading settings updated successfully');
+      fetchSettings();
+    } catch (err: any) {
+      if (err instanceof SyntaxError) {
+        showError('Invalid grading JSON. Please fix JSON format first.');
+        return;
+      }
+      showError(err?.response?.data?.message || 'Failed to update grading settings');
+    }
   };
 
   return (
@@ -231,6 +350,36 @@ const AdminSettings: React.FC = () => {
             </div>
           </div>
 
+          {/* Endpoint Controls */}
+          <div className="border dark:border-gray-700 rounded p-4 md:col-span-2 bg-white dark:bg-gray-800">
+            <h2 className="font-semibold mb-2 dark:text-white">Endpoint Module Controls</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Disable any module to block its API endpoints system-wide. Changes apply immediately.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                ['students', 'Students Module'],
+                ['exams', 'Exams + CBT Runtime'],
+                ['questions', 'Question Management'],
+                ['academics', 'Academics (Subjects/Classes/Departments)'],
+                ['results', 'Results + Marking + Reports'],
+                ['announcements', 'Announcements'],
+                ['allocations', 'Allocations + Halls'],
+                ['admin_users_roles', 'Admin Users & Roles'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded px-3 py-2 text-sm">
+                  <span className="dark:text-gray-200">{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(endpointToggles[key as keyof EndpointToggles])}
+                    onChange={(e) => updateEndpointToggle(key as keyof EndpointToggles, e.target.checked)}
+                    aria-label={`${label} toggle`}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
           {/* Appearance Settings */}
           <div className="border dark:border-gray-700 rounded p-4 bg-white dark:bg-gray-800">
             <h2 className="font-semibold mb-2 dark:text-white">Appearance</h2>
@@ -258,16 +407,73 @@ const AdminSettings: React.FC = () => {
             </p>
           </div>
 
-          {/* Grading Scale */}
+          {/* Grading & Positioning */}
           <div className="border dark:border-gray-700 rounded p-4 md:col-span-2 bg-white dark:bg-gray-800">
-            <h2 className="font-semibold mb-2 dark:text-white">Grading Scale (JSON)</h2>
-            <textarea
-              defaultValue={getValue('grading_scale') || '{"A":80,"B":70,"C":60,"D":50,"F":0}'}
-              onBlur={e => updateSetting('grading_scale', e.target.value)}
-              className="border dark:border-gray-600 rounded px-3 py-2 w-full h-28 bg-white dark:bg-gray-700 dark:text-white"
-              aria-label="Grading scale JSON"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Example: {`{"A":80,"B":70,"C":60,"D":50,"F":0}`}</p>
+            <h2 className="font-semibold mb-2 dark:text-white">Grading & Position Settings</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm block mb-1 dark:text-gray-200">Grading Scheme</label>
+                <select
+                  value={gradingScheme}
+                  onChange={(e) => setGradingScheme(e.target.value as 'waec' | 'letter')}
+                  className="border dark:border-gray-600 rounded px-2 py-1 w-full bg-white dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="waec">WAEC (A1, B2, ... F9)</option>
+                  <option value="letter">Letter (A, B, C, ...)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm block mb-1 dark:text-gray-200">Default Pass Mark (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={passMarkPercentage}
+                  onChange={(e) => setPassMarkPercentage(e.target.value)}
+                  className="border dark:border-gray-600 rounded px-2 py-1 w-full bg-white dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <div>
+                <label className="text-sm block mb-1 dark:text-gray-200">WAEC Scale JSON</label>
+                <textarea
+                  value={waecScaleText}
+                  onChange={(e) => setWaecScaleText(e.target.value)}
+                  className="border dark:border-gray-600 rounded px-3 py-2 w-full h-40 bg-white dark:bg-gray-700 dark:text-white font-mono text-xs"
+                  aria-label="WAEC grading scale JSON"
+                />
+              </div>
+              <div>
+                <label className="text-sm block mb-1 dark:text-gray-200">Letter Scale JSON</label>
+                <textarea
+                  value={letterScaleText}
+                  onChange={(e) => setLetterScaleText(e.target.value)}
+                  className="border dark:border-gray-600 rounded px-3 py-2 w-full h-40 bg-white dark:bg-gray-700 dark:text-white font-mono text-xs"
+                  aria-label="Letter grading scale JSON"
+                />
+              </div>
+              <div>
+                <label className="text-sm block mb-1 dark:text-gray-200">Position Grading JSON</label>
+                <textarea
+                  value={positionScaleText}
+                  onChange={(e) => setPositionScaleText(e.target.value)}
+                  className="border dark:border-gray-600 rounded px-3 py-2 w-full h-40 bg-white dark:bg-gray-700 dark:text-white font-mono text-xs"
+                  aria-label="Position grading scale JSON"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={saveGradingSettings}
+                className="px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+              >
+                Save Grading Settings
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Position grading example: {`[{"label":"1st","min":70},{"label":"2nd","min":60},{"label":"3rd","min":50}]`}
+            </p>
           </div>
         </div>
       )}

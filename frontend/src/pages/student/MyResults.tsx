@@ -13,6 +13,8 @@ interface ResultRow {
   total_marks: number;
   percentage: number;
   passed: boolean;
+  grade?: string | null;
+  position_grade?: string | null;
   completed_at?: string;
 }
 
@@ -180,6 +182,9 @@ const MyResults: React.FC = () => {
                     <p className="text-lg font-extrabold text-slate-900">{row.score}/{row.total_marks}</p>
                     <p className={`text-xs font-semibold ${row.passed ? 'text-emerald-700' : 'text-red-700'}`}>
                       {row.percentage.toFixed(1)}% • {row.passed ? 'Passed' : 'Failed'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Grade: {row.grade || '-'} {row.position_grade ? `• Band: ${row.position_grade}` : ''}
                     </p>
                   </div>
                 </div>

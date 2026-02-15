@@ -4,6 +4,8 @@ import { Card } from '../../components';
 import { api } from '../../services/api';
 import { showError } from '../../utils/alerts';
 import { getCurrentStudentProfile } from './studentData';
+import useConnectivity from '../../hooks/useConnectivity';
+import offlineDB from '../../services/offlineDB';
 
 interface StudentExam {
   id: number;
@@ -31,11 +33,31 @@ const formatDate = (value?: string) => {
 const AvailableExams: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState<StudentExam[]>([]);
+  const connectivity = useConnectivity();
 
   useEffect(() => {
     const loadAvailableExams = async () => {
       try {
         setLoading(true);
+        if (connectivity.status === 'OFFLINE') {
+          const cached = await offlineDB.examPackages.toArray();
+          const rows: StudentExam[] = cached.map((pkg) => {
+            const payload = pkg.data?.exam || pkg.data || {};
+            return {
+              id: payload.id ?? pkg.examId,
+              title: payload.title || 'Cached Exam',
+              duration_minutes: payload.duration_minutes,
+              subject: payload.subject,
+              class_level: payload.class_level,
+              start_datetime: payload.start_datetime,
+              end_datetime: payload.end_datetime,
+              status: 'Cached',
+            };
+          });
+          setExams(rows);
+          return;
+        }
+
         const student = await getCurrentStudentProfile();
         const response = await api.get(`/students/${student.id}/exams`);
         const rows: StudentExam[] = response.data?.data || response.data || [];
@@ -50,7 +72,7 @@ const AvailableExams: React.FC = () => {
     };
 
     loadAvailableExams();
-  }, []);
+  }, [connectivity.status]);
 
   return (
     <div className="space-y-5">

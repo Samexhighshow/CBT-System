@@ -1,5 +1,6 @@
 // Cheating Detection System
 import { useEffect, useRef, useState, useCallback } from 'react';
+import offlineDB from '../services/offlineDB';
 
 export interface CheatingEvent {
   type: 'tab_switch' | 'window_blur' | 'copy' | 'paste' | 'right_click' | 'dev_tools' | 'fullscreen_exit' | 'multiple_tabs';
@@ -8,6 +9,7 @@ export interface CheatingEvent {
 }
 
 export interface CheatingDetectionConfig {
+  attemptId?: string;
   enableTabSwitchDetection?: boolean;
   enableCopyPasteDetection?: boolean;
   enableRightClickBlock?: boolean;
@@ -21,6 +23,7 @@ export interface CheatingDetectionConfig {
 
 export const useCheatingDetection = (config: CheatingDetectionConfig = {}) => {
   const {
+    attemptId,
     enableTabSwitchDetection = true,
     enableCopyPasteDetection = true,
     enableRightClickBlock = true,
@@ -43,7 +46,7 @@ export const useCheatingDetection = (config: CheatingDetectionConfig = {}) => {
       const newViolations = [...prev, event];
       
       // Store in IndexedDB for later sync
-      storeViolationInDB(event);
+      storeViolationInDB(event, attemptId);
       
       if (onViolation) {
         onViolation(event);
@@ -257,38 +260,19 @@ export const useCheatingDetection = (config: CheatingDetectionConfig = {}) => {
 };
 
 // Store violation in IndexedDB for later sync
-async function storeViolationInDB(event: CheatingEvent) {
+async function storeViolationInDB(event: CheatingEvent, attemptId?: string) {
   try {
-    const db = await openDB();
-    const tx = db.transaction('cheating_logs', 'readwrite');
-    const store = tx.objectStore('cheating_logs');
-    await store.add({
-      ...event,
-      synced: false,
-      created_at: new Date().toISOString(),
+    if (!attemptId) {
+      return;
+    }
+
+    await offlineDB.cheatLogs.add({
+      attemptId,
+      eventType: event.type,
+      payload: event,
+      createdAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error('Failed to store violation:', error);
   }
-}
-
-// Helper to open IndexedDB
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('CBT_System', 1);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains('cheating_logs')) {
-        db.createObjectStore('cheating_logs', { keyPath: 'id', autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains('exam_data')) {
-        db.createObjectStore('exam_data', { keyPath: 'exam_id' });
-      }
-      if (!db.objectStoreNames.contains('pending_submissions')) {
-        db.createObjectStore('pending_submissions', { keyPath: 'id', autoIncrement: true });
-      }
-    };
-  });
 }
