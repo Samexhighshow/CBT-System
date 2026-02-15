@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components';
 import { api, API_URL } from '../../services/api';
@@ -28,6 +28,9 @@ const StudentManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<Student[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'name_asc' | 'name_desc' | 'reg_asc' | 'reg_desc' | 'class_asc' | 'class_desc'>('name_asc');
+  const [perPage, setPerPage] = useState(25);
+  const [page, setPage] = useState(1);
   const [departments, setDepartments] = useState<Array<{id: number; name: string}>>([]);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState<null | Student>(null);
@@ -138,16 +141,67 @@ const StudentManagement: React.FC = () => {
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
+  const filteredSortedStudents = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    let rows = students.filter((s) =>
+      term === '' ||
+      s.first_name.toLowerCase().includes(term) ||
+      s.last_name.toLowerCase().includes(term) ||
+      s.registration_number.toLowerCase().includes(term) ||
+      s.email.toLowerCase().includes(term)
+    );
+
+    rows = [...rows].sort((a, b) => {
+      const aName = `${a.first_name} ${a.last_name}`.toLowerCase();
+      const bName = `${b.first_name} ${b.last_name}`.toLowerCase();
+      switch (sortBy) {
+        case 'name_desc':
+          return bName.localeCompare(aName);
+        case 'reg_asc':
+          return a.registration_number.localeCompare(b.registration_number);
+        case 'reg_desc':
+          return b.registration_number.localeCompare(a.registration_number);
+        case 'class_asc':
+          return (a.class_level || '').localeCompare(b.class_level || '');
+        case 'class_desc':
+          return (b.class_level || '').localeCompare(a.class_level || '');
+        case 'name_asc':
+        default:
+          return aName.localeCompare(bName);
+      }
+    });
+
+    return rows;
+  }, [students, searchTerm, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSortedStudents.length / perPage));
+  const currentPage = Math.min(page, totalPages);
+  const pagedStudents = filteredSortedStudents.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  const getPageNumbers = (current: number, total: number): Array<number | string> => {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const pages: Array<number | string> = [1];
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+    if (start > 2) pages.push('...');
+    for (let i = start; i <= end; i += 1) pages.push(i);
+    if (end < total - 1) pages.push('...');
+    pages.push(total);
+    return pages;
+  };
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(students.map(s => s.id));
+      const pageIds = pagedStudents.map((s) => s.id);
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
     } else {
-      setSelectedIds([]);
+      const pageIds = new Set(pagedStudents.map((s) => s.id));
+      setSelectedIds((prev) => prev.filter((id) => !pageIds.has(id)));
     }
   };
 
   const handleSelectOne = (id: number, checked: boolean) => {
-    setSelectedIds(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
+    setSelectedIds(prev => checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter(i => i !== id));
   };
 
   const handleBatchDelete = async () => {
@@ -164,6 +218,11 @@ const StudentManagement: React.FC = () => {
       }
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds([]);
+  }, [searchTerm, sortBy, perPage]);
 
   return (
     <div className="app-shell section-shell">
@@ -244,56 +303,162 @@ const StudentManagement: React.FC = () => {
       </Card>
 
       <Card>
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xl font-semibold">Student List ({students.length})</h2>
-          <Button variant="danger" disabled={selectedIds.length === 0} onClick={handleBatchDelete}>
-            Delete Selected ({selectedIds.length})
-          </Button>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-xl font-semibold">Student List</h2>
+            <p className="text-xs text-gray-600">
+              {filteredSortedStudents.length} matching students
+              {filteredSortedStudents.length > 0 ? ` | Showing ${((currentPage - 1) * perPage) + 1}-${Math.min(currentPage * perPage, filteredSortedStudents.length)}` : ''}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="px-3 py-1.5 border border-gray-300 rounded-md text-xs bg-white"
+            >
+              <option value="name_asc">Name A-Z</option>
+              <option value="name_desc">Name Z-A</option>
+              <option value="reg_asc">Reg No A-Z</option>
+              <option value="reg_desc">Reg No Z-A</option>
+              <option value="class_asc">Class A-Z</option>
+              <option value="class_desc">Class Z-A</option>
+            </select>
+            <select
+              value={perPage}
+              onChange={(e) => setPerPage(Number(e.target.value))}
+              className="px-3 py-1.5 border border-gray-300 rounded-md text-xs bg-white"
+            >
+              <option value={10}>10 per page</option>
+              <option value={25}>25 per page</option>
+              <option value={50}>50 per page</option>
+              <option value={100}>100 per page</option>
+            </select>
+            <Button variant="danger" disabled={selectedIds.length === 0} onClick={handleBatchDelete}>
+              Delete Selected ({selectedIds.length})
+            </Button>
+          </div>
         </div>
+
+        <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                title="Select current page students"
+                checked={pagedStudents.length > 0 && pagedStudents.every((s) => selectedIds.includes(s.id))}
+                onChange={(e) => handleSelectAll(e.target.checked)}
+                className="w-5 h-5 cursor-pointer"
+              />
+              <span className="text-sm font-semibold text-blue-800">
+                {selectedIds.length > 0 ? `${selectedIds.length} selected` : 'Select Page'}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {loading ? (
           <p className="text-gray-500">Loading students...</p>
-        ) : students.length === 0 ? (
+        ) : filteredSortedStudents.length === 0 ? (
           <p className="text-gray-500">{searchTerm ? 'No students match your search.' : 'No students registered yet.'}</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-2 py-3"><input type="checkbox" title="Select all students" checked={selectedIds.length === students.length && students.length > 0} onChange={e => handleSelectAll(e.target.checked)} /></th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reg. Number</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {students.filter(s => 
-                  searchTerm === '' || 
-                  s.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  s.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  s.registration_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  s.email.toLowerCase().includes(searchTerm.toLowerCase())
-                ).map((student) => (
-                  <tr key={student.id}>
-                    <td className="px-2 py-4"><input type="checkbox" title="Select student" checked={selectedIds.includes(student.id)} onChange={e => handleSelectOne(student.id, e.target.checked)} /></td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{student.first_name} {student.last_name}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{student.registration_number}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{student.class_level}</td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className={`px-2 py-1 rounded text-xs ${student.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                        {student.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <button onClick={() => setShowViewModal(student)} className="text-blue-600 hover:text-blue-800 mr-3">View</button>
-                      <button onClick={() => handleDelete(student.id)} className="text-red-600 hover:text-red-800">Delete</button>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-xs border-collapse bg-white">
+                <thead>
+                  <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
+                    <th className="px-3 py-2 w-10">
+                      <input
+                        type="checkbox"
+                        title="Select current page students"
+                        checked={pagedStudents.length > 0 && pagedStudents.every((s) => selectedIds.includes(s.id))}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                      />
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold">Name</th>
+                    <th className="px-3 py-2 text-left font-semibold">Reg. Number</th>
+                    <th className="px-3 py-2 text-left font-semibold">Email</th>
+                    <th className="px-3 py-2 text-left font-semibold">Class</th>
+                    <th className="px-3 py-2 text-left font-semibold">Status</th>
+                    <th className="px-3 py-2 text-left font-semibold">Actions</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {pagedStudents.map((student, index) => (
+                    <tr
+                      key={student.id}
+                      className={`border-b border-gray-200 transition-colors ${
+                        index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                      } hover:bg-blue-50/60 ${selectedIds.includes(student.id) ? 'bg-blue-50' : ''}`}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          title="Select student"
+                          checked={selectedIds.includes(student.id)}
+                          onChange={(e) => handleSelectOne(student.id, e.target.checked)}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-900">{student.first_name} {student.last_name}</td>
+                      <td className="px-3 py-2 text-sm text-gray-600">{student.registration_number}</td>
+                      <td className="px-3 py-2 text-sm text-gray-600 max-w-[220px]">
+                        <span className="truncate block" title={student.email}>{student.email}</span>
+                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-600">{student.class_level}</td>
+                      <td className="px-3 py-2 text-sm">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${student.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                          {student.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-sm">
+                        <button onClick={() => setShowViewModal(student)} className="text-blue-600 hover:text-blue-800 mr-3">View</button>
+                        <button onClick={() => handleDelete(student.id)} className="text-red-600 hover:text-red-800">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 px-1 py-3 border-t border-gray-200 bg-gray-50/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+              <div className="text-gray-600">
+                Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, filteredSortedStudents.length)} of {filteredSortedStudents.length}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                >
+                  Prev
+                </button>
+                {getPageNumbers(currentPage, totalPages).map((pageNum, idx) => (
+                  pageNum === '...' ? (
+                    <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                  ) : (
+                    <button
+                      key={pageNum}
+                      onClick={() => setPage(pageNum as number)}
+                      className={`min-w-[34px] px-2.5 py-1.5 border rounded-md ${
+                        pageNum === currentPage
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
                 ))}
-              </tbody>
-            </table>
-          </div>
+                <button
+                  onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </Card>
 

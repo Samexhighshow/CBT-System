@@ -35,9 +35,9 @@ interface ExamRow {
 }
 
 const formatDate = (value?: string) => {
-  if (!value) return '—';
+  if (!value) return '-';
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleString();
 };
 
@@ -135,10 +135,14 @@ const ExamManagement: React.FC = () => {
   };
 
   const handleSelectAllExams = () => {
-    if (selectedExams.length === exams.length) {
-      setSelectedExams([]);
+    const pageIds = paged.map((exam) => exam.id);
+    if (pageIds.length === 0) return;
+
+    const allPageSelected = pageIds.every((id) => selectedExams.includes(id));
+    if (allPageSelected) {
+      setSelectedExams((prev) => prev.filter((id) => !pageIds.includes(id)));
     } else {
-      setSelectedExams(exams.map(e => e.id));
+      setSelectedExams((prev) => Array.from(new Set([...prev, ...pageIds])));
     }
   };
 
@@ -811,19 +815,19 @@ const ExamManagement: React.FC = () => {
             </div>
 
             {/* Selection Bar */}
-            {exams.length > 0 && (
+            {sorted.length > 0 && (
               <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
-                      checked={selectedExams.length > 0 && selectedExams.length === exams.length}
+                      checked={paged.length > 0 && paged.every((exam) => selectedExams.includes(exam.id))}
                       onChange={handleSelectAllExams}
                       className="w-5 h-5 cursor-pointer"
-                      title="Select all exams"
+                      title="Select current page exams"
                     />
                     <span className="text-sm font-semibold text-blue-800">
-                      {selectedExams.length > 0 ? `${selectedExams.length} of ${exams.length} selected` : 'Select All'}
+                      {selectedExams.length > 0 ? `${selectedExams.length} selected` : 'Select Page'}
                     </span>
                   </div>
                   {selectedExams.length > 0 && (
@@ -894,15 +898,15 @@ const ExamManagement: React.FC = () => {
             </div>
           </div>
 
-          {/* Table Container - only scroll when needed */}
-          <div className={paged.length >= 6 ? 'max-h-96 overflow-auto' : ''}>
-            <table className="min-w-full text-xs border-collapse bg-white">
+          {/* Table Container */}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1220px] text-xs border-collapse bg-white">
               <thead>
-                <tr className="bg-gray-50 text-gray-700 border-b">
+                <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
                   <th className="px-3 py-2 w-10">
                     <input
                       type="checkbox"
-                      checked={selectedExams.length > 0 && selectedExams.length === exams.length}
+                      checked={paged.length > 0 && paged.every((exam) => selectedExams.includes(exam.id))}
                       onChange={handleSelectAllExams}
                       className="w-4 h-4 cursor-pointer"
                     />
@@ -930,27 +934,29 @@ const ExamManagement: React.FC = () => {
                       <td colSpan={12} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
                   </tr>
                 ) : (
-                  paged.map((exam) => {
+                  paged.map((exam, index) => {
                     const start = exam.start_datetime || exam.start_time;
                     const end = exam.end_datetime || exam.end_time;
-                    const questionCount = exam.metadata?.question_count ?? '—';
+                    const questionCount = exam.metadata?.question_count ?? '-';
                     return (
-                      <tr key={exam.id} className={`border-b transition-colors ${selectedExams.includes(exam.id) ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50 border-gray-200'}`}>
+                      <tr key={exam.id} className={`border-b border-gray-200 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'} ${selectedExams.includes(exam.id) ? 'bg-blue-50' : 'hover:bg-blue-50/60'}`}>
                         <td className="px-3 py-2">
                           <input
                             type="checkbox"
                             checked={selectedExams.includes(exam.id)}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setSelectedExams([...selectedExams, exam.id]);
+                                setSelectedExams((prev) => (prev.includes(exam.id) ? prev : [...prev, exam.id]));
                               } else {
-                                setSelectedExams(selectedExams.filter(id => id !== exam.id));
+                                setSelectedExams((prev) => prev.filter((id) => id !== exam.id));
                               }
                             }}
                             className="w-4 h-4 cursor-pointer"
                           />
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-900">{exam.title}</td>
+                        <td className="px-3 py-2 text-sm text-gray-900 max-w-[240px]">
+                          <span className="truncate block" title={exam.title}>{exam.title}</span>
+                        </td>
                         <td className="px-3 py-2">
                           {exam.assessment_type ? (
                             <span className={`px-2 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap ${
@@ -962,11 +968,11 @@ const ExamManagement: React.FC = () => {
                               {exam.assessment_type}
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-400">—</span>
+                            <span className="text-xs text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-800">{exam.school_class?.name || '—'}</td>
-                        <td className="px-3 py-2 text-sm text-gray-800">{exam.subject?.name || '—'}</td>
+                        <td className="px-3 py-2 text-sm text-gray-800">{exam.school_class?.name || '-'}</td>
+                        <td className="px-3 py-2 text-sm text-gray-800">{exam.subject?.name || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.duration_minutes} mins</td>
                         <td className="px-3 py-2">{renderStatus(exam)}</td>
                         <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{formatDate(start)}</td>
@@ -975,7 +981,7 @@ const ExamManagement: React.FC = () => {
                           <td className="px-3 py-2">
                             {exam.results_released ? (
                               <span className="px-2 py-0.5 rounded text-[11px] font-semibold text-green-700 bg-green-100">
-                                ✓ Released
+                                Released
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[11px] font-semibold text-gray-600 bg-gray-100">
@@ -1022,19 +1028,19 @@ const ExamManagement: React.FC = () => {
           </div>
 
           {/* Pagination */}
-          <div className="bg-white border-t border-gray-200 p-4">
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between text-xs">
+          <div className="bg-gray-50/60 border-t border-gray-200 p-4">
+            {sorted.length > 0 && (
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
                 <div className="text-gray-600">
                   Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, sorted.length)} of {sorted.length}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setPage(Math.max(1, currentPage - 1))}
                     disabled={currentPage === 1}
-                    className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                    className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
                   >
-                    <i className='bx bx-chevron-left'></i>
+                    Prev
                   </button>
                   {getPageNumbers(currentPage, totalPages).map((pageNum, idx) => (
                     pageNum === '...' ? (
@@ -1043,10 +1049,10 @@ const ExamManagement: React.FC = () => {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum as number)}
-                        className={`px-3 py-1 border rounded-md text-xs ${
+                        className={`min-w-[34px] px-2.5 py-1.5 border rounded-md ${
                           pageNum === currentPage
                             ? 'bg-blue-600 text-white border-blue-600'
-                            : 'border-gray-300 hover:bg-gray-50'
+                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
                         }`}
                       >
                         {pageNum}
@@ -1056,9 +1062,9 @@ const ExamManagement: React.FC = () => {
                   <button
                     onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                    className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
                   >
-                    <i className='bx bx-chevron-right'></i>
+                    Next
                   </button>
                 </div>
               </div>
@@ -1449,7 +1455,7 @@ const ExamManagement: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold">{viewingExam.title}</h2>
-                  <p className="text-blue-100 text-sm mt-1">{viewingExam.subject?.name || '—'} | {viewingExam.school_class?.name || '—'}</p>
+                  <p className="text-blue-100 text-sm mt-1">{viewingExam.subject?.name || '-'} | {viewingExam.school_class?.name || '-'}</p>
                 </div>
               </div>
               <button
@@ -1505,7 +1511,7 @@ const ExamManagement: React.FC = () => {
                       </div>
                       <div className="bg-white rounded-lg p-4 border border-blue-100">
                         <p className="text-xs text-gray-600 font-semibold mb-2">Results Visibility</p>
-                        <p className="text-sm font-bold text-gray-900">{viewingExam.results_released ? '✓ Released' : '✗ Hidden'}</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.results_released ? 'Released' : '✗ Hidden'}</p>
                         <p className="text-xs text-gray-500 mt-1">{viewingExam.results_released ? 'Visible to students' : 'Hidden from students'}</p>
                       </div>
                     </div>
@@ -1578,11 +1584,11 @@ const ExamManagement: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="bg-white rounded-lg p-4 border border-green-100">
                         <p className="text-xs text-gray-600 font-semibold mb-2">Class Level</p>
-                        <p className="text-sm font-bold text-gray-900">{viewingExam.school_class?.name || '—'}</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.school_class?.name || '-'}</p>
                       </div>
                       <div className="bg-white rounded-lg p-4 border border-green-100">
                         <p className="text-xs text-gray-600 font-semibold mb-2">Subject</p>
-                        <p className="text-sm font-bold text-gray-900">{viewingExam.subject?.name || '—'}</p>
+                        <p className="text-sm font-bold text-gray-900">{viewingExam.subject?.name || '-'}</p>
                       </div>
                       <div className="bg-white rounded-lg p-4 border border-green-100">
                         <p className="text-xs text-gray-600 font-semibold mb-2">Allowed Attempts</p>
@@ -1746,10 +1752,10 @@ const ExamManagement: React.FC = () => {
                               <tr key={eq.id} className="border-b last:border-0">
                                 <td className="py-2 pr-3 text-gray-700">{eq.order_index}</td>
                                 <td className="py-2 pr-3 max-w-[320px] truncate" title={eq.bank_question?.question_text || ''}>
-                                  {eq.bank_question?.question_text || '—'}
+                                  {eq.bank_question?.question_text || '-'}
                                 </td>
-                                <td className="py-2 pr-3">{eq.bank_question?.question_type || '—'}</td>
-                                <td className="py-2 pr-3">{eq.bank_question?.difficulty || '—'}</td>
+                                <td className="py-2 pr-3">{eq.bank_question?.question_type || '-'}</td>
+                                <td className="py-2 pr-3">{eq.bank_question?.difficulty || '-'}</td>
                                 <td className="py-2 pr-3">v{eq.version_number || 1}</td>
                                 <td className="py-2 pr-3">
                                   <input
@@ -1858,7 +1864,7 @@ const ExamManagement: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-gray-600"><strong>Exam Type:</strong> {viewingExam.status.charAt(0).toUpperCase() + viewingExam.status.slice(1)}</p>
-                        <p className="text-gray-600 mt-2"><strong>For:</strong> {viewingExam.school_class?.name || '—'} ({viewingExam.subject?.name || '—'})</p>
+                        <p className="text-gray-600 mt-2"><strong>For:</strong> {viewingExam.school_class?.name || '-'} ({viewingExam.subject?.name || '-'})</p>
                       </div>
                       <div>
                         <p className="text-gray-600"><strong>Complexity:</strong> {viewingExam.metadata?.question_count || '0'} questions in {viewingExam.duration_minutes} minutes</p>
@@ -2022,4 +2028,7 @@ const ExamManagement: React.FC = () => {
 };
 
 export default ExamManagement;
+
+
+
 

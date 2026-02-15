@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 
@@ -215,15 +215,13 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   // Pagination helper functions
-  const ITEMS_PER_PAGE = 10;
-  
   const getPaginatedData = (data: any[], page: number) => {
-    const startIndex = (page - 1) * ITEMS_PER_PAGE;
-    return data.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    const startIndex = (page - 1) * itemsPerPage;
+    return data.slice(startIndex, startIndex + itemsPerPage);
   };
   
   const getTotalPages = (totalItems: number) => {
-    return Math.ceil(totalItems / ITEMS_PER_PAGE);
+    return Math.max(1, Math.ceil(totalItems / itemsPerPage));
   };
   
   const getPageNumbers = (currentPage: number, totalPages: number) => {
@@ -240,11 +238,77 @@ const SubjectManagementNew: React.FC = () => {
     return pages;
   };
   
-  const handlePageChange = (newPage: number, setPage: (page: number) => void, totalPages: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
+  const filteredDepartments = useMemo(() => {
+    return [...departments]
+      .filter((d: any) =>
+        (d.name || '').toLowerCase().includes(deptSearch.toLowerCase()) ||
+        (d.code || '').toLowerCase().includes(deptSearch.toLowerCase())
+      )
+      .sort((a: any, b: any) => {
+        switch (deptSort) {
+          case 'name-asc': return (a.name || '').localeCompare(b.name || '');
+          case 'name-desc': return (b.name || '').localeCompare(a.name || '');
+          case 'code-asc': return (a.code || '').localeCompare(b.code || '');
+          case 'code-desc': return (b.code || '').localeCompare(a.code || '');
+          default: return 0;
+        }
+      });
+  }, [departments, deptSearch, deptSort]);
+
+  const filteredClasses = useMemo(() => {
+    return [...classes]
+      .filter((c: any) => (c.name || '').toLowerCase().includes(classSearch.toLowerCase()))
+      .sort((a: any, b: any) => {
+        switch (classSort) {
+          case 'name-asc': return (a.name || '').localeCompare(b.name || '');
+          case 'name-desc': return (b.name || '').localeCompare(a.name || '');
+          case 'capacity-asc': return (a.capacity ?? 0) - (b.capacity ?? 0);
+          case 'capacity-desc': return (b.capacity ?? 0) - (a.capacity ?? 0);
+          case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+          default: return 0;
+        }
+      });
+  }, [classes, classSearch, classSort]);
+
+  const filteredSubjects = useMemo(() => {
+    let rows = subjects;
+    if (subjectLevelFilter) {
+      rows = rows.filter((s: any) => (s.class_level || '') === subjectLevelFilter);
     }
-  };
+
+    return [...rows]
+      .filter((s: any) =>
+        (s.name || '').toLowerCase().includes(subjectSearch.toLowerCase()) ||
+        (s.code || '').toLowerCase().includes(subjectSearch.toLowerCase())
+      )
+      .sort((a: any, b: any) => {
+        switch (subjectSort) {
+          case 'name-asc': return (a.name || '').localeCompare(b.name || '');
+          case 'name-desc': return (b.name || '').localeCompare(a.name || '');
+          case 'code-asc': return (a.code || '').localeCompare(b.code || '');
+          case 'code-desc': return (b.code || '').localeCompare(a.code || '');
+          case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+          case 'recent': return (b.id ?? 0) - (a.id ?? 0);
+          default: return 0;
+        }
+      });
+  }, [subjects, subjectLevelFilter, subjectSearch, subjectSort]);
+
+  const pagedDepartments = useMemo(() => getPaginatedData(filteredDepartments, deptPage), [filteredDepartments, deptPage, itemsPerPage]);
+  const pagedClasses = useMemo(() => getPaginatedData(filteredClasses, classPage), [filteredClasses, classPage, itemsPerPage]);
+  const pagedSubjects = useMemo(() => getPaginatedData(filteredSubjects, subjectPage), [filteredSubjects, subjectPage, itemsPerPage]);
+
+  useEffect(() => {
+    setDeptPage((prev) => Math.min(prev, getTotalPages(filteredDepartments.length)));
+  }, [filteredDepartments.length, itemsPerPage]);
+
+  useEffect(() => {
+    setClassPage((prev) => Math.min(prev, getTotalPages(filteredClasses.length)));
+  }, [filteredClasses.length, itemsPerPage]);
+
+  useEffect(() => {
+    setSubjectPage((prev) => Math.min(prev, getTotalPages(filteredSubjects.length)));
+  }, [filteredSubjects.length, itemsPerPage]);
 
   // Department CRUD
   const handleCreateDepartment = async (e: React.FormEvent) => {
@@ -601,26 +665,32 @@ const SubjectManagementNew: React.FC = () => {
 
   // Select All handlers
   const handleSelectAllDepts = () => {
-    if (selectedDepts.length === departments.length) {
-      setSelectedDepts([]);
+    const visibleIds = pagedDepartments.map((d: any) => d.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id: number) => selectedDepts.includes(id));
+    if (allVisibleSelected) {
+      setSelectedDepts((prev) => prev.filter((id) => !visibleIds.includes(id)));
     } else {
-      setSelectedDepts(departments.map(d => d.id));
+      setSelectedDepts((prev) => Array.from(new Set([...prev, ...visibleIds])));
     }
   };
 
   const handleSelectAllClasses = () => {
-    if (selectedClasses.length === classes.length) {
-      setSelectedClasses([]);
+    const visibleIds = pagedClasses.map((c: any) => c.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id: number) => selectedClasses.includes(id));
+    if (allVisibleSelected) {
+      setSelectedClasses((prev) => prev.filter((id) => !visibleIds.includes(id)));
     } else {
-      setSelectedClasses(classes.map(c => c.id));
+      setSelectedClasses((prev) => Array.from(new Set([...prev, ...visibleIds])));
     }
   };
 
   const handleSelectAllSubjects = () => {
-    if (selectedSubjects.length === subjects.length) {
-      setSelectedSubjects([]);
+    const visibleIds = pagedSubjects.map((s: any) => s.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id: number) => selectedSubjects.includes(id));
+    if (allVisibleSelected) {
+      setSelectedSubjects((prev) => prev.filter((id) => !visibleIds.includes(id)));
     } else {
-      setSelectedSubjects(subjects.map(s => s.id));
+      setSelectedSubjects((prev) => Array.from(new Set([...prev, ...visibleIds])));
     }
   };
 
@@ -788,7 +858,7 @@ const SubjectManagementNew: React.FC = () => {
                 <div>
                   <h2 className="text-2xl font-bold text-gray-800 mb-2">Departments</h2>
                   <p className="text-sm text-gray-600">
-                    Required for SSS classes • {departments.length} total
+                    Required for SSS classes â€¢ {departments.length} total
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -855,7 +925,7 @@ const SubjectManagementNew: React.FC = () => {
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
                     <div>
                       <h3 className="text-lg font-bold text-gray-800">Your Departments</h3>
-                      <p className="text-xs text-gray-600">{departments.length} total departments</p>
+                      <p className="text-xs text-gray-600">{filteredDepartments.length} matching departments</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-2 text-xs text-gray-700">
@@ -882,10 +952,10 @@ const SubjectManagementNew: React.FC = () => {
                           className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
                           title="Sort"
                         >
-                          <option value="name-asc">Name A→Z</option>
-                          <option value="name-desc">Name Z→A</option>
-                          <option value="code-asc">Code A→Z</option>
-                          <option value="code-desc">Code Z→A</option>
+                          <option value="name-asc">Name Aâ†’Z</option>
+                          <option value="name-desc">Name Zâ†’A</option>
+                          <option value="code-asc">Code Aâ†’Z</option>
+                          <option value="code-desc">Code Zâ†’A</option>
                         </select>
                       </div>
                       <select
@@ -910,13 +980,13 @@ const SubjectManagementNew: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <input
                           type="checkbox"
-                          checked={selectedDepts.length > 0 && selectedDepts.length === departments.length}
+                          checked={pagedDepartments.length > 0 && pagedDepartments.every((dept: any) => selectedDepts.includes(dept.id))}
                           onChange={handleSelectAllDepts}
                           className="w-5 h-5 cursor-pointer"
-                          title="Select all departments"
+                          title="Select current page departments"
                         />
                         <span className="text-sm font-semibold text-blue-800">
-                          {selectedDepts.length > 0 ? `${selectedDepts.length} of ${departments.length} selected` : 'Select All'}
+                          {selectedDepts.length > 0 ? `${selectedDepts.length} selected` : 'Select Page'}
                         </span>
                       </div>
                       {selectedDepts.length > 0 && (
@@ -939,111 +1009,133 @@ const SubjectManagementNew: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Departments Grid - Scrollable */}
-                <div className="max-h-96 overflow-y-auto bg-white">
-                  <div className="grid gap-3 p-4">
-                  {getPaginatedData(
-                    [...departments]
-                      .filter((d: any) => 
-                        d.name.toLowerCase().includes(deptSearch.toLowerCase()) ||
-                        d.code.toLowerCase().includes(deptSearch.toLowerCase())
-                      )
-                      .sort((a: any, b: any) => {
-                        switch (deptSort) {
-                          case 'name-asc': return a.name.localeCompare(b.name);
-                          case 'name-desc': return b.name.localeCompare(a.name);
-                          case 'code-asc': return a.code.localeCompare(b.code);
-                          case 'code-desc': return b.code.localeCompare(a.code);
-                          default: return 0;
-                        }
-                      }),
-                    deptPage
-                  ).map((dept: any) => (
-                    <div key={dept.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedDepts.includes(dept.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
-                      <div className="flex justify-between items-start gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedDepts.includes(dept.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedDepts([...selectedDepts, dept.id]);
-                            } else {
-                              setSelectedDepts(selectedDepts.filter(id => id !== dept.id));
-                            }
-                          }}
-                          className="mt-1 w-4 h-4 cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-base font-semibold text-gray-800">{dept.name}</h3>
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-xs font-medium">
-                              {dept.code}
-                            </span>
-                            <button
-                              onClick={() => handleToggleDeptStatus(dept)}
-                              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-all hover:shadow-sm ${
-                                dept.is_active ? 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                              }`}
-                              title="Click to toggle status"
-                            >
-                              <div className={`w-2 h-2 rounded-full ${
-                                dept.is_active ? 'bg-green-600' : 'bg-gray-400'
-                              }`}></div>
-                              {dept.is_active ? 'Active' : 'Inactive'}
-                            </button>
-                          </div>
-                          {dept.description && (
-                            <p className="text-xs text-gray-500 mt-1">{dept.description}</p>
-                          )}
-                        </div>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => handleEditDept(dept)}
-                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
-                            title="Edit"
+                {/* Departments Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] text-xs border-collapse bg-white">
+                    <thead>
+                      <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
+                        <th className="px-3 py-2 w-10">
+                          <input
+                            type="checkbox"
+                            checked={pagedDepartments.length > 0 && pagedDepartments.every((dept: any) => selectedDepts.includes(dept.id))}
+                            onChange={handleSelectAllDepts}
+                            className="w-4 h-4 cursor-pointer"
+                            title="Select current page departments"
+                          />
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">Department</th>
+                        <th className="px-3 py-2 text-left font-semibold">Code</th>
+                        <th className="px-3 py-2 text-left font-semibold">Class Level</th>
+                        <th className="px-3 py-2 text-left font-semibold">Description</th>
+                        <th className="px-3 py-2 text-left font-semibold">Status</th>
+                        <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedDepartments.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-6 text-center text-gray-500 text-sm">
+                            No departments found for the current filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        pagedDepartments.map((dept: any, index: number) => (
+                          <tr
+                            key={dept.id}
+                            className={`border-b border-gray-200 transition-colors ${
+                              index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                            } hover:bg-blue-50/60 ${selectedDepts.includes(dept.id) ? 'bg-blue-50' : ''}`}
                           >
-                            <i className='bx bx-edit text-lg'></i>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteDepartment(dept.id)}
-                            className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
-                            title="Delete"
-                          >
-                            <i className='bx bx-trash text-lg'></i>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  </div>
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedDepts.includes(dept.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedDepts((prev) => (prev.includes(dept.id) ? prev : [...prev, dept.id]));
+                                  } else {
+                                    setSelectedDepts((prev) => prev.filter((id) => id !== dept.id));
+                                  }
+                                }}
+                                className="w-4 h-4 cursor-pointer"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-sm text-gray-900 font-medium">{dept.name}</td>
+                            <td className="px-3 py-2 text-sm text-gray-700">
+                              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-[11px] font-semibold">
+                                {dept.code}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-sm text-gray-700">{dept.class_level || '-'}</td>
+                            <td className="px-3 py-2 text-sm text-gray-600 max-w-[360px]">
+                              <span className="truncate block" title={dept.description || ''}>
+                                {dept.description || '-'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                onClick={() => handleToggleDeptStatus(dept)}
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                                  dept.is_active
+                                    ? 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+                                    : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                                }`}
+                                title="Click to toggle status"
+                              >
+                                {dept.is_active ? 'Active' : 'Inactive'}
+                              </button>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleEditDept(dept)}
+                                  className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                                  title="Edit department"
+                                >
+                                  <i className='bx bx-edit text-base'></i>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteDepartment(dept.id)}
+                                  className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200"
+                                  title="Delete department"
+                                >
+                                  <i className='bx bx-trash text-base'></i>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
 
                 {/* Pagination for Departments */}
-                <div className="bg-white border-t border-gray-200 p-4">
-                  {getTotalPages(departments.length) > 1 && (
-                    <div className="mt-0 flex items-center justify-between">
-                      <div className="text-xs text-gray-600">
-                        Showing {((deptPage - 1) * itemsPerPage) + 1} to {Math.min(deptPage * itemsPerPage, departments.length)} of {departments.length}
+                <div className="bg-gray-50/60 border-t border-gray-200 p-4">
+                  {filteredDepartments.length > 0 && (
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                      <div className="text-gray-600">
+                        Showing {((deptPage - 1) * itemsPerPage) + 1} to {Math.min(deptPage * itemsPerPage, filteredDepartments.length)} of {filteredDepartments.length}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => handlePageChange(deptPage - 1, setDeptPage, getTotalPages(departments.length))}
+                          onClick={() => setDeptPage(Math.max(1, deptPage - 1))}
                           disabled={deptPage === 1}
-                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                          className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
                         >
-                          <i className='bx bx-chevron-left'></i>
+                          Prev
                         </button>
-                        {getPageNumbers(deptPage, getTotalPages(departments.length)).map((page: any, idx: number) => (
+                        {getPageNumbers(deptPage, getTotalPages(filteredDepartments.length)).map((page: any, idx: number) => (
                           page === '...' ? (
                             <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
                           ) : (
                             <button
                               key={page}
                               onClick={() => setDeptPage(page as number)}
-                              className={`px-3 py-1 border rounded-md text-xs ${
+                              className={`min-w-[34px] px-2.5 py-1.5 border rounded-md ${
                                 page === deptPage
                                   ? 'bg-blue-600 text-white border-blue-600'
-                                  : 'border-gray-300 hover:bg-gray-50'
+                                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
                               }`}
                             >
                               {page}
@@ -1051,11 +1143,11 @@ const SubjectManagementNew: React.FC = () => {
                           )
                         ))}
                         <button
-                          onClick={() => handlePageChange(deptPage + 1, setDeptPage, getTotalPages(departments.length))}
-                          disabled={deptPage === getTotalPages(departments.length)}
-                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                          onClick={() => setDeptPage(Math.min(getTotalPages(filteredDepartments.length), deptPage + 1))}
+                          disabled={deptPage === getTotalPages(filteredDepartments.length)}
+                          className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
                         >
-                          <i className='bx bx-chevron-right'></i>
+                          Next
                         </button>
                       </div>
                     </div>
@@ -1076,8 +1168,8 @@ const SubjectManagementNew: React.FC = () => {
                   <h2 className="text-2xl font-bold text-gray-800 mb-2">Classes</h2>
                   <p className="text-sm text-gray-600">
                     {departments.length === 0 
-                      ? '⚠️ Create departments first for SSS classes' 
-                      : `SSS classes must be linked to a department • ${classes.length} total`
+                      ? 'âš ï¸ Create departments first for SSS classes' 
+                      : `SSS classes must be linked to a department â€¢ ${classes.length} total`
                     }
                   </p>
                 </div>
@@ -1161,7 +1253,7 @@ const SubjectManagementNew: React.FC = () => {
                       </div>
                       <div className="text-sm text-gray-700 space-y-1">
                         <p>Departments: <span className="font-semibold">{group.departments.length}</span></p>
-                        <p>Subjects: <span className="font-semibold">{subs.length}</span> (Core {coreCount} • Elective {electiveCount})</p>
+                        <p>Subjects: <span className="font-semibold">{subs.length}</span> (Core {coreCount} â€¢ Elective {electiveCount})</p>
                         <p>Capacity (sum): <span className="font-semibold">{totalCapacity}</span></p>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1">
@@ -1188,7 +1280,7 @@ const SubjectManagementNew: React.FC = () => {
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
                     <div>
                       <h3 className="text-lg font-bold text-gray-800">Your Classes</h3>
-                      <p className="text-xs text-gray-600">{classes.length} total classes</p>
+                      <p className="text-xs text-gray-600">{filteredClasses.length} matching classes</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-2 text-xs text-gray-700">
@@ -1215,10 +1307,10 @@ const SubjectManagementNew: React.FC = () => {
                           className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
                           title="Sort"
                         >
-                          <option value="name-asc">Name A→Z</option>
-                          <option value="name-desc">Name Z→A</option>
-                          <option value="capacity-asc">Capacity ↑</option>
-                          <option value="capacity-desc">Capacity ↓</option>
+                          <option value="name-asc">Name Aâ†’Z</option>
+                          <option value="name-desc">Name Zâ†’A</option>
+                          <option value="capacity-asc">Capacity â†‘</option>
+                          <option value="capacity-desc">Capacity â†“</option>
                           <option value="status">Status (Active first)</option>
                         </select>
                       </div>
@@ -1244,13 +1336,13 @@ const SubjectManagementNew: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <input
                           type="checkbox"
-                          checked={selectedClasses.length > 0 && selectedClasses.length === classes.length}
+                          checked={pagedClasses.length > 0 && pagedClasses.every((cls: any) => selectedClasses.includes(cls.id))}
                           onChange={handleSelectAllClasses}
                           className="w-5 h-5 cursor-pointer"
-                          title="Select all classes"
+                          title="Select current page classes"
                         />
                       <span className="text-sm font-semibold text-blue-800">
-                        {selectedClasses.length > 0 ? `${selectedClasses.length} of ${classes.length} selected` : 'Select All'}
+                        {selectedClasses.length > 0 ? `${selectedClasses.length} selected` : 'Select Page'}
                       </span>
                     </div>
                     {selectedClasses.length > 0 && (
@@ -1273,123 +1365,146 @@ const SubjectManagementNew: React.FC = () => {
                 </div>
                 </div>
 
-                {/* Classes Grid - Scrollable */}
-                <div className="max-h-96 overflow-y-auto bg-white">
-                  <div className="grid gap-3 p-4">
-                    {getPaginatedData(
-                      [...classes]
-                        .filter((c: any) => c.name.toLowerCase().includes(classSearch.toLowerCase()))
-                        .sort((a: any, b: any) => {
-                        switch (classSort) {
-                          case 'name-asc': return a.name.localeCompare(b.name);
-                          case 'name-desc': return b.name.localeCompare(a.name);
-                          case 'capacity-asc': return (a.capacity ?? 0) - (b.capacity ?? 0);
-                          case 'capacity-desc': return (b.capacity ?? 0) - (a.capacity ?? 0);
-                          case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
-                          default: return 0;
-                        }
-                      }),
-                    classPage
-                  ).map((cls: any) => (
-                    <div key={cls.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedClasses.includes(cls.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
-                      <div className="flex justify-between items-start gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedClasses.includes(cls.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedClasses([...selectedClasses, cls.id]);
-                            } else {
-                              setSelectedClasses(selectedClasses.filter(id => id !== cls.id));
-                            }
-                          }}
-                          className="mt-1 w-4 h-4 cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-base font-semibold text-gray-800">{cls.name}</h3>
-                            {isSSClass(cls.name) && (
-                              <span className="px-2 py-0.5 bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-800 border border-purple-200 rounded-full text-xs font-medium">
-                                SSS
-                              </span>
-                            )}
-                            <button
-                              onClick={() => handleToggleClassStatus(cls)}
-                              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-all hover:shadow-sm ${
-                                cls.is_active ? 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                              }`}
-                              title="Click to toggle status"
+                {/* Classes Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-xs border-collapse bg-white">
+                    <thead>
+                      <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
+                        <th className="px-3 py-2 w-10">
+                          <input
+                            type="checkbox"
+                            checked={pagedClasses.length > 0 && pagedClasses.every((cls: any) => selectedClasses.includes(cls.id))}
+                            onChange={handleSelectAllClasses}
+                            className="w-4 h-4 cursor-pointer"
+                            title="Select current page classes"
+                          />
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">Class</th>
+                        <th className="px-3 py-2 text-left font-semibold">Type</th>
+                        <th className="px-3 py-2 text-left font-semibold">Capacity</th>
+                        <th className="px-3 py-2 text-left font-semibold">Departments</th>
+                        <th className="px-3 py-2 text-left font-semibold">Status</th>
+                        <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedClasses.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-6 text-center text-gray-500 text-sm">
+                            No classes found for the current filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        pagedClasses.map((cls: any, index: number) => {
+                          const classDepartments = getDepartmentsForClass(cls);
+                          return (
+                            <tr
+                              key={cls.id}
+                              className={`border-b border-gray-200 transition-colors ${
+                                index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                              } hover:bg-blue-50/60 ${selectedClasses.includes(cls.id) ? 'bg-blue-50' : ''}`}
                             >
-                              <div className={`w-2 h-2 rounded-full ${
-                                cls.is_active ? 'bg-green-600' : 'bg-gray-400'
-                              }`}></div>
-                              {cls.is_active ? 'Active' : 'Inactive'}
-                            </button>
-                          </div>
-                          <p className="text-xs text-gray-600">Capacity: <span className="font-medium">{cls.capacity}</span></p>
-                          <div className="mt-1">
-                            <p className="text-xs text-gray-600 mb-1">Departments under this class:</p>
-                            <div className="flex flex-wrap gap-1">
-                              {getDepartmentsForClass(cls).length === 0 ? (
-                                <span className="text-[11px] text-gray-500">None yet</span>
-                              ) : (
-                                getDepartmentsForClass(cls).map(dept => (
-                                  <span key={dept.id} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-[11px] font-medium">
-                                    {dept.name}
+                              <td className="px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedClasses.includes(cls.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedClasses((prev) => (prev.includes(cls.id) ? prev : [...prev, cls.id]));
+                                    } else {
+                                      setSelectedClasses((prev) => prev.filter((id) => id !== cls.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-sm text-gray-900 font-medium">{cls.name}</td>
+                              <td className="px-3 py-2 text-sm text-gray-700">
+                                {isSSClass(cls.name) ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                                    SSS
                                   </span>
-                                ))
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => handleEditClass(cls)}
-                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
-                            title="Edit"
-                          >
-                            <i className='bx bx-edit text-lg'></i>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteClass(cls.id)}
-                            className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
-                            title="Delete"
-                          >
-                            <i className='bx bx-trash text-lg'></i>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                    </div>
-                  </div>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                    Regular
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-sm text-gray-700">{cls.capacity ?? '-'}</td>
+                              <td className="px-3 py-2 text-sm text-gray-700 max-w-[320px]">
+                                {classDepartments.length === 0 ? (
+                                  <span className="text-gray-500">None</span>
+                                ) : (
+                                  <span className="truncate block" title={classDepartments.map((d: any) => d.name).join(', ')}>
+                                    {classDepartments.map((d: any) => d.name).join(', ')}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={() => handleToggleClassStatus(cls)}
+                                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                                    cls.is_active
+                                      ? 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+                                      : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                                  }`}
+                                  title="Click to toggle status"
+                                >
+                                  {cls.is_active ? 'Active' : 'Inactive'}
+                                </button>
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleEditClass(cls)}
+                                    className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                                    title="Edit class"
+                                  >
+                                    <i className='bx bx-edit text-base'></i>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteClass(cls.id)}
+                                    className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200"
+                                    title="Delete class"
+                                  >
+                                    <i className='bx bx-trash text-base'></i>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
                 {/* Pagination for Classes */}
-                <div className="bg-white border-t border-gray-200 p-4">
-                  {getTotalPages(classes.length) > 1 && (
-                    <div className="mt-0 flex items-center justify-between">
-                      <div className="text-xs text-gray-600">
-                        Showing {((classPage - 1) * itemsPerPage) + 1} to {Math.min(classPage * itemsPerPage, classes.length)} of {classes.length}
+                <div className="bg-gray-50/60 border-t border-gray-200 p-4">
+                  {filteredClasses.length > 0 && (
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                      <div className="text-gray-600">
+                        Showing {((classPage - 1) * itemsPerPage) + 1} to {Math.min(classPage * itemsPerPage, filteredClasses.length)} of {filteredClasses.length}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => handlePageChange(classPage - 1, setClassPage, getTotalPages(classes.length))}
+                          onClick={() => setClassPage(Math.max(1, classPage - 1))}
                           disabled={classPage === 1}
-                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                          className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
                         >
-                          <i className='bx bx-chevron-left'></i>
+                          Prev
                         </button>
-                        {getPageNumbers(classPage, getTotalPages(classes.length)).map((page: any, idx: number) => (
+                        {getPageNumbers(classPage, getTotalPages(filteredClasses.length)).map((page: any, idx: number) => (
                           page === '...' ? (
                             <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
                           ) : (
                             <button
                               key={page}
                               onClick={() => setClassPage(page as number)}
-                              className={`px-3 py-1 border rounded-md text-xs ${
+                              className={`min-w-[34px] px-2.5 py-1.5 border rounded-md ${
                                 page === classPage
                                   ? 'bg-blue-600 text-white border-blue-600'
-                                  : 'border-gray-300 hover:bg-gray-50'
+                                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
                               }`}
                             >
                               {page}
@@ -1397,11 +1512,11 @@ const SubjectManagementNew: React.FC = () => {
                           )
                         ))}
                         <button
-                          onClick={() => handlePageChange(classPage + 1, setClassPage, getTotalPages(classes.length))}
-                          disabled={classPage === getTotalPages(classes.length)}
-                          className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                          onClick={() => setClassPage(Math.min(getTotalPages(filteredClasses.length), classPage + 1))}
+                          disabled={classPage === getTotalPages(filteredClasses.length)}
+                          className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
                         >
-                          <i className='bx bx-chevron-right'></i>
+                          Next
                         </button>
                       </div>
                     </div>
@@ -1422,8 +1537,8 @@ const SubjectManagementNew: React.FC = () => {
                   <h2 className="text-2xl font-bold text-gray-800 mb-2">Subjects</h2>
                   <p className="text-sm text-gray-600">
                     {classes.length === 0 
-                      ? '⚠️ Create classes first' 
-                      : `Add subjects to your curriculum • ${subjects.length} total`
+                      ? 'âš ï¸ Create classes first' 
+                      : `Add subjects to your curriculum â€¢ ${subjects.length} total`
                     }
                   </p>
                 </div>
@@ -1498,7 +1613,7 @@ const SubjectManagementNew: React.FC = () => {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
                   <div>
                     <h3 className="text-lg font-bold text-gray-800">Your Subjects</h3>
-                    <p className="text-xs text-gray-600">{subjects.length} total subjects</p>
+                    <p className="text-xs text-gray-600">{filteredSubjects.length} matching subjects</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="flex items-center gap-2 text-xs text-gray-700">
@@ -1525,10 +1640,10 @@ const SubjectManagementNew: React.FC = () => {
                         className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
                         title="Sort"
                       >
-                        <option value="name-asc">Name A→Z</option>
-                        <option value="name-desc">Name Z→A</option>
-                        <option value="code-asc">Code A→Z</option>
-                        <option value="code-desc">Code Z→A</option>
+                        <option value="name-asc">Name Aâ†’Z</option>
+                        <option value="name-desc">Name Zâ†’A</option>
+                        <option value="code-asc">Code Aâ†’Z</option>
+                        <option value="code-desc">Code Zâ†’A</option>
                         <option value="status">Status (Active first)</option>
                         <option value="recent">Recently added</option>
                       </select>
@@ -1550,19 +1665,19 @@ const SubjectManagementNew: React.FC = () => {
                 </div>
 
                 {/* Selection Bar */}
-                {subjects.length > 0 && (
+                {filteredSubjects.length > 0 && (
                   <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                       <div className="flex items-center gap-3">
                         <input
                           type="checkbox"
-                          checked={selectedSubjects.length > 0 && selectedSubjects.length === subjects.length}
+                          checked={pagedSubjects.length > 0 && pagedSubjects.every((subject: any) => selectedSubjects.includes(subject.id))}
                           onChange={handleSelectAllSubjects}
                         className="w-5 h-5 cursor-pointer"
-                        title="Select all subjects"
+                        title="Select current page subjects"
                       />
                       <span className="text-sm font-semibold text-blue-800">
-                        {selectedSubjects.length > 0 ? `${selectedSubjects.length} of ${subjects.length} selected` : 'Select All'}
+                        {selectedSubjects.length > 0 ? `${selectedSubjects.length} selected` : 'Select Page'}
                       </span>
                     </div>
                     {selectedSubjects.length > 0 && (
@@ -1618,158 +1733,162 @@ const SubjectManagementNew: React.FC = () => {
               </div>
               </div>
 
-              {/* Subjects Grid + Pagination - Scrollable */}
-              <div className="max-h-96 overflow-y-auto bg-white">
-                <div className="p-4">
-                  {(() => {
-                    // Apply filters and sort
-                    let filtered = subjects.filter((s: any) =>
-                      (s.name || '').toLowerCase().includes(subjectSearch.toLowerCase()) ||
-                      (s.code || '').toLowerCase().includes(subjectSearch.toLowerCase())
-                    );
-                    filtered = [...filtered].sort((a: any, b: any) => {
-                      switch (subjectSort) {
-                        case 'name-asc': return (a.name || '').localeCompare(b.name || '');
-                        case 'name-desc': return (b.name || '').localeCompare(a.name || '');
-                        case 'code-asc': return (a.code || '').localeCompare(b.code || '');
-                        case 'code-desc': return (b.code || '').localeCompare(a.code || '');
-                        case 'status': return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
-                        case 'recent': return (b.id ?? 0) - (a.id ?? 0);
-                        default: return 0;
-                      }
-                    });
-
-                    const paged = getPaginatedData(filtered, subjectPage);
-
-                    return (
-                      <>
-                        <div className="grid gap-3">
-                          {filtered.length === 0 ? (
-                            <div className="border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
-                              No subjects available for this class level.
-                            </div>
-                          ) : (
-                            paged.map((subject: any) => (
-                              <div key={subject.id} className={`border rounded-md p-3 hover:shadow-sm transition-shadow ${selectedSubjects.includes(subject.id) ? 'bg-blue-50 border-blue-300' : 'border-gray-200'}`}>
-                                <div className="flex justify-between items-start gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedSubjects.includes(subject.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedSubjects([...selectedSubjects, subject.id]);
-                                      } else {
-                                        setSelectedSubjects(selectedSubjects.filter(id => id !== subject.id));
-                                      }
-                                    }}
-                                    className="mt-1 w-4 h-4 cursor-pointer"
-                                  />
-                                  <div className="flex-1">
-                                    <div className="flex flex-col gap-1.5 mb-1">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <h3 className="text-base font-semibold text-gray-800">{subject.name}</h3>
-                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                                          subject.subject_type === 'core' 
-                                            ? 'bg-orange-100 text-orange-800 border border-orange-200' 
-                                            : 'bg-blue-100 text-blue-800 border border-blue-200'
-                                        }`}>
-                                          {subject.subject_type === 'core' ? 'Core' : 'Elective'}
-                                        </span>
-                                        {subject.class_level && (
-                                          <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
-                                            {subject.class_level}
-                                          </span>
-                                        )}
-                                    <button
-                                      onClick={() => handleToggleSubjectStatus(subject)}
-                                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-all hover:shadow-sm ${
-                                        subject.is_active ? 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                                      }`}
-                                      title="Click to toggle status"
-                                    >
-                                      <div className={`w-2 h-2 rounded-full ${
-                                        subject.is_active ? 'bg-green-600' : 'bg-gray-400'
-                                      }`}></div>
-                                      {subject.is_active ? 'Active' : 'Inactive'}
-                                    </button>
-                                  </div>
-                                  <p className="text-xs text-gray-600">
-                                    Code: <span className="font-medium">{subject.code}</span>
-                                  </p>
-                                  <p className="text-xs text-gray-600">
-                                    {subject.subject_type === 'core' 
-                                      ? '✓ Required for all students and departments' 
-                                      : '○ Optional - students choose based on department/interest'}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex gap-1.5">
-                                <button
-                                  onClick={() => handleEditSubject(subject)}
-                                  className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
-                                  title="Edit"
-                                >
-                                  <i className='bx bx-edit text-lg'></i>
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteSubject(subject.id)}
-                                  className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1.5 rounded-md transition-colors"
-                                  title="Delete"
-                                >
-                                  <i className='bx bx-trash text-lg'></i>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    {/* Pagination */}
-                    {getTotalPages(filtered.length) > 1 && (
-                      <div className="mt-4 flex items-center justify-between border-t pt-3">
-                        <div className="text-xs text-gray-600">
-                          Showing {((subjectPage - 1) * itemsPerPage) + 1} to {Math.min(subjectPage * itemsPerPage, filtered.length)} of {filtered.length}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handlePageChange(subjectPage - 1, setSubjectPage, getTotalPages(filtered.length))}
-                            disabled={subjectPage === 1}
-                            className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                          >
-                            <i className='bx bx-chevron-left'></i>
-                          </button>
-                          {getPageNumbers(subjectPage, getTotalPages(filtered.length)).map((page: any, idx: number) => (
-                            page === '...' ? (
-                              <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+              {/* Subjects Table + Pagination */}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1100px] text-xs border-collapse bg-white">
+                  <thead>
+                    <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
+                      <th className="px-3 py-2 w-10">
+                        <input
+                          type="checkbox"
+                          checked={pagedSubjects.length > 0 && pagedSubjects.every((subject: any) => selectedSubjects.includes(subject.id))}
+                          onChange={handleSelectAllSubjects}
+                          className="w-4 h-4 cursor-pointer"
+                          title="Select current page subjects"
+                        />
+                      </th>
+                      <th className="px-3 py-2 text-left font-semibold">Subject</th>
+                      <th className="px-3 py-2 text-left font-semibold">Code</th>
+                      <th className="px-3 py-2 text-left font-semibold">Class Level</th>
+                      <th className="px-3 py-2 text-left font-semibold">Type</th>
+                      <th className="px-3 py-2 text-left font-semibold">Description</th>
+                      <th className="px-3 py-2 text-left font-semibold">Status</th>
+                      <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedSubjects.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-6 text-center text-gray-500 text-sm">
+                          No subjects available for the current filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      pagedSubjects.map((subject: any, index: number) => (
+                        <tr
+                          key={subject.id}
+                          className={`border-b border-gray-200 transition-colors ${
+                            index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                          } hover:bg-blue-50/60 ${selectedSubjects.includes(subject.id) ? 'bg-blue-50' : ''}`}
+                        >
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedSubjects.includes(subject.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedSubjects((prev) => (prev.includes(subject.id) ? prev : [...prev, subject.id]));
+                                } else {
+                                  setSelectedSubjects((prev) => prev.filter((id) => id !== subject.id));
+                                }
+                              }}
+                              className="w-4 h-4 cursor-pointer"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-sm text-gray-900 font-medium">{subject.name}</td>
+                          <td className="px-3 py-2 text-sm text-gray-700">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-[11px] font-semibold">
+                              {subject.code}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-sm text-gray-700">{subject.class_level || '-'}</td>
+                          <td className="px-3 py-2 text-sm text-gray-700">
+                            {subject.subject_type === 'core' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-800 border border-orange-200">
+                                Core
+                              </span>
                             ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                                Elective
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-gray-600 max-w-[360px]">
+                            <span className="truncate block" title={subject.description || ''}>
+                              {subject.description || (subject.subject_type === 'core'
+                                ? 'Required for all students in this class level.'
+                                : 'Optional subject for selected students.')}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              onClick={() => handleToggleSubjectStatus(subject)}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
+                                subject.is_active
+                                  ? 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+                                  : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                              }`}
+                              title="Click to toggle status"
+                            >
+                              {subject.is_active ? 'Active' : 'Inactive'}
+                            </button>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-1.5">
                               <button
-                                key={page}
-                                onClick={() => setSubjectPage(page as number)}
-                                className={`px-3 py-1 border rounded-md text-xs ${
-                                  page === subjectPage
-                                    ? 'bg-blue-600 text-white border-blue-600'
-                                    : 'border-gray-300 hover:bg-gray-50'
-                                }`}
+                                onClick={() => handleEditSubject(subject)}
+                                className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                                title="Edit subject"
                               >
-                                {page}
+                                <i className='bx bx-edit text-base'></i>
                               </button>
-                            )
-                          ))}
-                          <button
-                            onClick={() => handlePageChange(subjectPage + 1, setSubjectPage, getTotalPages(filtered.length))}
-                            disabled={subjectPage === getTotalPages(filtered.length)}
-                            className="px-3 py-1 border border-gray-300 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                          >
-                            <i className='bx bx-chevron-right'></i>
-                          </button>
-                        </div>
-                      </div>
+                              <button
+                                onClick={() => handleDeleteSubject(subject.id)}
+                                className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200"
+                                title="Delete subject"
+                              >
+                                <i className='bx bx-trash text-base'></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
                     )}
-                  </>
-                );
-                  })()}
-                </div>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="bg-gray-50/60 border-t border-gray-200 p-4">
+                {filteredSubjects.length > 0 && (
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                    <div className="text-gray-600">
+                      Showing {((subjectPage - 1) * itemsPerPage) + 1} to {Math.min(subjectPage * itemsPerPage, filteredSubjects.length)} of {filteredSubjects.length}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setSubjectPage(Math.max(1, subjectPage - 1))}
+                        disabled={subjectPage === 1}
+                        className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                      >
+                        Prev
+                      </button>
+                      {getPageNumbers(subjectPage, getTotalPages(filteredSubjects.length)).map((page: any, idx: number) => (
+                        page === '...' ? (
+                          <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
+                        ) : (
+                          <button
+                            key={page}
+                            onClick={() => setSubjectPage(page as number)}
+                            className={`min-w-[34px] px-2.5 py-1.5 border rounded-md ${
+                              page === subjectPage
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        )
+                      ))}
+                      <button
+                        onClick={() => setSubjectPage(Math.min(getTotalPages(filteredSubjects.length), subjectPage + 1))}
+                        disabled={subjectPage === getTotalPages(filteredSubjects.length)}
+                        className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -2155,7 +2274,7 @@ const SubjectManagementNew: React.FC = () => {
                   }}
                   className="text-gray-400 hover:text-gray-600 text-2xl transition-colors"
                 >
-                  ×
+                  Ã—
                 </button>
               </div>
 
@@ -2166,29 +2285,29 @@ const SubjectManagementNew: React.FC = () => {
                   </p>
                   {uploadModal === 'departments' && (
                     <ul className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200 space-y-1 mb-3">
-                      <li>• <strong>name</strong> (required)</li>
-                      <li>• code (required)</li>
-                      <li>• description (optional)</li>
-                      <li>• class_level (required): must match an existing class name (e.g., “SSS 1”)</li>
-                      <li>• is_active (optional, default: 1)</li>
+                      <li>â€¢ <strong>name</strong> (required)</li>
+                      <li>â€¢ code (required)</li>
+                      <li>â€¢ description (optional)</li>
+                      <li>â€¢ class_level (required): must match an existing class name (e.g., â€œSSS 1â€)</li>
+                      <li>â€¢ is_active (optional, default: 1)</li>
                     </ul>
                   )}
                   {uploadModal === 'classes' && (
                     <ul className="text-xs text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-1.5">
-                      <li>• <strong>name</strong> (required)</li>
-                      <li>• <strong>department_id</strong> (required)</li>
-                      <li>• <strong>description</strong> (optional)</li>
-                      <li>• <strong>capacity</strong> (optional, default: 30)</li>
-                      <li>• <strong>is_active</strong> (optional, default: 1)</li>
+                      <li>â€¢ <strong>name</strong> (required)</li>
+                      <li>â€¢ <strong>department_id</strong> (required)</li>
+                      <li>â€¢ <strong>description</strong> (optional)</li>
+                      <li>â€¢ <strong>capacity</strong> (optional, default: 30)</li>
+                      <li>â€¢ <strong>is_active</strong> (optional, default: 1)</li>
                     </ul>
                   )}
                   {uploadModal === 'subjects' && (
                     <ul className="text-xs text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200 space-y-1.5">
-                      <li>• <strong>name</strong> (required)</li>
-                      <li>• <strong>code</strong> (required)</li>
-                      <li>• <strong>class_level</strong> (required: e.g., "SSS 1", "JSS 2")</li>
-                      <li>• <strong>subject_type</strong> (required: core/elective)</li>
-                      <li>• <strong>description</strong> (optional)</li>
+                      <li>â€¢ <strong>name</strong> (required)</li>
+                      <li>â€¢ <strong>code</strong> (required)</li>
+                      <li>â€¢ <strong>class_level</strong> (required: e.g., "SSS 1", "JSS 2")</li>
+                      <li>â€¢ <strong>subject_type</strong> (required: core/elective)</li>
+                      <li>â€¢ <strong>description</strong> (optional)</li>
                     </ul>
                   )}
                 </div>
@@ -2252,3 +2371,4 @@ const SubjectManagementNew: React.FC = () => {
 };
 
 export default SubjectManagementNew;
+
