@@ -117,11 +117,7 @@ const App: React.FC = () => {
         />
         <Route
           path="/offline-exam/:examId"
-          element={
-            <RequireAuth>
-              <OfflineExamPortal />
-            </RequireAuth>
-          }
+          element={<OfflineExamPortal />}
         />
         
         {/* Admin Routes */}
@@ -129,7 +125,7 @@ const App: React.FC = () => {
           path="/admin/*"
           element={
             <RequireAuth>
-              <RequireRole roles={["Admin","Main Admin"]}>
+              <RequireRole roles={["Admin","Main Admin","Teacher"]}>
                 <AdminDashboard />
               </RequireRole>
             </RequireAuth>

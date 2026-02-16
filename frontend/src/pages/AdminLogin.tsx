@@ -2,11 +2,23 @@ import React, { useState, FormEvent, ChangeEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import useAuthStore from '../store/authStore';
+import { checkReachability } from '../services/reachability';
+import offlineDB from '../services/offlineDB';
+import syncService from '../services/syncService';
 
 interface LoginFormData {
   email: string;
   password: string;
 }
+
+const hashPin = async (input: string): Promise<string> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+};
 
 const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
@@ -48,15 +60,82 @@ const AdminLogin: React.FC = () => {
     setLoading(true);
     setError('');
     try {
+      const reachability = await checkReachability();
+
+      if (reachability.status === 'OFFLINE') {
+        const identifier = formData.email.trim().toLowerCase();
+        const pin = formData.password.trim();
+
+        const offlineUser = await offlineDB.offlineUsers
+          .where('identifier')
+          .equals(identifier)
+          .and((row) => ['admin', 'main admin', 'teacher'].includes(String(row.role || '').toLowerCase()))
+          .first();
+
+        if (!offlineUser) {
+          setError('Offline login failed. Supervisor account not cached on this device.');
+          return;
+        }
+
+        if (!offlineUser.isActive || !offlineUser.offlineLoginEnabled) {
+          setError('Offline login is disabled for this account.');
+          return;
+        }
+
+        if (!offlineUser.pinHash) {
+          setError('Offline PIN is not configured for this account.');
+          return;
+        }
+
+        const pinHash = await hashPin(pin);
+        if (pinHash !== offlineUser.pinHash) {
+          setError('Invalid offline PIN.');
+          return;
+        }
+
+        const lastSyncAt = new Date(offlineUser.lastSyncAt || 0).getTime();
+        const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
+        if (!lastSyncAt || Date.now() - lastSyncAt > maxAgeMs) {
+          setError('Offline login cache expired. Reconnect to refresh supervisor access.');
+          return;
+        }
+
+        const roleName = offlineUser.role || 'Admin';
+        const offlineAuthUser = {
+          id: offlineUser.userId,
+          name: offlineUser.displayName || offlineUser.identifier,
+          email: offlineUser.identifier,
+          roles: [{ id: offlineUser.userId, name: roleName, guard_name: 'web', created_at: '', updated_at: '' }],
+          two_factor_enabled: false,
+          created_at: '',
+          updated_at: '',
+        };
+
+        login(offlineAuthUser as any, `offline-cbt-${offlineUser.userId}`);
+        localStorage.setItem('OFFLINE_CBT_MODE', '1');
+        localStorage.setItem('offline_supervisor_user', JSON.stringify({
+          userId: offlineUser.userId,
+          role: roleName,
+          identifier: offlineUser.identifier,
+          lastSyncAt: offlineUser.lastSyncAt,
+        }));
+
+        navigate('/admin/exam-access');
+        return;
+      }
+
       const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, {
         ...formData,
         login_context: 'admin',
       });
       const { token, user } = res.data;
       login(user, token);
+      localStorage.removeItem('OFFLINE_CBT_MODE');
 
       const isOnlyTeacher = user.roles?.some((r: any) => r.name?.toLowerCase() === 'teacher') &&
         !user.roles?.some((r: any) => ['admin', 'main admin'].includes(r.name?.toLowerCase()));
+
+      syncService.runFullSync();
 
       if (isOnlyTeacher) {
         navigate('/admin');
@@ -138,6 +217,9 @@ const AdminLogin: React.FC = () => {
           <div className="lg:w-3/5 p-8">
             <h2 className="text-xl font-semibold text-white mb-1">Welcome Back</h2>
             <p className="text-gray-400 text-sm mb-6">Sign in to your admin account</p>
+            <p className="text-gray-500 text-xs mb-4">
+              If network is unavailable, use your configured Offline PIN in the password field.
+            </p>
 
             {error && (
               <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">

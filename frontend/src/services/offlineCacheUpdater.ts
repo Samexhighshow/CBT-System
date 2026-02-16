@@ -1,5 +1,6 @@
 import { examApi } from './laravelApi';
 import offlineDB, { ExamPackage } from './offlineDB';
+import { checkReachability } from './reachability';
 
 interface RefreshSummary {
   total: number;
@@ -11,7 +12,8 @@ const normalizePackage = (payload: any) => payload?.data ?? payload;
 
 export const offlineCacheUpdater = {
   async refreshAllCachedExamPackages(): Promise<RefreshSummary> {
-    if (!navigator.onLine) {
+    const reachability = await checkReachability();
+    if (reachability.status === 'OFFLINE') {
       return { total: 0, refreshed: 0, failed: 0 };
     }
 

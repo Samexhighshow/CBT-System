@@ -1,19 +1,25 @@
 import React, { useEffect } from 'react';
 import syncService from '../services/syncService';
+import { checkReachability } from '../services/reachability';
 
 const SyncBootstrap: React.FC = () => {
   useEffect(() => {
     syncService.start();
-    syncService.syncNow();
+    syncService.runFullSync().catch(() => undefined);
 
-    const handleOnline = () => {
-      syncService.syncNow();
+    const handleMaybeReachable = async () => {
+      const state = await checkReachability();
+      if (state.status !== 'OFFLINE') {
+        syncService.runFullSync().catch(() => undefined);
+      }
     };
 
-    window.addEventListener('online', handleOnline);
+    window.addEventListener('online', handleMaybeReachable);
+    window.addEventListener('focus', handleMaybeReachable);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('online', handleMaybeReachable);
+      window.removeEventListener('focus', handleMaybeReachable);
       syncService.stop();
     };
   }, []);

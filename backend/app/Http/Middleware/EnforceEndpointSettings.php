@@ -25,6 +25,8 @@ class EnforceEndpointSettings
             'api/exam-access*',
             'api/cbt*',
             'api/offline*',
+            'api/sync*',
+            'api/local-sync*',
             'api/admin/exams/today',
             'api/admin/exam-access*',
         ],

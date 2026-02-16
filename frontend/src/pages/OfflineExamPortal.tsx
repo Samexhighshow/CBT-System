@@ -1,6 +1,6 @@
 /* eslint-disable react/forbid-dom-props */
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Button, Card, Timer } from '../components';
 import { getCurrentStudentProfile } from './student/studentData';
 import { showError, showSuccess, showWarning } from '../utils/alerts';
@@ -9,6 +9,7 @@ import { useOfflineExam, OfflineAnswerInput } from '../hooks/useOfflineExam';
 import useConnectivity from '../hooks/useConnectivity';
 import { getReachableBaseUrl } from '../services/reachability';
 import offlineDB from '../services/offlineDB';
+import syncService from '../services/syncService';
 
 interface Question {
   id: number;
@@ -38,6 +39,10 @@ interface ExamPackagePayload {
 const OfflineExamPortal: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const query = new URLSearchParams(location.search);
+  const preferredAttemptId = query.get('attemptId');
+  const preferredStudentId = query.get('studentId');
   
   const [exam, setExam] = useState<Exam | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -47,7 +52,7 @@ const OfflineExamPortal: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [examStartTime] = useState(new Date().toISOString());
   const [showViolationWarning, setShowViolationWarning] = useState(false);
-  const [studentId, setStudentId] = useState<number | null>(null);
+  const [studentId, setStudentId] = useState<number | null>(preferredStudentId ? Number(preferredStudentId) : null);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
 
@@ -66,7 +71,7 @@ const OfflineExamPortal: React.FC = () => {
     saveAnswer,
     submitAttempt,
     loadAnswers,
-  } = useOfflineExam(examIdNum, studentId);
+  } = useOfflineExam(examIdNum, studentId, preferredAttemptId);
   
   // Cheating detection
   const {
@@ -98,10 +103,16 @@ const OfflineExamPortal: React.FC = () => {
   // Load exam data
   useEffect(() => {
     loadExamFromSourceOrCache();
-  }, [examId, connectivity.status]);
+  }, [examId, connectivity.status, studentId, preferredAttemptId]);
 
   useEffect(() => {
     const loadStudentId = async () => {
+      if (preferredStudentId && Number(preferredStudentId) > 0) {
+        setStudentId(Number(preferredStudentId));
+        localStorage.setItem('student_id', String(preferredStudentId));
+        return;
+      }
+
       const cached = localStorage.getItem('student_id');
       if (cached) {
         setStudentId(Number(cached));
@@ -124,7 +135,7 @@ const OfflineExamPortal: React.FC = () => {
     };
 
     loadStudentId();
-  }, [connectivity.status]);
+  }, [connectivity.status, preferredStudentId]);
 
   useEffect(() => {
     const loadSyncMeta = async () => {
@@ -253,15 +264,11 @@ const OfflineExamPortal: React.FC = () => {
     if (!exam) return;
 
     setShowSubmitModal(false);
-    
-    const answersArray = Object.entries(answers).map(([questionId, optionId]) => ({
-      questionId: parseInt(questionId, 10),
-      answer: { optionId },
-    }));
 
     try {
-      await submitAttempt();
-      showSuccess('Submitted locally. Pending sync will upload when reachable.');
+      const submitted = await submitAttempt();
+      const pending = await syncService.pendingCount();
+      showSuccess(`Submitted locally. Receipt: ${submitted?.receiptCode || 'N/A'}. Pending sync: ${pending}`);
       navigate('/student/exams');
     } catch (error) {
       console.error('Submission error:', error);

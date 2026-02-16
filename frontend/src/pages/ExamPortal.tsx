@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Modal, Timer } from '../components';
 import { api } from '../services/api';
-import Dexie from 'dexie';
 import { showError, showSuccess } from '../utils/alerts';
 import { getCurrentStudentProfile } from './student/studentData';
+import offlineDB from '../services/offlineDB';
 
 interface Question {
   id: number;
@@ -25,16 +25,6 @@ interface Exam {
   questions: Question[];
 }
 
-// IndexedDB setup for offline answer storage
-class ExamDB extends Dexie {
-  answers!: Dexie.Table<{ id?: number; examId: number; questionId: number; answerId: number; updatedAt: number }, number>;
-  constructor() {
-    super('ExamDB');
-    this.version(1).stores({ answers: '++id,examId,questionId,updatedAt' });
-  }
-}
-const examDB = new ExamDB();
-
 const ExamPortal: React.FC = () => {
   const { examId } = useParams<{ examId: string }>();
   const navigate = useNavigate();
@@ -47,6 +37,7 @@ const ExamPortal: React.FC = () => {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const syncLock = useRef(false);
+  const answerCacheAttemptId = `legacy-exam-${examId || '0'}`;
 
   const loadExam = React.useCallback(async () => {
     try {
@@ -118,14 +109,14 @@ const ExamPortal: React.FC = () => {
           final: true,
         });
 
-        await examDB.answers.where('examId').equals(Number(examId)).delete();
+        await offlineDB.answers.where('attemptId').equals(answerCacheAttemptId).delete();
         showSuccess('Exam submitted!');
         navigate('/student');
       } catch (e) {
         showError('Submission failed. Answers remain saved locally and will sync.');
       }
     })();
-  }, [answers, attemptId, examId, navigate]);
+  }, [answerCacheAttemptId, answers, attemptId, examId, navigate]);
 
   const handleSelectAnswer = (questionId: number, optionId: number) => {
     setAnswers(prev => ({
@@ -133,7 +124,12 @@ const ExamPortal: React.FC = () => {
       [questionId]: optionId
     }));
     // Save locally for offline resilience
-    examDB.answers.put({ examId: Number(examId), questionId, answerId: optionId, updatedAt: Date.now() });
+    offlineDB.answers.put({
+      attemptId: answerCacheAttemptId,
+      questionId,
+      answer: { optionId },
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const handleNext = () => {
@@ -156,20 +152,20 @@ const ExamPortal: React.FC = () => {
     syncLock.current = true;
     try {
       if (!attemptId) return;
-      const pending = await examDB.answers.where('examId').equals(Number(examId)).toArray();
+      const pending = await offlineDB.answers.where('attemptId').equals(answerCacheAttemptId).toArray();
       if (pending.length === 0) return;
       await api.post(`/exams/${examId}/submit`, {
         attempt_id: attemptId,
-        answers: pending.map(p => ({ question_id: p.questionId, option_id: p.answerId })),
+        answers: pending.map(p => ({ question_id: p.questionId, option_id: p.answer?.optionId })),
         final: false,
       });
-      await examDB.answers.where('examId').equals(Number(examId)).delete();
+      await offlineDB.answers.where('attemptId').equals(answerCacheAttemptId).delete();
     } catch (e) {
       // keep local; retry later
     } finally {
       syncLock.current = false;
     }
-  }, [attemptId, examId]);
+  }, [answerCacheAttemptId, attemptId, examId]);
 
   // periodic sync to backend
   useEffect(() => {

@@ -57,7 +57,7 @@ class RolePermissionSyncService
     public function listAdminAssignableRoles(): Collection
     {
         return Role::query()
-            ->where('guard_name', 'web')
+            ->whereIn('guard_name', ['web', 'api'])
             ->whereRaw('LOWER(name) != ?', ['student'])
             ->orderBy('name')
             ->get(['id', 'name']);

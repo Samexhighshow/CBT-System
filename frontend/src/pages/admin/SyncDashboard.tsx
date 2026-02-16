@@ -4,7 +4,7 @@ import offlineDB, { AttemptRecord, SyncQueueItem } from '../../services/offlineD
 import syncService from '../../services/syncService';
 
 interface MetaMap {
-  [key: string]: string;
+  [key: string]: any;
 }
 
 const downloadJson = (fileName: string, data: unknown): void => {
@@ -65,7 +65,7 @@ const SyncDashboard: React.FC = () => {
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      await syncService.syncNow();
+      await syncService.runFullSync();
     } finally {
       setSyncing(false);
       loadData();
@@ -90,7 +90,7 @@ const SyncDashboard: React.FC = () => {
       offlineDB.attempts.get(attemptId),
       offlineDB.answers.where('attemptId').equals(attemptId).toArray(),
       offlineDB.cheatLogs.where('attemptId').equals(attemptId).toArray(),
-      offlineDB.syncQueue.where('attemptId').equals(attemptId).toArray(),
+      offlineDB.syncQueue.where('entityId').equals(attemptId).toArray(),
     ]);
 
     const payload = {
@@ -107,7 +107,11 @@ const SyncDashboard: React.FC = () => {
 
   const handleExportPending = async () => {
     const pending = queueItems.filter((item) => item.status === 'PENDING');
-    const uniqueAttempts = Array.from(new Set(pending.map((item) => item.attemptId)));
+    const uniqueAttempts = Array.from(new Set(
+      pending
+        .filter((item) => item.type === 'SUBMIT_ATTEMPT')
+        .map((item) => item.entityId)
+    ));
     const exports = [] as Array<{ attemptId: string; payload: unknown }>;
 
     for (const attemptId of uniqueAttempts) {
@@ -115,7 +119,7 @@ const SyncDashboard: React.FC = () => {
         offlineDB.attempts.get(attemptId),
         offlineDB.answers.where('attemptId').equals(attemptId).toArray(),
         offlineDB.cheatLogs.where('attemptId').equals(attemptId).toArray(),
-        offlineDB.syncQueue.where('attemptId').equals(attemptId).toArray(),
+        offlineDB.syncQueue.where('entityId').equals(attemptId).toArray(),
       ]);
 
       exports.push({
@@ -210,7 +214,8 @@ const SyncDashboard: React.FC = () => {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b">
-                  <th className="py-2 pr-4">Attempt</th>
+                  <th className="py-2 pr-4">Entity</th>
+                  <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Exam</th>
                   <th className="py-2 pr-4">Student</th>
                   <th className="py-2 pr-4">Status</th>
@@ -223,16 +228,17 @@ const SyncDashboard: React.FC = () => {
               <tbody>
                 {queueItems.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={8} className="py-4 text-center text-gray-500">
+                    <td colSpan={9} className="py-4 text-center text-gray-500">
                       No queued sync items found.
                     </td>
                   </tr>
                 )}
                 {queueItems.map((item) => {
-                  const attempt = attemptMap.get(item.attemptId);
+                  const attempt = item.type === 'SUBMIT_ATTEMPT' ? attemptMap.get(item.entityId) : undefined;
                   return (
                     <tr key={item.id} className="border-b last:border-b-0">
-                      <td className="py-2 pr-4 font-mono text-xs break-all">{item.attemptId}</td>
+                      <td className="py-2 pr-4 font-mono text-xs break-all">{item.entityId}</td>
+                      <td className="py-2 pr-4 text-xs">{item.type}</td>
                       <td className="py-2 pr-4">{attempt?.examId ?? '-'}</td>
                       <td className="py-2 pr-4">{attempt?.studentId ?? '-'}</td>
                       <td className="py-2 pr-4">{attempt?.status ?? '-'}</td>
@@ -248,9 +254,10 @@ const SyncDashboard: React.FC = () => {
                       <td className="py-2">
                         <div className="flex flex-wrap gap-2">
                           <Button
-                            onClick={() => handleExportAttempt(item.attemptId)}
+                            onClick={() => handleExportAttempt(item.entityId)}
                             variant="outline"
                             size="sm"
+                            disabled={item.type !== 'SUBMIT_ATTEMPT'}
                           >
                             Export
                           </Button>

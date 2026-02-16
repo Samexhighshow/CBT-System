@@ -139,7 +139,16 @@ class OfflineExamController extends Controller
 
                 $answerData = $answer['answer'] ?? [];
                 $optionId = isset($answerData['optionId']) ? (int) $answerData['optionId'] : null;
-                $answerText = $answerData['text'] ?? null;
+                $optionIds = collect($answerData['optionIds'] ?? [])
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+                $answerText = $answerData['answerText'] ?? $answerData['text'] ?? null;
+                if ($answerText !== null) {
+                    $answerText = (string) $answerText;
+                }
 
                 $payload = [
                     'attempt_id' => $attempt->id,
@@ -157,8 +166,31 @@ class OfflineExamController extends Controller
                     $correctOptionIds = $question->options
                         ->where('is_correct', true)
                         ->pluck('id')
+                        ->map(fn ($id) => (int) $id)
                         ->all();
-                    $isCorrect = $optionId ? in_array($optionId, $correctOptionIds, true) : false;
+
+                    $isCorrect = false;
+                    if (count($optionIds) > 0) {
+                        $selected = $optionIds;
+                        sort($selected);
+                        $correct = $correctOptionIds;
+                        sort($correct);
+                        $isCorrect = $selected === $correct;
+                        $payload['answer_text'] = json_encode(['option_ids' => $selected], JSON_UNESCAPED_UNICODE);
+                        $payload['option_id'] = null;
+                    } elseif ($optionId) {
+                        $isCorrect = in_array($optionId, $correctOptionIds, true);
+                    } elseif ($answerText !== null && trim($answerText) !== '') {
+                        $normalized = strtolower(trim($answerText));
+                        $matching = $question->options->first(function ($opt) use ($normalized) {
+                            return strtolower(trim((string) ($opt->option_text ?? ''))) === $normalized;
+                        });
+                        if ($matching) {
+                            $payload['option_id'] = (int) $matching->id;
+                            $isCorrect = in_array((int) $matching->id, $correctOptionIds, true);
+                        }
+                    }
+
                     $marks = (float) ($question->marks ?? 1);
                     $payload['is_correct'] = $isCorrect;
                     $payload['marks_awarded'] = $isCorrect ? $marks : 0.0;
@@ -427,9 +459,13 @@ class OfflineExamController extends Controller
             return false;
         }
 
-        return !in_array($question->question_type, [
+        $type = strtolower((string) $question->question_type);
+
+        return !in_array($type, [
             'multiple_choice_single',
             'multiple_choice_multiple',
+            'multiple_choice',
+            'mcq',
             'true_false',
         ], true);
     }

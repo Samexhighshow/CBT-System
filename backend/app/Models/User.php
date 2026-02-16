@@ -17,6 +17,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'name',
         'email',
         'password',
+        'offline_login_enabled',
+        'offline_pin_hash',
         'profile_picture',
         'phone_number',
         'two_factor_enabled',
@@ -29,10 +31,12 @@ class User extends Authenticatable implements MustVerifyEmail
 
     protected $hidden = [
         'password',
-        'remember_token'
+        'remember_token',
+        'offline_pin_hash',
     ];
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'offline_login_enabled' => 'boolean',
     ];
 }

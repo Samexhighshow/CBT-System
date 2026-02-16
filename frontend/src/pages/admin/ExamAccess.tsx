@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { showSuccess, showError } from '../../utils/alerts';
+import useConnectivity from '../../hooks/useConnectivity';
+import offlineDB, { AccessCodeRecord } from '../../services/offlineDB';
+import syncService from '../../services/syncService';
 
 interface Exam {
   id: number;
@@ -18,17 +21,30 @@ interface Student {
 }
 
 interface GeneratedAccess {
-  id: number;
+  id: number | string;
+  local_code_id?: string;
   student_reg_number: string;
   student_name: string;
   exam_title: string;
   access_code: string;
+  status?: 'NEW' | 'USED' | 'VOID';
   generated_at: string;
   used: boolean;
   used_at: string | null; 
 }
 
+const ACCESS_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+const generateAccessCode = (): string => {
+  let value = '';
+  for (let i = 0; i < 8; i += 1) {
+    value += ACCESS_CODE_ALPHABET[Math.floor(Math.random() * ACCESS_CODE_ALPHABET.length)];
+  }
+  return value;
+};
+
 const ExamAccess: React.FC = () => {
+  const connectivity = useConnectivity();
   const [exams, setExams] = useState<Exam[]>([]);
   const [selectedExam, setSelectedExam] = useState<number | null>(null);
   const [regNumber, setRegNumber] = useState<string>('');
@@ -39,31 +55,112 @@ const ExamAccess: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterUsed, setFilterUsed] = useState<'all' | 'used' | 'unused'>('all');
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
   useEffect(() => {
     fetchTodayExams();
     fetchGeneratedAccess();
+  }, [connectivity.status]);
+
+  useEffect(() => {
+    const refreshPending = async () => {
+      const pending = await syncService.pendingCount();
+      setPendingSyncCount(pending);
+    };
+
+    refreshPending();
+    const timer = window.setInterval(refreshPending, 5000);
+    return () => window.clearInterval(timer);
   }, []);
+
+  const toExamOption = (row: any): Exam => ({
+    id: Number(row.id ?? row.examId),
+    title: String(row.title || ''),
+    subject_name: String(row.subject_name || row.subject || ''),
+    date: String(row.date || row.startsAt || ''),
+    start_time: String(row.start_time || row.startsAt || ''),
+    end_time: String(row.end_time || row.endsAt || ''),
+  });
+
+  const loadLocalAccessHistory = async () => {
+    const [codes, students, examRows] = await Promise.all([
+      offlineDB.accessCodes.orderBy('updatedAt').reverse().toArray(),
+      offlineDB.students.toArray(),
+      offlineDB.exams.toArray(),
+    ]);
+
+    const studentMap = new Map(students.map((row) => [row.studentId, row]));
+    const examMap = new Map(examRows.map((row) => [row.examId, row]));
+
+    const mapped: GeneratedAccess[] = codes.map((row) => {
+      const student = studentMap.get(row.studentId);
+      const exam = examMap.get(row.examId);
+      return {
+        id: row.codeId,
+        local_code_id: row.codeId,
+        student_reg_number: student?.matricOrCandidateNo || `SID-${row.studentId}`,
+        student_name: student?.fullName || `Student #${row.studentId}`,
+        exam_title: exam?.title || `Exam #${row.examId}`,
+        access_code: row.code,
+        status: row.status,
+        generated_at: row.issuedAt,
+        used: row.status !== 'NEW',
+        used_at: row.usedAt || null,
+      };
+    });
+
+    setGeneratedAccess(mapped);
+  };
 
   const fetchTodayExams = async () => {
     try {
-      const response = await api.get('/admin/exams/today');
-      setExams(response.data.data || []);
+      if (connectivity.status !== 'OFFLINE') {
+        await syncService.syncDown();
+        const response = await api.get('/admin/exams/today');
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+        setExams(rows.map(toExamOption));
+        return;
+      }
+
+      const localExams = await offlineDB.exams.toArray();
+      setExams(localExams.map(toExamOption));
     } catch (error) {
       console.error('Failed to fetch today exams:', error);
-      // Don't show error alert - it's normal if no exams are scheduled
-      setExams([]);
+      const localExams = await offlineDB.exams.toArray();
+      setExams(localExams.map(toExamOption));
     }
   };
 
   const fetchGeneratedAccess = async () => {
     try {
-      const response = await api.get('/admin/exam-access');
-      setGeneratedAccess(response.data.data || []);
+      if (connectivity.status !== 'OFFLINE') {
+        const response = await api.get('/admin/exam-access');
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+
+        const upserts: AccessCodeRecord[] = rows.map((row: any) => ({
+          codeId: String(row.code_id || row.client_code_id || `server-${row.id}`),
+          examId: Number(row.exam_id || row.examId || 0),
+          studentId: Number(row.student_id || row.studentId || 0),
+          code: String(row.access_code || '').toUpperCase(),
+          status: (row.status || (row.used ? 'USED' : 'NEW')) as 'NEW' | 'USED' | 'VOID',
+          issuedAt: String(row.generated_at || row.created_at || new Date().toISOString()),
+          usedAt: row.used_at || null,
+          attemptId: row.attempt_uuid || row.attempt_id || null,
+          usedByDeviceId: row.used_by_device_id || null,
+          updatedAt: String(row.updated_at || new Date().toISOString()),
+          serverId: Number(row.id || 0),
+        }));
+
+        if (upserts.length > 0) {
+          await offlineDB.accessCodes.bulkPut(
+            upserts.filter((row) => row.examId > 0 && row.studentId > 0 && row.code !== '')
+          );
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch exam access:', error);
-      // Don't show error alert - just log it
-      setGeneratedAccess([]);
+    } finally {
+      await loadLocalAccessHistory();
     }
   };
 
@@ -80,13 +177,48 @@ const ExamAccess: React.FC = () => {
 
     setSearching(true);
     try {
+      const normalizedReg = regNumber.toUpperCase().trim();
+
+      if (connectivity.status === 'OFFLINE') {
+        const student = await offlineDB.students
+          .where('matricOrCandidateNo')
+          .equals(normalizedReg)
+          .first();
+
+        if (!student) {
+          setFoundStudent(null);
+          setGeneratedCode(null);
+          showError('Student not available offline cache. Reconnect and sync first.');
+          return;
+        }
+
+        const localStudent: Student = {
+          id: student.studentId,
+          name: student.fullName,
+          reg_number: student.matricOrCandidateNo,
+        };
+        setFoundStudent(localStudent);
+        setGeneratedCode(null);
+        showSuccess(`Student found: ${localStudent.name}`);
+        return;
+      }
+
       const response = await api.get('/students/by-reg-number', {
-        params: { reg_number: regNumber.toUpperCase().trim() },
+        params: { reg_number: normalizedReg },
       });
       if (response.status === 200) {
         setFoundStudent(response.data);
         setGeneratedCode(null);
         showSuccess(`Student found: ${response.data.name}`);
+
+        await offlineDB.students.put({
+          studentId: Number(response.data.id),
+          matricOrCandidateNo: String(response.data.reg_number || normalizedReg),
+          fullName: String(response.data.name || ''),
+          classId: response.data.class_id ? Number(response.data.class_id) : null,
+          isActive: true,
+          updatedAt: new Date().toISOString(),
+        });
       }
     } catch (error: any) {
       console.error('Student not found:', error);
@@ -111,27 +243,115 @@ const ExamAccess: React.FC = () => {
 
     setLoading(true);
     try {
-      const response = await api.post('/admin/exam-access/generate', {
-        exam_id: selectedExam,
-        student_id: foundStudent.id,
+      const examId = Number(selectedExam);
+      const studentId = Number(foundStudent.id);
+      const now = new Date().toISOString();
+      const batchId = crypto.randomUUID();
+
+      const existingCodes = await offlineDB.accessCodes
+        .where('[examId+studentId]')
+        .equals([examId, studentId])
+        .toArray();
+
+      const existingNew = existingCodes.find((item) => item.status === 'NEW');
+      if (existingNew) {
+        const regenerate = window.confirm(
+          'An unused code already exists for this student. Click OK to regenerate (old code will be voided) or Cancel to keep existing.'
+        );
+
+        if (!regenerate) {
+          const selectedExamMeta = exams.find((item) => item.id === examId);
+          setGeneratedCode({
+            id: existingNew.codeId,
+            local_code_id: existingNew.codeId,
+            student_reg_number: foundStudent.reg_number,
+            student_name: foundStudent.name,
+            exam_title: selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam #${examId}`,
+            access_code: existingNew.code,
+            status: existingNew.status,
+            generated_at: existingNew.issuedAt,
+            used: false,
+            used_at: null,
+          });
+          showSuccess('Existing unused code retained.');
+          return;
+        }
+
+        await offlineDB.accessCodes.update(existingNew.codeId, {
+          status: 'VOID',
+          usedAt: now,
+          updatedAt: now,
+          batchId,
+        });
+      }
+
+      let code = generateAccessCode();
+      // Keep generated code unique inside this device cache.
+      for (let i = 0; i < 5; i += 1) {
+        const exists = await offlineDB.accessCodes.where('code').equals(code).first();
+        if (!exists) break;
+        code = generateAccessCode();
+      }
+
+      const codeId = crypto.randomUUID();
+      const selectedExamMeta = exams.find((item) => item.id === examId);
+
+      await offlineDB.students.put({
+        studentId,
+        matricOrCandidateNo: foundStudent.reg_number,
+        fullName: foundStudent.name,
+        classId: null,
+        isActive: true,
+        updatedAt: now,
       });
 
-      if (response.data.success) {
-        const accessData = response.data.data;
-        setGeneratedCode({
-          id: accessData.id || 0,
-          student_reg_number: accessData.student_reg_number,
-          student_name: accessData.student_name,
-          exam_title: accessData.exam_title,
-          access_code: accessData.access_code,
-          generated_at: accessData.generated_at,
-          used: false,
-          used_at: null,
+      if (selectedExamMeta) {
+        await offlineDB.exams.put({
+          examId,
+          title: selectedExamMeta.title,
+          classId: null,
+          status: 'scheduled',
+          startsAt: selectedExamMeta.start_time || null,
+          endsAt: selectedExamMeta.end_time || null,
+          durationMinutes: null,
+          updatedAt: now,
         });
-
-        showSuccess(response.data.message || 'Access code generated successfully!');
-        fetchGeneratedAccess();
       }
+
+      await offlineDB.accessCodes.put({
+        codeId,
+        examId,
+        studentId,
+        code,
+        status: 'NEW',
+        issuedAt: now,
+        updatedAt: now,
+        usedAt: null,
+        attemptId: null,
+        usedByDeviceId: null,
+        batchId,
+      });
+
+      await syncService.enqueue(String(examId), 'UPSERT_ACCESS_CODES', batchId);
+      if (connectivity.status !== 'OFFLINE') {
+        await syncService.syncNow();
+      }
+
+      setGeneratedCode({
+        id: codeId,
+        local_code_id: codeId,
+        student_reg_number: foundStudent.reg_number,
+        student_name: foundStudent.name,
+        exam_title: selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam #${examId}`,
+        access_code: code,
+        status: 'NEW',
+        generated_at: now,
+        used: false,
+        used_at: null,
+      });
+
+      showSuccess('Access code generated locally and queued for sync.');
+      await fetchGeneratedAccess();
     } catch (error: any) {
       console.error('Failed to generate access:', error);
       showError(
@@ -222,15 +442,36 @@ const ExamAccess: React.FC = () => {
     }
   };
 
-  const handleRevokeAccess = async (accessId: number) => {
+  const handleRevokeAccess = async (accessId: number | string) => {
     if (!window.confirm('Are you sure you want to revoke this access code?')) {
       return;
     }
 
     try {
-      await api.delete(`/admin/exam-access/${accessId}`);
+      const localId = String(accessId);
+      const localRecord = await offlineDB.accessCodes.get(localId);
+      const now = new Date().toISOString();
+
+      if (localRecord) {
+        await offlineDB.accessCodes.update(localId, {
+          status: 'VOID',
+          usedAt: now,
+          updatedAt: now,
+        });
+        await syncService.enqueue(String(localRecord.examId), 'UPSERT_ACCESS_CODES');
+      } else if (connectivity.status !== 'OFFLINE') {
+        await api.delete(`/admin/exam-access/${accessId}`);
+      } else {
+        showError('Cannot revoke this server-only code while offline.');
+        return;
+      }
+
+      if (connectivity.status !== 'OFFLINE') {
+        await syncService.syncNow();
+      }
+
       showSuccess('Access code revoked successfully');
-      fetchGeneratedAccess();
+      await fetchGeneratedAccess();
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to revoke access code');
     }
@@ -266,6 +507,14 @@ const ExamAccess: React.FC = () => {
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             Generate, re-generate, and print exam access codes for individual students
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700">
+              Connectivity: {connectivity.status}
+            </span>
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-700">
+              Pending sync: {pendingSyncCount}
+            </span>
+          </div>
         </div>
 
         {/* Main Form Card */}

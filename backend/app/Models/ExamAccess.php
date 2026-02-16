@@ -12,12 +12,16 @@ class ExamAccess extends Model
     protected $table = 'exam_access';
 
     protected $fillable = [
+        'client_code_id',
         'exam_id',
         'student_id',
         'student_reg_number',
         'access_code',
+        'status',
         'used',
         'used_at',
+        'used_by_device_id',
+        'attempt_uuid',
         'expires_at',
     ];
 
@@ -48,7 +52,8 @@ class ExamAccess extends Model
      */
     public function isValid(): bool
     {
-        return !$this->used && 
+        return !$this->used &&
+               strtoupper((string) $this->status) !== 'VOID' &&
                ($this->expires_at === null || $this->expires_at->isFuture());
     }
 
@@ -58,6 +63,7 @@ class ExamAccess extends Model
     public function markAsUsed(): void
     {
         $this->update([
+            'status' => 'USED',
             'used' => true,
             'used_at' => now(),
         ]);

@@ -5,15 +5,9 @@ import { saveStoredSession } from '../services/sessionStore';
 import { CbtOpenExam } from '../types';
 import { cbtFontFamily, cbtTheme } from '../theme';
 import FooterMinimal from '../../components/FooterMinimal';
-
-const getDeviceId = () => {
-  const key = 'cbt-device-id';
-  const existing = localStorage.getItem(key);
-  if (existing) return existing;
-  const generated = `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  localStorage.setItem(key, generated);
-  return generated;
-};
+import useConnectivity from '../../hooks/useConnectivity';
+import offlineDB, { ensureDeviceId } from '../../services/offlineDB';
+import syncService from '../../services/syncService';
 
 const formatExamWindow = (value?: string | null): string | null => {
   if (!value) return null;
@@ -41,6 +35,7 @@ const CbtExamLogin: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const connectivity = useConnectivity();
 
   useEffect(() => {
     const loadExam = async () => {
@@ -53,6 +48,32 @@ const CbtExamLogin: React.FC = () => {
       try {
         setLoadingExam(true);
         setError(null);
+
+        if (connectivity.status === 'OFFLINE') {
+          const localExam = await offlineDB.exams.get(examId);
+          if (!localExam) {
+            setError('Offline exam list is empty. Reconnect and sync exams first.');
+            setExam(null);
+            return;
+          }
+
+          const localExamView: CbtOpenExam = {
+            id: localExam.examId,
+            title: localExam.title,
+            subject: localExam.title,
+            class_level: 'Class',
+            duration_minutes: Number(localExam.durationMinutes || 60),
+            status: localExam.status || 'scheduled',
+            start_datetime: localExam.startsAt || null,
+            end_datetime: localExam.endsAt || null,
+            can_access: true,
+            reason: null,
+          };
+
+          setExam(localExamView);
+          return;
+        }
+
         const exams = await cbtApi.listExams();
         const selected = exams.find((item) => item.id === examId) || null;
         if (!selected) {
@@ -68,7 +89,7 @@ const CbtExamLogin: React.FC = () => {
     };
 
     loadExam();
-  }, [examId]);
+  }, [connectivity.status, examId]);
 
   const examTitle = useMemo(() => {
     if (!exam) return 'Exam Verification';
@@ -102,10 +123,75 @@ const CbtExamLogin: React.FC = () => {
       setSubmitting(true);
       setError(null);
 
+      if (connectivity.status === 'OFFLINE') {
+        const normalizedReg = regNumber.trim().toUpperCase();
+        const normalizedCode = accessCode.trim().toUpperCase();
+        const cachedPackage = await offlineDB.examPackages.get(exam.id);
+        if (!cachedPackage) {
+          setError('Exam package is not cached on this device. Reconnect and download it first.');
+          return;
+        }
+
+        const student = await offlineDB.students
+          .where('matricOrCandidateNo')
+          .equals(normalizedReg)
+          .first();
+
+        if (!student) {
+          setError('Student not found in offline cache.');
+          return;
+        }
+
+        const code = await offlineDB.accessCodes
+          .where('[examId+studentId+code]')
+          .equals([exam.id, student.studentId, normalizedCode])
+          .and((row) => row.status === 'NEW')
+          .first();
+
+        if (!code) {
+          setError('Invalid or already-used access code for this exam.');
+          return;
+        }
+
+        const attemptId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const deviceId = await ensureDeviceId();
+
+        await offlineDB.transaction('rw', offlineDB.accessCodes, offlineDB.attempts, async () => {
+          await offlineDB.accessCodes.update(code.codeId, {
+            status: 'USED',
+            usedAt: now,
+            attemptId,
+            usedByDeviceId: deviceId,
+            updatedAt: now,
+          });
+
+          await offlineDB.attempts.put({
+            attemptId,
+            examId: exam.id,
+            studentId: student.studentId,
+            status: 'IN_PROGRESS',
+            startedAt: now,
+            lastSavedAt: now,
+          });
+        });
+
+        await syncService.enqueue(code.codeId, 'CODE_USED');
+        localStorage.setItem('offline_cbt_student_reg', student.matricOrCandidateNo);
+        localStorage.setItem('offline_cbt_student_name', student.fullName);
+
+        setVerified(true);
+        window.setTimeout(() => {
+          navigate(`/offline-exam/${exam.id}?attemptId=${encodeURIComponent(attemptId)}&studentId=${student.studentId}`);
+        }, 700);
+        return;
+      }
+
+      const deviceId = await ensureDeviceId();
       const verification = await cbtApi.verifyExamAccess(exam.id, {
         reg_number: regNumber.trim().toUpperCase(),
         access_code: accessCode.trim().toUpperCase(),
-        device_id: getDeviceId(),
+        device_id: deviceId,
       });
 
       saveStoredSession({
@@ -149,7 +235,7 @@ const CbtExamLogin: React.FC = () => {
             </div>
           </div>
           <p className="hidden text-xs font-semibold uppercase tracking-[0.09em] md:block" style={{ color: '#1D4ED8' }}>
-            Exam Verification
+            Exam Verification • {connectivity.status}
           </p>
         </div>
       </header>

@@ -101,6 +101,12 @@ class CbtInterfaceController extends Controller
             ], 403);
         }
 
+        if (strtoupper((string) ($access->status ?? 'NEW')) === 'VOID') {
+            return response()->json([
+                'message' => 'This access code has been replaced. Request the latest code from supervisor.',
+            ], 403);
+        }
+
         if (!$this->accessMatchesStudent($access, $student)) {
             return response()->json([
                 'message' => 'Access code does not belong to this student.',

@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\ExamAccessController;
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\CbtInterfaceController;
 use App\Http\Controllers\Api\MarkingController;
+use App\Http\Controllers\Api\CbtOfflineController;
 
 // Public routes
 Route::get('/health', fn() => response()->json(['status' => 'ok']));
@@ -49,6 +50,8 @@ Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv'])
 // Dedicated CBT runtime endpoints (public, session-token protected per request)
 Route::prefix('cbt')->group(function () {
     Route::get('/exams', [CbtInterfaceController::class, 'exams']);
+    Route::get('/offline-students', [CbtOfflineController::class, 'offlineStudents']);
+    Route::get('/offline-exams', [CbtOfflineController::class, 'offlineExams']);
     Route::post('/exams/{examId}/verify', [CbtInterfaceController::class, 'verify'])->middleware('throttle:30,1');
     Route::post('/attempts/{attemptId}/start', [CbtInterfaceController::class, 'start'])->middleware('throttle:30,1');
     Route::get('/attempts/{attemptId}/state', [CbtInterfaceController::class, 'state']);
@@ -73,8 +76,8 @@ Route::post('/auth/password/otp/verify', [AuthController::class, 'resetPasswordW
 // Student exam access verification (public endpoint for login)
 Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
 
-// Admin signup applicant (public)
-Route::post('/admin/signup', [UserController::class, 'store']);
+// Admin signup applicant (public) - DISABLED: Users should only be created via registration portal or manual setup
+// Route::post('/admin/signup', [UserController::class, 'store']);
 
 // Current student profile (auth required)
 Route::middleware('auth:sanctum')->get('/student/me', [StudentController::class, 'getCurrentProfile']);
@@ -136,6 +139,8 @@ Route::prefix('exams')->group(function () {
 // Offline sync endpoints (cloud and LAN)
 Route::post('/sync/attempt', [OfflineExamController::class, 'syncAttempt']);
 Route::post('/local-sync/attempt', [OfflineExamController::class, 'syncAttempt']);
+Route::post('/sync/access-codes', [CbtOfflineController::class, 'syncAccessCodes']);
+Route::post('/sync/code-usage', [CbtOfflineController::class, 'syncCodeUsage']);
 
 // Questions
 Route::prefix('questions')->group(function () {
@@ -310,6 +315,9 @@ Route::middleware('auth:sanctum')->prefix('preferences')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     // Authenticated student profile snapshot
     Route::get('/student/me', [StudentController::class, 'getCurrentProfile']);
+
+    // Supervisor offline login sync source (requires authenticated admin/teacher session)
+    Route::middleware('role:Admin|Main Admin|Teacher')->get('/cbt/offline-users', [CbtOfflineController::class, 'offlineUsers']);
 
     // User management (Main Admin only - enforced by middleware in controller)
     Route::middleware('role:Admin|Main Admin')->group(function () {

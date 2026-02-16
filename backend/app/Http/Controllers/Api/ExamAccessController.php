@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class ExamAccessController extends Controller
 {
@@ -30,10 +31,14 @@ class ExamAccessController extends Controller
 
                     return [
                         'id' => $access->id,
+                        'code_id' => $access->client_code_id,
+                        'exam_id' => $access->exam_id,
+                        'student_id' => $access->student_id,
                         'student_reg_number' => $access->student_reg_number ?? $access->student?->registration_number ?? 'N/A',
                         'student_name' => $studentName,
                         'exam_title' => $access->exam->title ?? 'Unknown Exam',
                         'access_code' => $access->access_code,
+                        'status' => $access->status ?? ($access->used ? 'USED' : 'NEW'),
                         'used' => (bool) $access->used,
                         'used_at' => $access->used_at,
                         'generated_at' => $access->created_at,
@@ -88,10 +93,12 @@ class ExamAccessController extends Controller
                     $accessCode = ExamAccess::generateUniqueCode();
 
                     $access = ExamAccess::create([
+                        'client_code_id' => (string) Str::uuid(),
                         'exam_id' => $exam->id,
                         'student_id' => $student->id,
                         'student_reg_number' => $student->registration_number,
                         'access_code' => $accessCode,
+                        'status' => 'NEW',
                         'used' => false,
                         'expires_at' => $expiresAt,
                     ]);
@@ -140,10 +147,12 @@ class ExamAccessController extends Controller
                     $accessCode = ExamAccess::generateUniqueCode();
 
                     ExamAccess::create([
+                        'client_code_id' => (string) Str::uuid(),
                         'exam_id' => $exam->id,
                         'student_id' => $student->id,
                         'student_reg_number' => $student->registration_number,
                         'access_code' => $accessCode,
+                        'status' => 'NEW',
                         'used' => false,
                         'expires_at' => $expiresAt,
                     ]);
@@ -223,6 +232,13 @@ class ExamAccessController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid access code for this exam',
+                ], 403);
+            }
+
+            if (strtoupper((string) ($access->status ?? 'NEW')) === 'VOID') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This access code is no longer valid. Request a replacement code.',
                 ], 403);
             }
 
@@ -418,6 +434,7 @@ class ExamAccessController extends Controller
             ->where('student_id', $studentId)
             ->where('used', false)
             ->update([
+                'status' => 'VOID',
                 'used' => true,
                 'used_at' => $now,
                 'expires_at' => $now,

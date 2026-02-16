@@ -6,6 +6,7 @@ import FooterMinimal from '../../components/FooterMinimal';
 import offlineDB, { ExamPackage } from '../../services/offlineDB';
 import useConnectivity from '../../hooks/useConnectivity';
 import { getReachableBaseUrl } from '../../services/reachability';
+import syncService from '../../services/syncService';
 
 const formatExamWindow = (value?: string | null): string | null => {
   if (!value) return null;
@@ -28,6 +29,7 @@ const CbtAccessPortal: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [cachedPackages, setCachedPackages] = useState<Record<number, ExamPackage>>({});
   const [downloadBusy, setDownloadBusy] = useState<number | null>(null);
+  const [pendingSync, setPendingSync] = useState(0);
   const connectivity = useConnectivity();
 
   const refreshCachedPackages = async () => {
@@ -40,18 +42,45 @@ const CbtAccessPortal: React.FC = () => {
   };
 
   useEffect(() => {
+    const loadPending = async () => {
+      const count = await syncService.pendingCount();
+      setPendingSync(count);
+    };
+    loadPending();
+    const timer = window.setInterval(loadPending, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const loadExams = async () => {
       try {
         setLoadingExams(true);
         setError(null);
         await refreshCachedPackages();
 
-        const baseUrl = getReachableBaseUrl(connectivity);
+        const baseUrl = getReachableBaseUrl({
+          status: connectivity.status,
+          canReachCloud: connectivity.canReachCloud,
+          canReachLocal: connectivity.canReachLocal,
+        });
         if (!baseUrl) {
-          setExams([]);
+          const localRows = await offlineDB.exams.toArray();
+          setExams(localRows.map((row) => ({
+            id: row.examId,
+            title: row.title,
+            subject: row.title,
+            class_level: 'Class',
+            duration_minutes: Number(row.durationMinutes || 60),
+            status: row.status || 'scheduled',
+            start_datetime: row.startsAt || null,
+            end_datetime: row.endsAt || null,
+            can_access: true,
+            reason: null,
+          })));
           return;
         }
 
+        await syncService.syncDown();
         const response = await fetch(`${baseUrl}/cbt/exams`, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('Failed to load available exams.');
@@ -62,14 +91,26 @@ const CbtAccessPortal: React.FC = () => {
         setExams(Array.isArray(data) ? data : []);
       } catch (err: any) {
         setError(err?.message || 'Failed to load available exams.');
-        setExams([]);
+        const localRows = await offlineDB.exams.toArray();
+        setExams(localRows.map((row) => ({
+          id: row.examId,
+          title: row.title,
+          subject: row.title,
+          class_level: 'Class',
+          duration_minutes: Number(row.durationMinutes || 60),
+          status: row.status || 'scheduled',
+          start_datetime: row.startsAt || null,
+          end_datetime: row.endsAt || null,
+          can_access: true,
+          reason: null,
+        })));
       } finally {
         setLoadingExams(false);
       }
     };
 
     loadExams();
-  }, [connectivity.status]);
+  }, [connectivity.canReachCloud, connectivity.canReachLocal, connectivity.status]);
 
   const handleDownload = async (examId: number) => {
     try {
@@ -129,6 +170,11 @@ const CbtAccessPortal: React.FC = () => {
             <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: '#2563EB' }} />
             {availableCount} Open
           </div>
+          {pendingSync > 0 && (
+            <div className="hidden items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold md:flex" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB', color: '#92400E' }}>
+              {pendingSync} Pending Sync
+            </div>
+          )}
         </div>
       </header>
 

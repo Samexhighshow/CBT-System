@@ -12,7 +12,7 @@ const buildReceiptCode = (attemptId: string) => {
   return `EXAM-${short}-${Date.now()}`;
 };
 
-export const useOfflineExam = (examId: number, studentId: number | null) => {
+export const useOfflineExam = (examId: number, studentId: number | null, preferredAttemptId?: string | null) => {
   const [examPackage, setExamPackage] = useState<ExamPackage | null>(null);
   const [attempt, setAttempt] = useState<AttemptRecord | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
@@ -28,7 +28,21 @@ export const useOfflineExam = (examId: number, studentId: number | null) => {
     await loadExamPackage();
   }, [loadExamPackage]);
 
+  const setAttemptById = useCallback(async (attemptId: string) => {
+    const existing = await offlineDB.attempts.get(attemptId);
+    setAttempt(existing ?? null);
+    return existing ?? null;
+  }, []);
+
   const getOrCreateAttempt = useCallback(async () => {
+    if (preferredAttemptId) {
+      const exact = await offlineDB.attempts.get(preferredAttemptId);
+      if (exact) {
+        setAttempt(exact);
+        return exact;
+      }
+    }
+
     if (!studentId) {
       return null;
     }
@@ -44,7 +58,7 @@ export const useOfflineExam = (examId: number, studentId: number | null) => {
       return existing;
     }
 
-    const attemptId = crypto.randomUUID();
+    const attemptId = preferredAttemptId || crypto.randomUUID();
     const now = new Date().toISOString();
     const created: AttemptRecord = {
       attemptId,
@@ -58,7 +72,7 @@ export const useOfflineExam = (examId: number, studentId: number | null) => {
     await offlineDB.attempts.put(created);
     setAttempt(created);
     return created;
-  }, [examId, studentId]);
+  }, [examId, preferredAttemptId, studentId]);
 
   const saveAnswer = useCallback(async (input: OfflineAnswerInput) => {
     if (!attempt) {
@@ -114,8 +128,11 @@ export const useOfflineExam = (examId: number, studentId: number | null) => {
 
   useEffect(() => {
     const refreshPending = async () => {
-      const pending = await offlineDB.syncQueue.where('status').equals('PENDING').count();
-      setPendingSync(pending);
+      const [pending, failed] = await Promise.all([
+        offlineDB.syncQueue.where('status').equals('PENDING').count(),
+        offlineDB.syncQueue.where('status').equals('FAILED').count(),
+      ]);
+      setPendingSync(pending + failed);
     };
 
     refreshPending();
@@ -127,6 +144,7 @@ export const useOfflineExam = (examId: number, studentId: number | null) => {
     examPackage,
     attempt,
     pendingSync,
+    setAttemptById,
     loadExamPackage,
     storeExamPackage,
     getOrCreateAttempt,
