@@ -18,7 +18,7 @@ return new class extends Migration
                 'key' => 'grading_scheme',
                 'value' => 'waec',
                 'type' => 'string',
-                'description' => 'Grading scheme: waec or letter',
+                'description' => 'Grading scheme: waec, letter, or position',
             ],
             [
                 'key' => 'grading_scale_waec',

@@ -42,6 +42,10 @@ class GradingService
             return null;
         }
 
+        if ($this->currentScheme() === 'position') {
+            return $this->positionBandFromPercentage($percentage);
+        }
+
         $scale = $this->gradeScale();
         return $this->resolveLabelFromScale($percentage, $scale, 'grade');
     }
@@ -95,7 +99,7 @@ class GradingService
 
     private function gradeScale(): Collection
     {
-        $scheme = strtolower(trim((string) SystemSetting::get('grading_scheme', 'waec')));
+        $scheme = $this->currentScheme();
 
         if ($scheme === 'letter') {
             $rawScale = SystemSetting::get('grading_scale_letter', self::DEFAULT_LETTER_SCALE);
@@ -107,6 +111,12 @@ class GradingService
         $rawScale = SystemSetting::get('grading_scale_waec', self::DEFAULT_WAEC_SCALE);
         $scale = $this->normalizeScale($rawScale, 'grade');
         return $scale->isNotEmpty() ? $scale : collect(self::DEFAULT_WAEC_SCALE);
+    }
+
+    private function currentScheme(): string
+    {
+        $scheme = strtolower(trim((string) SystemSetting::get('grading_scheme', 'waec')));
+        return in_array($scheme, ['waec', 'letter', 'position'], true) ? $scheme : 'waec';
     }
 
     private function positionScale(): Collection

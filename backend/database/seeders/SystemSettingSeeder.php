@@ -36,7 +36,7 @@ class SystemSettingSeeder extends Seeder
                 'type' => 'json',
                 'description' => 'Enable/disable API endpoint modules from admin settings',
             ],
-            ['key' => 'grading_scheme', 'value' => 'waec', 'type' => 'string', 'description' => 'Grading scheme: waec or letter'],
+            ['key' => 'grading_scheme', 'value' => 'waec', 'type' => 'string', 'description' => 'Grading scheme: waec, letter, or position'],
             [
                 'key' => 'grading_scale_waec',
                 'value' => '[{"grade":"A1","min":75},{"grade":"B2","min":70},{"grade":"B3","min":65},{"grade":"C4","min":60},{"grade":"C5","min":55},{"grade":"C6","min":50},{"grade":"D7","min":45},{"grade":"E8","min":40},{"grade":"F9","min":0}]',

@@ -22,6 +22,16 @@ interface EndpointToggles {
   admin_users_roles: boolean;
 }
 
+interface GradeScaleRow {
+  grade: string;
+  min: number;
+}
+
+interface PositionScaleRow {
+  label: string;
+  min: number;
+}
+
 const defaultEndpointToggles: EndpointToggles = {
   students: true,
   exams: true,
@@ -33,6 +43,35 @@ const defaultEndpointToggles: EndpointToggles = {
   admin_users_roles: true,
 };
 
+const fixedWaecScale: GradeScaleRow[] = [
+  { grade: 'A1', min: 75 },
+  { grade: 'B2', min: 70 },
+  { grade: 'B3', min: 65 },
+  { grade: 'C4', min: 60 },
+  { grade: 'C5', min: 55 },
+  { grade: 'C6', min: 50 },
+  { grade: 'D7', min: 45 },
+  { grade: 'E8', min: 40 },
+  { grade: 'F9', min: 0 },
+];
+
+const fixedLetterScale: GradeScaleRow[] = [
+  { grade: 'A', min: 70 },
+  { grade: 'B', min: 60 },
+  { grade: 'C', min: 50 },
+  { grade: 'D', min: 45 },
+  { grade: 'E', min: 40 },
+  { grade: 'F', min: 0 },
+];
+
+const fixedPositionScale: PositionScaleRow[] = [
+  { label: '1st', min: 70 },
+  { label: '2nd', min: 60 },
+  { label: '3rd', min: 50 },
+  { label: 'Pass', min: 40 },
+  { label: 'Fail', min: 0 },
+];
+
 const findSettingValue = (key: string, settingsList: Setting[]) =>
   settingsList.find(setting => setting.key === key)?.value;
 
@@ -41,15 +80,15 @@ const AdminSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [systemName, setSystemName] = useState('');
   const [endpointToggles, setEndpointToggles] = useState<EndpointToggles>(defaultEndpointToggles);
-  const [gradingScheme, setGradingScheme] = useState<'waec' | 'letter'>('waec');
-  const [waecScaleText, setWaecScaleText] = useState('');
-  const [letterScaleText, setLetterScaleText] = useState('');
-  const [positionScaleText, setPositionScaleText] = useState('');
+  const [gradingScheme, setGradingScheme] = useState<'waec' | 'letter' | 'position'>('waec');
+  const [waecScale, setWaecScale] = useState<GradeScaleRow[]>(fixedWaecScale);
+  const [letterScale, setLetterScale] = useState<GradeScaleRow[]>(fixedLetterScale);
+  const [positionScale, setPositionScale] = useState<PositionScaleRow[]>(fixedPositionScale);
   const [passMarkPercentage, setPassMarkPercentage] = useState('50');
   const { theme, changeTheme } = useTheme();
   // Token is injected via axios interceptor in `api` using `auth_token` key
 
-  const parseJsonSetting = (value: any, fallback: any) => {
+  const parseJsonSetting = useCallback((value: any, fallback: any) => {
     if (value === undefined || value === null || value === '') {
       return fallback;
     }
@@ -67,6 +106,76 @@ const AdminSettings: React.FC = () => {
     }
 
     return fallback;
+  }, []);
+
+  const clampScore = useCallback((value: any, fallback: number) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return fallback;
+    }
+    return Math.min(100, Math.max(0, numeric));
+  }, []);
+
+  const normalizeGradeScale = useCallback((
+    value: any,
+    fixedRows: GradeScaleRow[],
+  ): GradeScaleRow[] => {
+    const parsed = parseJsonSetting(value, fixedRows);
+    const entries = Array.isArray(parsed) ? parsed : fixedRows;
+
+    const minByGrade = new Map<string, number>();
+    entries.forEach((entry: any) => {
+      const grade = String(entry?.grade || '').trim().toUpperCase();
+      if (!grade) return;
+      minByGrade.set(grade, clampScore(entry?.min, 0));
+    });
+
+    return fixedRows.map((row) => ({
+      grade: row.grade,
+      min: minByGrade.has(row.grade) ? clampScore(minByGrade.get(row.grade), row.min) : row.min,
+    }));
+  }, [clampScore, parseJsonSetting]);
+
+  const normalizePositionScale = useCallback((
+    value: any,
+    fixedRows: PositionScaleRow[],
+  ): PositionScaleRow[] => {
+    const parsed = parseJsonSetting(value, fixedRows);
+    const entries = Array.isArray(parsed) ? parsed : fixedRows;
+
+    const minByLabel = new Map<string, number>();
+    entries.forEach((entry: any) => {
+      const label = String(entry?.label || '').trim().toLowerCase();
+      if (!label) return;
+      minByLabel.set(label, clampScore(entry?.min, 0));
+    });
+
+    return fixedRows.map((row) => ({
+      label: row.label,
+      min: minByLabel.has(row.label.toLowerCase())
+        ? clampScore(minByLabel.get(row.label.toLowerCase()), row.min)
+        : row.min,
+    }));
+  }, [clampScore, parseJsonSetting]);
+
+  const updateScaleMin = (index: number, value: string, setter: React.Dispatch<React.SetStateAction<GradeScaleRow[]>>) => {
+    setter((current) =>
+      current.map((row, rowIndex) => (
+        rowIndex === index
+          ? { ...row, min: clampScore(value, row.min) }
+          : row
+      ))
+    );
+  };
+
+  const updatePositionMin = (index: number, value: string) => {
+    setPositionScale((current) =>
+      current.map((row, rowIndex) => (
+        rowIndex === index
+          ? { ...row, min: clampScore(value, row.min) }
+          : row
+      ))
+    );
   };
 
   const fetchSettings = useCallback(async () => {
@@ -83,25 +192,16 @@ const AdminSettings: React.FC = () => {
       setEndpointToggles({ ...defaultEndpointToggles, ...parsedToggles });
 
       const scheme = String(findSettingValue('grading_scheme', res.data) || 'waec').toLowerCase();
-      setGradingScheme(scheme === 'letter' ? 'letter' : 'waec');
+      setGradingScheme(scheme === 'letter' ? 'letter' : scheme === 'position' ? 'position' : 'waec');
 
-      const waecScale = findSettingValue('grading_scale_waec', res.data)
-        || [{"grade":"A1","min":75},{"grade":"B2","min":70},{"grade":"B3","min":65},{"grade":"C4","min":60},{"grade":"C5","min":55},{"grade":"C6","min":50},{"grade":"D7","min":45},{"grade":"E8","min":40},{"grade":"F9","min":0}];
-      setWaecScaleText(
-        typeof waecScale === 'string' ? waecScale : JSON.stringify(waecScale, null, 2)
-      );
+      const waecScaleValue = findSettingValue('grading_scale_waec', res.data);
+      setWaecScale(normalizeGradeScale(waecScaleValue, fixedWaecScale));
 
-      const letterScale = findSettingValue('grading_scale_letter', res.data)
-        || [{"grade":"A","min":70},{"grade":"B","min":60},{"grade":"C","min":50},{"grade":"D","min":45},{"grade":"E","min":40},{"grade":"F","min":0}];
-      setLetterScaleText(
-        typeof letterScale === 'string' ? letterScale : JSON.stringify(letterScale, null, 2)
-      );
+      const letterScaleValue = findSettingValue('grading_scale_letter', res.data);
+      setLetterScale(normalizeGradeScale(letterScaleValue, fixedLetterScale));
 
-      const positionScale = findSettingValue('position_grading_scale', res.data)
-        || [{"label":"1st","min":70},{"label":"2nd","min":60},{"label":"3rd","min":50},{"label":"Pass","min":40},{"label":"Fail","min":0}];
-      setPositionScaleText(
-        typeof positionScale === 'string' ? positionScale : JSON.stringify(positionScale, null, 2)
-      );
+      const positionScaleValue = findSettingValue('position_grading_scale', res.data);
+      setPositionScale(normalizePositionScale(positionScaleValue, fixedPositionScale));
 
       setPassMarkPercentage(String(findSettingValue('pass_mark_percentage', res.data) || '50'));
     } catch (err: any) {
@@ -109,7 +209,7 @@ const AdminSettings: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [normalizeGradeScale, normalizePositionScale, parseJsonSetting]);
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
@@ -146,9 +246,18 @@ const AdminSettings: React.FC = () => {
 
   const saveGradingSettings = async () => {
     try {
-      const parsedWaec = JSON.parse(waecScaleText);
-      const parsedLetter = JSON.parse(letterScaleText);
-      const parsedPosition = JSON.parse(positionScaleText);
+      const parsedWaec = waecScale.map((row) => ({
+        grade: row.grade,
+        min: clampScore(row.min, 0),
+      }));
+      const parsedLetter = letterScale.map((row) => ({
+        grade: row.grade,
+        min: clampScore(row.min, 0),
+      }));
+      const parsedPosition = positionScale.map((row) => ({
+        label: row.label,
+        min: clampScore(row.min, 0),
+      }));
       const passMark = Math.min(100, Math.max(0, Number(passMarkPercentage || 50)));
 
       await api.put('/settings/bulk', {
@@ -164,10 +273,6 @@ const AdminSettings: React.FC = () => {
       showSuccess('Grading settings updated successfully');
       fetchSettings();
     } catch (err: any) {
-      if (err instanceof SyntaxError) {
-        showError('Invalid grading JSON. Please fix JSON format first.');
-        return;
-      }
       showError(err?.response?.data?.message || 'Failed to update grading settings');
     }
   };
@@ -415,11 +520,12 @@ const AdminSettings: React.FC = () => {
                 <label className="text-sm block mb-1 dark:text-gray-200">Grading Scheme</label>
                 <select
                   value={gradingScheme}
-                  onChange={(e) => setGradingScheme(e.target.value as 'waec' | 'letter')}
+                  onChange={(e) => setGradingScheme(e.target.value as 'waec' | 'letter' | 'position')}
                   className="border dark:border-gray-600 rounded px-2 py-1 w-full bg-white dark:bg-gray-700 dark:text-white"
                 >
                   <option value="waec">WAEC (A1, B2, ... F9)</option>
                   <option value="letter">Letter (A, B, C, ...)</option>
+                  <option value="position">Position (1st, 2nd, 3rd ...)</option>
                 </select>
               </div>
               <div>
@@ -434,34 +540,77 @@ const AdminSettings: React.FC = () => {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-              <div>
-                <label className="text-sm block mb-1 dark:text-gray-200">WAEC Scale JSON</label>
-                <textarea
-                  value={waecScaleText}
-                  onChange={(e) => setWaecScaleText(e.target.value)}
-                  className="border dark:border-gray-600 rounded px-3 py-2 w-full h-40 bg-white dark:bg-gray-700 dark:text-white font-mono text-xs"
-                  aria-label="WAEC grading scale JSON"
-                />
+            <div
+              className={`grid grid-cols-1 gap-4 mt-4 ${gradingScheme === 'position' ? '' : 'lg:grid-cols-2'}`}
+            >
+              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-3">
+                <h3 className="text-sm font-semibold mb-2 dark:text-gray-100">
+                  {gradingScheme === 'waec'
+                    ? 'WAEC Grade Thresholds'
+                    : gradingScheme === 'letter'
+                      ? 'Letter Grade Thresholds'
+                      : 'Position Grade Thresholds'}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  {gradingScheme === 'position'
+                    ? 'Position labels are fixed. Enter the minimum score for each position band.'
+                    : 'Grade labels are fixed. Enter only the minimum score for each grade.'}
+                </p>
+                <div className="space-y-2">
+                  {(gradingScheme === 'waec' ? waecScale : gradingScheme === 'letter' ? letterScale : positionScale).map((row, index) => (
+                    <div
+                      key={gradingScheme === 'position' ? (row as PositionScaleRow).label : (row as GradeScaleRow).grade}
+                      className="grid grid-cols-[90px_1fr] items-center gap-3"
+                    >
+                      <div className="text-sm font-semibold dark:text-gray-100">
+                        {gradingScheme === 'position' ? (row as PositionScaleRow).label : (row as GradeScaleRow).grade}
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={row.min}
+                        onChange={(e) => (
+                          gradingScheme === 'position'
+                            ? updatePositionMin(index, e.target.value)
+                            : updateScaleMin(
+                                index,
+                                e.target.value,
+                                gradingScheme === 'waec' ? setWaecScale : setLetterScale
+                              )
+                        )}
+                        className="border dark:border-gray-600 rounded px-2 py-1.5 w-full bg-white dark:bg-gray-700 dark:text-white text-sm"
+                        aria-label={`${gradingScheme === 'position' ? (row as PositionScaleRow).label : (row as GradeScaleRow).grade} minimum score`}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div>
-                <label className="text-sm block mb-1 dark:text-gray-200">Letter Scale JSON</label>
-                <textarea
-                  value={letterScaleText}
-                  onChange={(e) => setLetterScaleText(e.target.value)}
-                  className="border dark:border-gray-600 rounded px-3 py-2 w-full h-40 bg-white dark:bg-gray-700 dark:text-white font-mono text-xs"
-                  aria-label="Letter grading scale JSON"
-                />
-              </div>
-              <div>
-                <label className="text-sm block mb-1 dark:text-gray-200">Position Grading JSON</label>
-                <textarea
-                  value={positionScaleText}
-                  onChange={(e) => setPositionScaleText(e.target.value)}
-                  className="border dark:border-gray-600 rounded px-3 py-2 w-full h-40 bg-white dark:bg-gray-700 dark:text-white font-mono text-xs"
-                  aria-label="Position grading scale JSON"
-                />
-              </div>
+
+              {gradingScheme !== 'position' && (
+                <div className="border border-gray-200 dark:border-gray-700 rounded-md p-3">
+                  <h3 className="text-sm font-semibold mb-2 dark:text-gray-100">Position Thresholds</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    Position labels are fixed. Enter the minimum score for each position band.
+                  </p>
+                  <div className="space-y-2">
+                    {positionScale.map((row, index) => (
+                      <div key={row.label} className="grid grid-cols-[90px_1fr] items-center gap-3">
+                        <div className="text-sm font-semibold dark:text-gray-100">{row.label}</div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={row.min}
+                          onChange={(e) => updatePositionMin(index, e.target.value)}
+                          className="border dark:border-gray-600 rounded px-2 py-1.5 w-full bg-white dark:bg-gray-700 dark:text-white text-sm"
+                          aria-label={`${row.label} minimum score`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="mt-3 flex justify-end">
               <button
@@ -472,7 +621,7 @@ const AdminSettings: React.FC = () => {
               </button>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              Position grading example: {`[{"label":"1st","min":70},{"label":"2nd","min":60},{"label":"3rd","min":50}]`}
+              Example: set A1 to <span className="font-semibold">75</span> and B2 to <span className="font-semibold">70</span>.
             </p>
           </div>
         </div>
