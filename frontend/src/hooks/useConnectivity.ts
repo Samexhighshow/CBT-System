@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { checkReachability, ReachabilityResult } from '../services/reachability';
 
 const DEFAULT_STATUS: ReachabilityResult = {
-  status: 'OFFLINE',
-  canReachLocal: false,
+  status: navigator.onLine ? 'LAN_ONLY' : 'OFFLINE',
+  canReachLocal: navigator.onLine,
   canReachCloud: false,
 };
 
