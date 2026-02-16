@@ -7,7 +7,7 @@ const DEFAULT_STATUS: ReachabilityResult = {
   canReachCloud: false,
 };
 
-export const useConnectivity = (intervalMs: number = 5000) => {
+export const useConnectivity = (intervalMs: number = 30000) => {
   const [result, setResult] = useState<ReachabilityResult>(DEFAULT_STATUS);
   const [checking, setChecking] = useState(false);
 

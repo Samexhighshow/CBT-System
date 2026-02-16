@@ -14,14 +14,11 @@ const buildHealthUrls = (baseUrl: string): string[] => {
   const urls = new Set<string>();
   const base = baseUrl.replace(/\/$/, '');
 
-  urls.add(`${base}/health`);
-
+  // Always use /api/health endpoint
   if (!base.endsWith('/api')) {
     urls.add(`${base}/api/health`);
   } else {
-    const root = base.replace(/\/api$/, '');
-    urls.add(`${root}/api/health`);
-    urls.add(`${root}/health`);
+    urls.add(`${base}/health`);
   }
 
   return Array.from(urls);

@@ -41,8 +41,8 @@ use App\Http\Controllers\Api\CbtInterfaceController;
 use App\Http\Controllers\Api\MarkingController;
 use App\Http\Controllers\Api\CbtOfflineController;
 
-// Public routes
-Route::get('/health', fn() => response()->json(['status' => 'ok']));
+// Public routes - Health check (lenient throttle for reachability checks)
+Route::get('/health', fn() => response()->json(['status' => 'ok']))->middleware('throttle:120,1');
 
 // Sample CSV for question import (public for easy access)
 Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv']);
@@ -326,8 +326,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
     });
 
-    // Role & page permissions management (Admin/Main Admin)
-    Route::middleware('role:Admin|Main Admin')->group(function () {
+    // Role & page permissions management (Admin/Main Admin) - with generous throttle
+    Route::middleware(['role:Admin|Main Admin', 'throttle:600,1'])->group(function () {
         Route::get('/admin/roles', [RoleManagementController::class, 'listRoles']);
         Route::get('/admin/users', [RoleManagementController::class, 'listUsers']);
         Route::post('/admin/users/{userId}/roles', [RoleManagementController::class, 'assignRole']);
