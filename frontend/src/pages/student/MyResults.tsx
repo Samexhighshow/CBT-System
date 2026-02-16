@@ -24,6 +24,29 @@ interface ResultStats {
   pass_rate: number;
 }
 
+interface TermSubjectSummary {
+  subject: string;
+  ca_score: number | null;
+  exam_score: number | null;
+  term_score: number | null;
+}
+
+interface TermSummary {
+  term: string;
+  term_average: number | null;
+  cumulative_average: number | null;
+  subjects: TermSubjectSummary[];
+}
+
+interface TermCompilationPayload {
+  enabled: boolean;
+  cumulative_enabled: boolean;
+  current_session: string;
+  default_ca_weight: number;
+  default_exam_weight: number;
+  terms: TermSummary[];
+}
+
 const MyResults: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,6 +57,7 @@ const MyResults: React.FC = () => {
     total_exams: 0,
     pass_rate: 0,
   });
+  const [termCompilation, setTermCompilation] = useState<TermCompilationPayload | null>(null);
 
   const loadResults = async () => {
     try {
@@ -50,8 +74,10 @@ const MyResults: React.FC = () => {
       if (resultsRes.status === 'fulfilled') {
         const rows: ResultRow[] = resultsRes.value.data?.data || [];
         setResults(rows);
+        setTermCompilation(resultsRes.value.data?.term_compilation || null);
       } else {
         setResults([]);
+        setTermCompilation(null);
       }
 
       if (statsRes.status === 'fulfilled') {
@@ -193,6 +219,60 @@ const MyResults: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {termCompilation?.enabled && (
+        <Card>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 className="text-xl font-semibold text-slate-900">Term Compilation (CR)</h2>
+            <p className="text-xs text-slate-500">Session: {termCompilation.current_session}</p>
+          </div>
+
+          {termCompilation.terms.filter((row) => row.subjects.length > 0).length === 0 ? (
+            <p className="text-sm text-slate-500">No compiled term data yet for this session.</p>
+          ) : (
+            <div className="space-y-3">
+              {termCompilation.terms
+                .filter((term) => term.subjects.length > 0)
+                .map((term) => (
+                  <div key={term.term} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-slate-900">{term.term}</h3>
+                      <p className="text-xs text-slate-600">
+                        Term Avg: {term.term_average !== null ? `${term.term_average.toFixed(2)}%` : '-'}
+                        {termCompilation.cumulative_enabled
+                          ? ` | CR: ${term.cumulative_average !== null ? `${term.cumulative_average.toFixed(2)}%` : '-'}`
+                          : ''}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full min-w-[520px] text-xs">
+                        <thead>
+                          <tr className="text-left text-slate-500 border-b border-slate-200">
+                            <th className="pb-2">Subject</th>
+                            <th className="pb-2">CA (%)</th>
+                            <th className="pb-2">Exam (%)</th>
+                            <th className="pb-2">Compiled (%)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {term.subjects.map((subject) => (
+                            <tr key={`${term.term}-${subject.subject}`} className="border-b border-slate-100">
+                              <td className="py-2 text-slate-700">{subject.subject}</td>
+                              <td className="py-2 text-slate-700">{subject.ca_score !== null ? subject.ca_score.toFixed(2) : '-'}</td>
+                              <td className="py-2 text-slate-700">{subject.exam_score !== null ? subject.exam_score.toFixed(2) : '-'}</td>
+                              <td className="py-2 font-semibold text-slate-900">{subject.term_score !== null ? subject.term_score.toFixed(2) : '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 };

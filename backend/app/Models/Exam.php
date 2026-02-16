@@ -27,6 +27,8 @@ class Exam extends Model
         // Assessment structure fields
         'assessment_type',
         'assessment_weight',
+        'academic_session',
+        'term',
         'allowed_attempts',
         'randomize_questions',
         'randomize_options',

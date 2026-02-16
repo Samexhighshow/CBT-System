@@ -7,8 +7,10 @@ use App\Models\ExamAttempt;
 use App\Models\Student;
 use App\Models\Exam;
 use App\Models\Question;
+use App\Models\SystemSetting;
 use App\Services\GradingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class ResultController extends Controller
 {
@@ -39,6 +41,9 @@ class ResultController extends Controller
                 'id' => $attempt->id,
                 'exam_title' => $attempt->exam->title,
                 'subject' => $attempt->exam->subject->name,
+                'assessment_type' => $attempt->exam->assessment_type,
+                'academic_session' => $this->resolveExamSession($attempt->exam),
+                'term' => $this->resolveExamTerm($attempt->exam),
                 'score' => $attempt->score,
                 'total_marks' => $totalMarks,
                 'percentage' => $percentage,
@@ -54,8 +59,11 @@ class ResultController extends Controller
             ];
         });
 
+        $termCompilation = $this->buildTermCompilationForStudent($attempts->getCollection());
+
         return response()->json([
             'data' => $results,
+            'term_compilation' => $termCompilation,
             'current_page' => $attempts->currentPage(),
             'last_page' => $attempts->lastPage(),
             'per_page' => $attempts->perPage(),
@@ -383,6 +391,266 @@ class ResultController extends Controller
     private function gradingService(): GradingService
     {
         return app(GradingService::class);
+    }
+
+    private function buildTermCompilationForStudent(Collection $attempts): array
+    {
+        $termCompilationEnabled = $this->boolSetting('enable_term_result_compilation', true);
+        $cumulativeEnabled = $this->boolSetting('enable_cumulative_results', true);
+        $useAssessmentWeight = $this->boolSetting('use_exam_assessment_weight', true);
+
+        $defaultCaWeight = $this->boundedNumberSetting('default_ca_weight', 40, 0, 100);
+        $defaultExamWeight = $this->boundedNumberSetting('default_exam_weight', 60, 0, 100);
+        $currentSession = (string) SystemSetting::get('current_academic_session', $this->defaultAcademicSession());
+
+        if (!$termCompilationEnabled || $attempts->isEmpty()) {
+            return [
+                'enabled' => $termCompilationEnabled,
+                'cumulative_enabled' => $cumulativeEnabled,
+                'current_session' => $currentSession,
+                'default_ca_weight' => $defaultCaWeight,
+                'default_exam_weight' => $defaultExamWeight,
+                'terms' => [],
+            ];
+        }
+
+        $latestByExam = $attempts
+            ->sortByDesc(function (ExamAttempt $attempt) {
+                $stamp = $attempt->completed_at
+                    ?? $attempt->submitted_at
+                    ?? $attempt->ended_at
+                    ?? $attempt->updated_at;
+                return $stamp ? $stamp->getTimestamp() : 0;
+            })
+            ->unique('exam_id')
+            ->values();
+
+        $records = $latestByExam
+            ->map(function (ExamAttempt $attempt) {
+                $exam = $attempt->exam;
+                if (!$exam) {
+                    return null;
+                }
+
+                $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+                $safeTotal = max(1, $totalMarks);
+                $percentage = round((((float) ($attempt->score ?? 0)) / $safeTotal) * 100, 2);
+
+                $assessmentType = trim((string) ($exam->assessment_type ?? ''));
+                $component = strtolower($assessmentType) === 'ca test' ? 'ca' : 'exam';
+
+                return [
+                    'term' => $this->resolveExamTerm($exam),
+                    'academic_session' => $this->resolveExamSession($exam),
+                    'subject' => $exam->subject?->name ?? 'Unknown',
+                    'assessment_type' => $assessmentType !== '' ? $assessmentType : 'Exam',
+                    'component' => $component,
+                    'percentage' => $percentage,
+                    'weight' => is_numeric($exam->assessment_weight ?? null) ? (float) $exam->assessment_weight : null,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        if ($records->isEmpty()) {
+            return [
+                'enabled' => $termCompilationEnabled,
+                'cumulative_enabled' => $cumulativeEnabled,
+                'current_session' => $currentSession,
+                'default_ca_weight' => $defaultCaWeight,
+                'default_exam_weight' => $defaultExamWeight,
+                'terms' => [],
+            ];
+        }
+
+        $records = $records->where('academic_session', $currentSession)->values();
+        if ($records->isEmpty()) {
+            return [
+                'enabled' => $termCompilationEnabled,
+                'cumulative_enabled' => $cumulativeEnabled,
+                'current_session' => $currentSession,
+                'default_ca_weight' => $defaultCaWeight,
+                'default_exam_weight' => $defaultExamWeight,
+                'terms' => [],
+            ];
+        }
+
+        $termOrder = ['First Term', 'Second Term', 'Third Term'];
+        $termAverages = [];
+
+        $termsPayload = collect($termOrder)->map(function (string $term) use (
+            $records,
+            $defaultCaWeight,
+            $defaultExamWeight,
+            $useAssessmentWeight,
+            &$termAverages
+        ) {
+            $termRecords = $records->where('term', $term)->values();
+
+            if ($termRecords->isEmpty()) {
+                return [
+                    'term' => $term,
+                    'subject_count' => 0,
+                    'term_average' => null,
+                    'subjects' => [],
+                ];
+            }
+
+            $subjectRows = $termRecords
+                ->groupBy('subject')
+                ->map(function (Collection $subjectRecords, string $subjectName) use (
+                    $defaultCaWeight,
+                    $defaultExamWeight,
+                    $useAssessmentWeight
+                ) {
+                    $caRecords = $subjectRecords->where('component', 'ca')->values();
+                    $examRecords = $subjectRecords->where('component', 'exam')->values();
+
+                    $caScore = $this->weightedAverage(
+                        $caRecords,
+                        $useAssessmentWeight,
+                        $defaultCaWeight
+                    );
+                    $examScore = $this->weightedAverage(
+                        $examRecords,
+                        $useAssessmentWeight,
+                        $defaultExamWeight
+                    );
+
+                    $termScore = null;
+                    if ($caScore !== null && $examScore !== null) {
+                        $denominator = max(1, $defaultCaWeight + $defaultExamWeight);
+                        $termScore = round((($caScore * $defaultCaWeight) + ($examScore * $defaultExamWeight)) / $denominator, 2);
+                    } elseif ($caScore !== null) {
+                        $termScore = $caScore;
+                    } elseif ($examScore !== null) {
+                        $termScore = $examScore;
+                    }
+
+                    return [
+                        'subject' => $subjectName,
+                        'ca_score' => $caScore,
+                        'exam_score' => $examScore,
+                        'term_score' => $termScore,
+                        'components_count' => [
+                            'ca' => $caRecords->count(),
+                            'exam' => $examRecords->count(),
+                        ],
+                    ];
+                })
+                ->values();
+
+            $termScoreValues = $subjectRows
+                ->pluck('term_score')
+                ->filter(fn ($score) => $score !== null)
+                ->values();
+
+            $termAverage = $termScoreValues->isNotEmpty()
+                ? round((float) $termScoreValues->avg(), 2)
+                : null;
+
+            if ($termAverage !== null) {
+                $termAverages[$term] = $termAverage;
+            }
+
+            return [
+                'term' => $term,
+                'subject_count' => $subjectRows->count(),
+                'term_average' => $termAverage,
+                'subjects' => $subjectRows,
+            ];
+        })->values();
+
+        $running = [];
+        $termsPayload = $termsPayload->map(function (array $termRow) use (&$running, $termAverages, $cumulativeEnabled) {
+            $term = $termRow['term'];
+            $termAverage = $termAverages[$term] ?? null;
+
+            if ($termAverage !== null) {
+                $running[] = $termAverage;
+            }
+
+            $termRow['cumulative_average'] = $cumulativeEnabled && count($running) > 0
+                ? round(array_sum($running) / count($running), 2)
+                : null;
+
+            return $termRow;
+        })->values();
+
+        return [
+            'enabled' => $termCompilationEnabled,
+            'cumulative_enabled' => $cumulativeEnabled,
+            'current_session' => $currentSession,
+            'default_ca_weight' => $defaultCaWeight,
+            'default_exam_weight' => $defaultExamWeight,
+            'terms' => $termsPayload,
+        ];
+    }
+
+    private function weightedAverage(Collection $records, bool $useAssessmentWeight, float $fallbackWeight): ?float
+    {
+        if ($records->isEmpty()) {
+            return null;
+        }
+
+        $totalWeight = 0.0;
+        $weightedTotal = 0.0;
+
+        foreach ($records as $record) {
+            $weight = $fallbackWeight;
+            if ($useAssessmentWeight && is_numeric($record['weight'] ?? null)) {
+                $candidate = (float) $record['weight'];
+                if ($candidate > 0) {
+                    $weight = $candidate;
+                }
+            }
+
+            $totalWeight += $weight;
+            $weightedTotal += ((float) ($record['percentage'] ?? 0)) * $weight;
+        }
+
+        if ($totalWeight <= 0) {
+            return round((float) $records->avg('percentage'), 2);
+        }
+
+        return round($weightedTotal / $totalWeight, 2);
+    }
+
+    private function resolveExamTerm(Exam $exam): string
+    {
+        $term = trim((string) ($exam->term ?? data_get($exam->metadata, 'term') ?? ''));
+
+        return in_array($term, ['First Term', 'Second Term', 'Third Term'], true)
+            ? $term
+            : (string) SystemSetting::get('current_term', 'First Term');
+    }
+
+    private function resolveExamSession(Exam $exam): string
+    {
+        $session = trim((string) ($exam->academic_session ?? data_get($exam->metadata, 'academic_session') ?? ''));
+        if ($session !== '') {
+            return $session;
+        }
+
+        return (string) SystemSetting::get('current_academic_session', $this->defaultAcademicSession());
+    }
+
+    private function boolSetting(string $key, bool $default): bool
+    {
+        return filter_var(SystemSetting::get($key, $default), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function boundedNumberSetting(string $key, float $default, float $min, float $max): float
+    {
+        $raw = SystemSetting::get($key, $default);
+        $value = is_numeric($raw) ? (float) $raw : $default;
+        return min($max, max($min, $value));
+    }
+
+    private function defaultAcademicSession(): string
+    {
+        $year = (int) date('Y');
+        return $year . '/' . ($year + 1);
     }
 
     private function buildExamRankingMap(int $examId): array

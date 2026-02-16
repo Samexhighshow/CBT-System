@@ -106,6 +106,8 @@ class ExamController extends Controller
             // Assessment structure fields
             'assessment_type' => ['required', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
             'assessment_weight' => 'nullable|integer|min:1|max:100',
+            'academic_session' => 'nullable|string|max:32',
+            'term' => ['nullable', Rule::in(['First Term', 'Second Term', 'Third Term'])],
             'allowed_attempts' => 'nullable|integer|min:1|max:10',
             'randomize_questions' => 'nullable|boolean',
             'randomize_options' => 'nullable|boolean',
@@ -193,7 +195,7 @@ class ExamController extends Controller
         // Create the exam (rules and scope only, no questions/answers)
         $examData = $request->only([
             'title', 'description', 'duration_minutes',
-            'assessment_type', 'assessment_weight',
+            'assessment_type', 'assessment_weight', 'academic_session', 'term',
             'allowed_attempts', 'randomize_questions', 'randomize_options', 'navigation_mode',
             'start_datetime', 'end_datetime', 'start_time', 'end_time',
             'status', 'published', 'shuffle_questions', 'seat_numbering', 'enforce_adjacency_rules', 'metadata'
@@ -213,6 +215,8 @@ class ExamController extends Controller
         $examData['navigation_mode'] = $examData['navigation_mode'] ?? 'free';
         $examData['class_level'] = $class->name; // For backward compatibility
         $examData['department'] = $class->department_id ? $class->department->name : null;
+        $examData['academic_session'] = $examData['academic_session'] ?? (string) SystemSetting::get('current_academic_session', $this->defaultAcademicSession());
+        $examData['term'] = $this->normalizeTerm($examData['term'] ?? SystemSetting::get('current_term', 'First Term'));
 
         $exam = Exam::create($examData);
 
@@ -270,6 +274,8 @@ class ExamController extends Controller
             // Assessment structure fields
             'assessment_type' => ['sometimes', 'required', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
             'assessment_weight' => 'nullable|integer|min:1|max:100',
+            'academic_session' => 'nullable|string|max:32',
+            'term' => ['nullable', Rule::in(['First Term', 'Second Term', 'Third Term'])],
             'allowed_attempts' => 'nullable|integer|min:1|max:10',
             'randomize_questions' => 'nullable|boolean',
             'randomize_options' => 'nullable|boolean',
@@ -398,11 +404,21 @@ class ExamController extends Controller
         // Update exam fields
         $exam->fill($request->only([
             'title', 'description', 'class_id', 'class_level_id', 'subject_id', 'duration_minutes',
-            'assessment_type', 'assessment_weight',
+            'assessment_type', 'assessment_weight', 'academic_session', 'term',
             'allowed_attempts', 'randomize_questions', 'randomize_options', 'navigation_mode',
             'start_datetime', 'end_datetime', 'start_time', 'end_time', 'status', 'published', 'results_released',
             'shuffle_questions', 'seat_numbering', 'enforce_adjacency_rules', 'metadata'
         ]));
+
+        if ($request->exists('term')) {
+            $exam->term = $this->normalizeTerm($request->input('term'));
+        } elseif (!$exam->term) {
+            $exam->term = $this->normalizeTerm(SystemSetting::get('current_term', 'First Term'));
+        }
+
+        if (!$exam->academic_session) {
+            $exam->academic_session = (string) SystemSetting::get('current_academic_session', $this->defaultAcademicSession());
+        }
 
         // Ensure lifecycle flags are persisted
         $exam->status = $newStatus;
@@ -881,15 +897,30 @@ class ExamController extends Controller
 
             $action = $newStatus ? 'released' : 'hidden';
 
-            return response()->json([
-                'message' => "Results {$action} successfully",
+        return response()->json([
+            'message' => "Results {$action} successfully",
                 'exam' => [
                     'id' => $exam->id,
                     'title' => $exam->title,
                     'status' => $exam->status,
                     'results_released' => $exam->results_released,
                     'updated_at' => $exam->updated_at->toDateTimeString()
-                ]
-            ]);
-        }
+            ]
+        ]);
+    }
+
+    private function normalizeTerm(mixed $value): string
+    {
+        $normalized = trim((string) $value);
+
+        return in_array($normalized, ['First Term', 'Second Term', 'Third Term'], true)
+            ? $normalized
+            : 'First Term';
+    }
+
+    private function defaultAcademicSession(): string
+    {
+        $year = (int) date('Y');
+        return $year . '/' . ($year + 1);
+    }
 }
