@@ -1,6 +1,6 @@
 import { checkReachability, getReachableBaseUrl } from './reachability';
 
-export type AssessmentDisplayMode = 'exam' | 'ca_test';
+export type AssessmentDisplayMode = 'exam' | 'ca_test' | 'auto';
 
 export interface AssessmentDisplayLabels {
   assessmentNoun: string;
@@ -16,6 +16,13 @@ export interface AssessmentDisplayConfig {
 }
 
 const DEFAULT_LABELS: Record<AssessmentDisplayMode, AssessmentDisplayLabels> = {
+  auto: {
+    assessmentNoun: 'Assessment',
+    assessmentNounPlural: 'Assessments',
+    accessCodeLabel: 'Assessment Access Code',
+    accessCodeGeneratorTitle: 'Assessment Access Code Generator',
+    studentPortalSubtitle: 'Student Assessment Portal',
+  },
   exam: {
     assessmentNoun: 'Exam',
     assessmentNounPlural: 'Exams',
@@ -33,15 +40,17 @@ const DEFAULT_LABELS: Record<AssessmentDisplayMode, AssessmentDisplayLabels> = {
 };
 
 export const normalizeAssessmentDisplayMode = (value: unknown): AssessmentDisplayMode =>
-  String(value || '').trim().toLowerCase() === 'ca_test' ? 'ca_test' : 'exam';
+  ['ca_test', 'exam', 'auto'].includes(String(value || '').trim().toLowerCase())
+    ? (String(value || '').trim().toLowerCase() as AssessmentDisplayMode)
+    : 'auto';
 
 export const assessmentLabelsForMode = (mode: AssessmentDisplayMode): AssessmentDisplayLabels => {
   return DEFAULT_LABELS[mode];
 };
 
 export const defaultAssessmentDisplayConfig: AssessmentDisplayConfig = {
-  mode: 'exam',
-  labels: DEFAULT_LABELS.exam,
+  mode: 'auto',
+  labels: DEFAULT_LABELS.auto,
 };
 
 const safeString = (value: unknown, fallback: string): string => {

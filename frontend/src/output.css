@@ -1285,6 +1285,10 @@ code {
   min-width: 34px;
 }
 
+.min-w-\[520px\] {
+  min-width: 520px;
+}
+
 .min-w-\[80px\] {
   min-width: 80px;
 }
@@ -1299,10 +1303,6 @@ code {
 
 .min-w-full {
   min-width: 100%;
-}
-
-.min-w-\[520px\] {
-  min-width: 520px;
 }
 
 .max-w-2xl {
@@ -1503,10 +1503,6 @@ code {
 
 .grid-cols-5 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.grid-cols-\[90px_1fr\] {
-  grid-template-columns: 90px 1fr;
 }
 
 .grid-cols-\[100px_1fr\] {
@@ -2943,6 +2939,10 @@ code {
   padding-bottom: 0px;
 }
 
+.pb-2 {
+  padding-bottom: 0.5rem;
+}
+
 .pb-3 {
   padding-bottom: 0.75rem;
 }
@@ -3017,10 +3017,6 @@ code {
 
 .pt-8 {
   padding-top: 2rem;
-}
-
-.pb-2 {
-  padding-bottom: 0.5rem;
 }
 
 .text-left {
@@ -3213,6 +3209,10 @@ code {
 
 .tracking-\[0\.09em\] {
   letter-spacing: 0.09em;
+}
+
+.tracking-\[0\.12em\] {
+  letter-spacing: 0.12em;
 }
 
 .tracking-\[0\.14em\] {
@@ -5232,12 +5232,12 @@ svg {
     grid-template-columns: 1fr auto 1fr;
   }
 
-  .lg\:grid-cols-\[minmax\(240px\2c 20\%\)_minmax\(0\2c 60\%\)_minmax\(240px\2c 20\%\)\] {
-    grid-template-columns: minmax(240px,20%) minmax(0,60%) minmax(240px,20%);
-  }
-
   .lg\:grid-cols-\[240px_minmax\(0\2c 1fr\)\] {
     grid-template-columns: 240px minmax(0,1fr);
+  }
+
+  .lg\:grid-cols-\[minmax\(240px\2c 20\%\)_minmax\(0\2c 60\%\)_minmax\(240px\2c 20\%\)\] {
+    grid-template-columns: minmax(240px,20%) minmax(0,60%) minmax(240px,20%);
   }
 
   .lg\:flex-row {

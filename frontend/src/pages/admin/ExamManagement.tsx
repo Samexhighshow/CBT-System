@@ -55,7 +55,6 @@ const ExamManagement: React.FC = () => {
   // Floating row actions menu state
   const [openRowMenu, setOpenRowMenu] = useState<{ exam: ExamRow, top: number, left: number } | null>(null);
   const [classLevelFilter, setClassLevelFilter] = useState<string>('');
-  const [assessmentTypeFilter, setAssessmentTypeFilter] = useState<string>('');
   
   // PHASE 8: Delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -93,7 +92,6 @@ const ExamManagement: React.FC = () => {
     class_id: '',
     subject_id: '',
     duration_minutes: 60,
-    assessment_type: '' as AssessmentType | '',
     assessment_weight: '',
     start_datetime: '',
     end_datetime: '',
@@ -279,7 +277,6 @@ const ExamManagement: React.FC = () => {
       class_id: '',
       subject_id: '',
       duration_minutes: 60,
-      assessment_type: '',
       assessment_weight: '',
       start_datetime: '',
       end_datetime: '',
@@ -301,7 +298,6 @@ const ExamManagement: React.FC = () => {
       class_id: exam.school_class?.id?.toString() || '',
       subject_id: exam.subject?.id?.toString() || '',
       duration_minutes: exam.duration_minutes,
-      assessment_type: exam.assessment_type || '',
       assessment_weight: exam.assessment_weight?.toString() || '',
       start_datetime: exam.start_datetime || exam.start_time || '',
       end_datetime: exam.end_datetime || exam.end_time || '',
@@ -335,7 +331,6 @@ const ExamManagement: React.FC = () => {
         class_id: Number(examForm.class_id),
         subject_id: Number(examForm.subject_id),
         duration_minutes: examForm.duration_minutes,
-        assessment_type: examForm.assessment_type,
         assessment_weight: examForm.assessment_weight ? Number(examForm.assessment_weight) : null,
         start_datetime: examForm.start_datetime || null,
         end_datetime: examForm.end_datetime || null,
@@ -388,8 +383,7 @@ const ExamManagement: React.FC = () => {
     );
     const isInactive = exam.status === 'completed' || exam.status === 'cancelled';
     const matchesClassLevel = classLevelFilter ? exam.school_class?.name === classLevelFilter : true;
-    const matchesAssessmentType = assessmentTypeFilter ? exam.assessment_type === assessmentTypeFilter : true;
-    return matchesSearch && (showInactive ? true : !isInactive) && matchesClassLevel && matchesAssessmentType;
+    return matchesSearch && (showInactive ? true : !isInactive) && matchesClassLevel;
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -885,25 +879,10 @@ const ExamManagement: React.FC = () => {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-gray-600">Assessment:</span>
-                  <select
-                    value={assessmentTypeFilter}
-                    onChange={(e) => { setAssessmentTypeFilter(e.target.value); setPage(1); }}
-                    className="px-2 py-1 border border-gray-300 rounded-md text-xs"
-                  >
-                    <option value="">All Types</option>
-                    <option value="CA Test">CA Test</option>
-                    <option value="Midterm Test">Midterm Test</option>
-                    <option value="Final Exam">Final Exam</option>
-                    <option value="Quiz">Quiz</option>
-                  </select>
-                </div>
                 <button
                   type="button"
                   onClick={() => {
                     setClassLevelFilter('');
-                    setAssessmentTypeFilter('');
                     setSearchTerm('');
                     setSortBy('title-asc');
                     setPage(1);
@@ -930,7 +909,6 @@ const ExamManagement: React.FC = () => {
                     />
                   </th>
                   <th className="px-3 py-2 text-left font-semibold">Exam Title</th>
-                  <th className="px-3 py-2 text-left font-semibold">Assessment</th>
                   <th className="px-3 py-2 text-left font-semibold">Class Level</th>
                   <th className="px-3 py-2 text-left font-semibold">Subject</th>
                   <th className="px-3 py-2 text-left font-semibold">Duration</th>
@@ -949,7 +927,7 @@ const ExamManagement: React.FC = () => {
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                      <td colSpan={12} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
+                      <td colSpan={11} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
                   </tr>
                 ) : (
                   paged.map((exam, index) => {
@@ -974,20 +952,6 @@ const ExamManagement: React.FC = () => {
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-900 max-w-[240px]">
                           <span className="truncate block" title={exam.title}>{exam.title}</span>
-                        </td>
-                        <td className="px-3 py-2">
-                          {exam.assessment_type ? (
-                            <span className={`px-2 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap ${
-                              exam.assessment_type === 'CA Test' ? 'bg-blue-100 text-blue-700' :
-                              exam.assessment_type === 'Midterm Test' ? 'bg-purple-100 text-purple-700' :
-                              exam.assessment_type === 'Final Exam' ? 'bg-red-100 text-red-700' :
-                              'bg-green-100 text-green-700'
-                            }`}>
-                              {exam.assessment_type}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">-</span>
-                          )}
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.school_class?.name || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.subject?.name || '-'}</td>
@@ -1294,27 +1258,7 @@ const ExamManagement: React.FC = () => {
                 </div>
 
                 {/* Assessment Structure Fields */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Assessment Type *
-                    </label>
-                    <select
-                      value={examForm.assessment_type}
-                      onChange={(e) => setExamForm({ ...examForm, assessment_type: e.target.value as AssessmentType })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      required
-                      disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
-                    >
-                      <option value="">Select assessment type</option>
-                      <option value="CA Test">CA Test</option>
-                      <option value="Midterm Test">Midterm Test</option>
-                      <option value="Final Exam">Final Exam</option>
-                      <option value="Quiz">Quiz</option>
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">Type of assessment for result calculation</p>
-                  </div>
-
+                <div className="grid grid-cols-1 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
                       Assessment Weight (Optional)
@@ -1329,7 +1273,7 @@ const ExamManagement: React.FC = () => {
                       placeholder="e.g., 40"
                       disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
                     />
-                    <p className="text-xs text-gray-500 mt-1">Weight % (e.g., CA=40, Final=60)</p>
+                    <p className="text-xs text-gray-500 mt-1">Weight % (e.g., CA=40, Final=60). Assessment type is auto-assigned from system mode.</p>
                   </div>
                 </div>
 

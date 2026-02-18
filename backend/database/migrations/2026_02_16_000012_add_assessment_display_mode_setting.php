@@ -9,9 +9,9 @@ return new class extends Migration {
         DB::table('system_settings')->updateOrInsert(
             ['key' => 'assessment_display_mode'],
             [
-                'value' => 'exam',
+                'value' => 'auto',
                 'type' => 'string',
-                'description' => 'Assessment display mode label: exam or ca_test',
+                'description' => 'Assessment display mode label: auto, exam or ca_test',
             ]
         );
     }

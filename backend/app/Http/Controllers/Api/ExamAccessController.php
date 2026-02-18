@@ -7,6 +7,7 @@ use App\Models\Exam;
 use App\Models\ExamAccess;
 use App\Models\ExamAttempt;
 use App\Models\Student;
+use App\Models\SystemSetting;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -276,12 +277,34 @@ class ExamAccessController extends Controller
                     ->latest('id')
                     ->first();
 
-                if ($latestAttempt) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Student already has an attempt for this exam. New token cannot restart it.',
-                        'attempt_status' => $latestAttempt->status,
-                    ], 409);
+                // Allow session replacement: if a new unused access code is provided and there's a previous attempt,
+                // void the old attempt to allow a fresh start
+                if ($latestAttempt && !$access->used) {
+                    // Check if this is a new access code (generated after the latest attempt)
+                    if ($access->created_at && $latestAttempt->created_at && $access->created_at > $latestAttempt->created_at) {
+                        // This is session replacement - void the old attempt
+                        $latestAttempt->update([
+                            'status' => 'voided',
+                            'updated_at' => now(),
+                        ]);
+                        $latestAttempt = null;
+                    } else {
+                        // Old access code or exam retake not allowed
+                        $allowRetakes = SystemSetting::get('allow_exam_retakes', '0');
+                        if ($allowRetakes !== '1' && $allowRetakes !== 1 && $allowRetakes !== true) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'Student already has an attempt for this exam. New token cannot restart it.',
+                                'attempt_status' => $latestAttempt->status,
+                            ], 409);
+                        }
+                        // Retakes are allowed, void the old attempt
+                        $latestAttempt->update([
+                            'status' => 'voided',
+                            'updated_at' => now(),
+                        ]);
+                        $latestAttempt = null;
+                    }
                 }
             }
 

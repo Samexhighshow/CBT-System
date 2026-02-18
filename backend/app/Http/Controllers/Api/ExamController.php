@@ -104,7 +104,7 @@ class ExamController extends Controller
             'subject_id' => 'required|exists:subjects,id',
             'duration_minutes' => 'required|integer|min:1|max:300',
             // Assessment structure fields
-            'assessment_type' => ['required', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
+            'assessment_type' => ['nullable', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
             'assessment_weight' => 'nullable|integer|min:1|max:100',
             'academic_session' => 'nullable|string|max:32',
             'term' => ['nullable', Rule::in(['First Term', 'Second Term', 'Third Term'])],
@@ -217,6 +217,7 @@ class ExamController extends Controller
         $examData['department'] = $class->department_id ? $class->department->name : null;
         $examData['academic_session'] = $examData['academic_session'] ?? (string) SystemSetting::get('current_academic_session', $this->defaultAcademicSession());
         $examData['term'] = $this->normalizeTerm($examData['term'] ?? SystemSetting::get('current_term', 'First Term'));
+        $examData['assessment_type'] = $this->resolveAssessmentType($examData['assessment_type'] ?? null);
 
         $exam = Exam::create($examData);
 
@@ -272,7 +273,7 @@ class ExamController extends Controller
             'subject_id' => 'sometimes|required|exists:subjects,id',
             'duration_minutes' => 'sometimes|required|integer|min:1|max:300',
             // Assessment structure fields
-            'assessment_type' => ['sometimes', 'required', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
+            'assessment_type' => ['nullable', Rule::in(['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'])],
             'assessment_weight' => 'nullable|integer|min:1|max:100',
             'academic_session' => 'nullable|string|max:32',
             'term' => ['nullable', Rule::in(['First Term', 'Second Term', 'Third Term'])],
@@ -418,6 +419,10 @@ class ExamController extends Controller
 
         if (!$exam->academic_session) {
             $exam->academic_session = (string) SystemSetting::get('current_academic_session', $this->defaultAcademicSession());
+        }
+
+        if (!$exam->assessment_type) {
+            $exam->assessment_type = $this->resolveAssessmentType(null);
         }
 
         // Ensure lifecycle flags are persisted
@@ -916,6 +921,21 @@ class ExamController extends Controller
         return in_array($normalized, ['First Term', 'Second Term', 'Third Term'], true)
             ? $normalized
             : 'First Term';
+    }
+
+    private function resolveAssessmentType(?string $assessmentType): string
+    {
+        $normalized = trim((string) $assessmentType);
+        if (in_array($normalized, ['CA Test', 'Midterm Test', 'Final Exam', 'Quiz'], true)) {
+            return $normalized;
+        }
+
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        if ($mode === 'ca_test') {
+            return 'CA Test';
+        }
+
+        return 'Final Exam';
     }
 
     private function defaultAcademicSession(): string

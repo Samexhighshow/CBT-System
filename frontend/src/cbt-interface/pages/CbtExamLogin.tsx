@@ -107,6 +107,14 @@ const CbtExamLogin: React.FC = () => {
     return `${exam.subject || exam.title} - ${exam.class_level || 'All Classes'}`;
   }, [exam]);
 
+  const assessmentLoginNoun = useMemo(() => {
+    const examType = String(exam?.assessment_type || '').trim();
+    if (examType !== '') {
+      return examType;
+    }
+    return assessmentLabels.assessmentNoun;
+  }, [assessmentLabels.assessmentNoun, exam?.assessment_type]);
+
   const examWindowText = useMemo(() => {
     if (!exam) return 'Window not set';
     const start = formatExamWindow(exam.start_datetime);
@@ -258,7 +266,7 @@ const CbtExamLogin: React.FC = () => {
               Access Control
             </p>
             <h1 className="mt-2 text-[34px] font-bold leading-[1.04] tracking-[-0.02em] md:text-[44px]" style={{ color: cbtTheme.title }}>
-              {exam?.subject || assessmentLabels.assessmentNoun} Login
+              {assessmentLoginNoun} Login
             </h1>
             <p className="mt-3 max-w-md text-sm leading-6 md:text-[15px]" style={{ color: cbtTheme.muted }}>
               Confirm candidate details to start or resume the exam on this device.

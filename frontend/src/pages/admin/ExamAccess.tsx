@@ -361,7 +361,11 @@ const ExamAccess: React.FC = () => {
         used_at: null,
       });
 
-      showSuccess('Access code generated locally and queued for sync.');
+      if (connectivity.status === 'OFFLINE') {
+        showSuccess('Access code generated locally and queued for sync.');
+      } else {
+        showSuccess('Access code generated and synced successfully!');
+      }
       await fetchGeneratedAccess();
     } catch (error: any) {
       console.error('Failed to generate access:', error);

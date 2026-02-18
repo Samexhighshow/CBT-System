@@ -72,6 +72,7 @@ class CbtInterfaceController extends Controller
             return [
                 'id' => $exam->id,
                 'title' => $exam->title,
+                'assessment_type' => $exam->assessment_type,
                 'subject' => $exam->subject?->name,
                 'class_level' => $exam->schoolClass?->name,
                 'duration_minutes' => $exam->duration_minutes,
@@ -155,12 +156,34 @@ class CbtInterfaceController extends Controller
             ->latest('id')
             ->first();
 
-        if (!$activeAttempt && $latestAttempt) {
-            return response()->json([
-                'message' => 'Student already has an attempt for this exam. A new token cannot restart it.',
-                'reason' => 'attempt_already_exists',
-                'attempt_status' => $latestAttempt->status,
-            ], 409);
+        // Allow session replacement: if a new unused access code is provided and there's a previous attempt,
+        // void the old attempt to allow a fresh start. This enables re-taking exams with a new access code.
+        if (!$activeAttempt && $latestAttempt && !$access->used) {
+            // Check if this is a new access code (generated after the latest attempt)
+            if ($access->created_at && $latestAttempt->created_at && $access->created_at > $latestAttempt->created_at) {
+                // This is session replacement - void the old attempt
+                $latestAttempt->update([
+                    'status' => 'voided',
+                    'updated_at' => now(),
+                ]);
+                $latestAttempt = null;
+            } else {
+                // Old access code or exam retake not allowed
+                $allowRetakes = SystemSetting::get('allow_exam_retakes', '0');
+                if ($allowRetakes !== '1' && $allowRetakes !== 1 && $allowRetakes !== true) {
+                    return response()->json([
+                        'message' => 'Student already has an attempt for this exam. A new token cannot restart it.',
+                        'reason' => 'attempt_already_exists',
+                        'attempt_status' => $latestAttempt->status,
+                    ], 409);
+                }
+                // Retakes are allowed, void the old attempt
+                $latestAttempt->update([
+                    'status' => 'voided',
+                    'updated_at' => now(),
+                ]);
+                $latestAttempt = null;
+            }
         }
 
         if ($access->used && !$activeAttempt) {
@@ -1541,13 +1564,13 @@ class CbtInterfaceController extends Controller
 
     private function assessmentDisplayMode(): string
     {
-        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'exam')));
-        return in_array($mode, ['exam', 'ca_test'], true) ? $mode : 'exam';
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        return in_array($mode, ['exam', 'ca_test', 'auto'], true) ? $mode : 'auto';
     }
 
     private function assessmentDisplayLabels(?string $mode = null): array
     {
-        $resolvedMode = $mode && in_array($mode, ['exam', 'ca_test'], true)
+        $resolvedMode = $mode && in_array($mode, ['exam', 'ca_test', 'auto'], true)
             ? $mode
             : $this->assessmentDisplayMode();
 
@@ -1558,6 +1581,16 @@ class CbtInterfaceController extends Controller
                 'access_code_label' => 'CA Test Access Code',
                 'access_code_generator_title' => 'CA Test Access Code Generator',
                 'student_portal_subtitle' => 'Student CA Test Portal',
+            ];
+        }
+
+        if ($resolvedMode === 'auto') {
+            return [
+                'assessment_noun' => 'Assessment',
+                'assessment_noun_plural' => 'Assessments',
+                'access_code_label' => 'Assessment Access Code',
+                'access_code_generator_title' => 'Assessment Access Code Generator',
+                'student_portal_subtitle' => 'Student Assessment Portal',
             ];
         }
 

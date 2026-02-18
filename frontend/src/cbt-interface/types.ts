@@ -1,6 +1,7 @@
 export interface CbtOpenExam {
   id: number;
   title: string;
+  assessment_type?: string;
   subject?: string;
   class_level?: string;
   duration_minutes: number;
