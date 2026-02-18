@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import useAuthStore from '../store/authStore';
 import { checkReachability } from '../services/reachability';
+import useConnectivity from '../hooks/useConnectivity';
 import offlineDB from '../services/offlineDB';
 import syncService from '../services/syncService';
 
@@ -23,12 +24,16 @@ const hashPin = async (input: string): Promise<string> => {
 const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuthStore();
+  const connectivity = useConnectivity();
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [offlineCacheState, setOfflineCacheState] = useState<
+    'unknown' | 'missing' | 'cached' | 'cached_no_pin' | 'cached_disabled' | 'cached_inactive'
+  >('unknown');
 
   React.useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -50,6 +55,46 @@ const AdminLogin: React.FC = () => {
     }
   }, [navigate]);
 
+  React.useEffect(() => {
+    const identifier = formData.email.trim().toLowerCase();
+    if (!identifier) {
+      setOfflineCacheState('unknown');
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const offlineUser = await offlineDB.offlineUsers
+        .where('identifier')
+        .equals(identifier)
+        .first();
+
+      if (!active) return;
+      if (!offlineUser) {
+        setOfflineCacheState('missing');
+        return;
+      }
+      if (!offlineUser.isActive) {
+        setOfflineCacheState('cached_inactive');
+        return;
+      }
+      if (!offlineUser.offlineLoginEnabled) {
+        setOfflineCacheState('cached_disabled');
+        return;
+      }
+      if (!offlineUser.pinHash) {
+        setOfflineCacheState('cached_no_pin');
+        return;
+      }
+      setOfflineCacheState('cached');
+    }, 400);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [formData.email]);
+
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -59,8 +104,10 @@ const AdminLogin: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    let reachabilityStatus: string | null = null;
     try {
       const reachability = await checkReachability();
+      reachabilityStatus = reachability.status;
 
       if (reachability.status === 'OFFLINE') {
         const identifier = formData.email.trim().toLowerCase();
@@ -153,8 +200,15 @@ const AdminLogin: React.FC = () => {
         errorMessage = '❌ Email address not found. Please check your email or sign up for an account.';
       } else if (errorType === 'invalid_password') {
         errorMessage = '❌ Incorrect password. Please try again or reset your password.';
+        if (reachabilityStatus === 'LAN_ONLY') {
+          errorMessage = '❌ Incorrect password. Server is reachable (LAN-only). Offline PIN works only when the server is unreachable.';
+        }
       } else if (err?.response?.status === 403 && err?.response?.data?.email_verified === false) {
         errorMessage = `${errorMessage}\n\nPlease check your email (${err?.response?.data?.email}) for the verification link.`;
+      } else if (!err?.response && reachabilityStatus === 'OFFLINE') {
+        errorMessage = 'You are offline. Offline PIN login works only if this supervisor account is cached on this device.';
+      } else if (!err?.response && reachabilityStatus === 'LAN_ONLY') {
+        errorMessage = 'Server is reachable on the local network. Use your normal admin password (Offline PIN is for fully offline mode).';
       }
       
       setError(errorMessage);
@@ -220,6 +274,30 @@ const AdminLogin: React.FC = () => {
             <p className="text-gray-500 text-xs mb-4">
               If network is unavailable, use your configured Offline PIN in the password field.
             </p>
+            <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-gray-400">
+              <span className="h-2 w-2 rounded-full" style={{
+                backgroundColor: connectivity.status === 'OFFLINE'
+                  ? '#F97316'
+                  : connectivity.status === 'LAN_ONLY'
+                    ? '#FACC15'
+                    : '#22C55E'
+              }} />
+              <span>Connection: {connectivity.status}</span>
+            </div>
+            <p
+              className="mb-4 text-[11px]"
+              style={{
+                color: connectivity.status === 'OFFLINE'
+                  ? '#F97316'
+                  : connectivity.status === 'LAN_ONLY'
+                    ? '#EAB308'
+                    : '#22C55E'
+              }}
+            >
+              {connectivity.status === 'OFFLINE' && 'Offline: PIN login works if this account was cached on this device.'}
+              {connectivity.status === 'LAN_ONLY' && 'LAN-only: server reachable on local network. Use normal password.'}
+              {connectivity.status === 'ONLINE' && 'Online: use normal admin password.'}
+            </p>
 
             {error && (
               <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
@@ -239,6 +317,24 @@ const AdminLogin: React.FC = () => {
                   required
                   className="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
+                {offlineCacheState !== 'unknown' && (
+                  <p
+                    className="mt-2 text-[11px]"
+                    style={{
+                      color: offlineCacheState === 'cached'
+                        ? '#22C55E'
+                        : offlineCacheState === 'missing'
+                          ? '#F97316'
+                          : '#FACC15'
+                    }}
+                  >
+                    {offlineCacheState === 'cached' && 'Offline cache: Ready for PIN login.'}
+                    {offlineCacheState === 'missing' && 'Offline cache: Not found on this device. Login online once to cache.'}
+                    {offlineCacheState === 'cached_no_pin' && 'Offline cache: PIN not configured for this account.'}
+                    {offlineCacheState === 'cached_disabled' && 'Offline cache: Offline login is disabled for this account.'}
+                    {offlineCacheState === 'cached_inactive' && 'Offline cache: Account is inactive.'}
+                  </p>
+                )}
               </div>
 
               <div>

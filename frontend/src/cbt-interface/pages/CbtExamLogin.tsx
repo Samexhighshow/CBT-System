@@ -8,6 +8,7 @@ import FooterMinimal from '../../components/FooterMinimal';
 import useConnectivity from '../../hooks/useConnectivity';
 import offlineDB, { ensureDeviceId } from '../../services/offlineDB';
 import syncService from '../../services/syncService';
+import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
 
 const formatExamWindow = (value?: string | null): string | null => {
   if (!value) return null;
@@ -35,7 +36,17 @@ const CbtExamLogin: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
   const connectivity = useConnectivity();
+
+  useEffect(() => {
+    const loadLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentLabels(config.labels);
+    };
+
+    loadLabels();
+  }, [connectivity.status]);
 
   useEffect(() => {
     const loadExam = async () => {
@@ -230,7 +241,7 @@ const CbtExamLogin: React.FC = () => {
                 CBT System
               </p>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: cbtTheme.muted }}>
-                Student Exam Portal
+                {assessmentLabels.studentPortalSubtitle}
               </p>
             </div>
           </div>
@@ -247,7 +258,7 @@ const CbtExamLogin: React.FC = () => {
               Access Control
             </p>
             <h1 className="mt-2 text-[34px] font-bold leading-[1.04] tracking-[-0.02em] md:text-[44px]" style={{ color: cbtTheme.title }}>
-              {exam?.subject || 'Exam'} Login
+              {exam?.subject || assessmentLabels.assessmentNoun} Login
             </h1>
             <p className="mt-3 max-w-md text-sm leading-6 md:text-[15px]" style={{ color: cbtTheme.muted }}>
               Confirm candidate details to start or resume the exam on this device.
@@ -305,12 +316,12 @@ const CbtExamLogin: React.FC = () => {
                     className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.1em]"
                     style={{ color: cbtTheme.body }}
                   >
-                    Access Code
+                    {assessmentLabels.accessCodeLabel}
                   </label>
                   <input
                     value={accessCode}
                     onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
-                    placeholder="ENTER EXAM ACCESS CODE"
+                    placeholder={`ENTER ${assessmentLabels.accessCodeLabel.toUpperCase()}`}
                     className="h-12 w-full border-b-2 border-x-0 border-t-0 bg-transparent px-0 text-sm uppercase outline-none transition focus:border-blue-600"
                     style={{ borderBottomColor: '#CBD5E1' }}
                     required
@@ -360,7 +371,7 @@ const CbtExamLogin: React.FC = () => {
               className="mt-6 text-sm font-semibold uppercase tracking-[0.08em]"
               style={{ color: cbtTheme.primary }}
             >
-              Back to exam selection
+              Back to {assessmentLabels.assessmentNoun.toLowerCase()} selection
             </button>
           </div>
         </section>

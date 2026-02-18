@@ -7,6 +7,7 @@ import offlineDB, { ExamPackage } from '../../services/offlineDB';
 import useConnectivity from '../../hooks/useConnectivity';
 import { getReachableBaseUrl } from '../../services/reachability';
 import syncService from '../../services/syncService';
+import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
 
 const formatExamWindow = (value?: string | null): string | null => {
   if (!value) return null;
@@ -30,6 +31,7 @@ const CbtAccessPortal: React.FC = () => {
   const [cachedPackages, setCachedPackages] = useState<Record<number, ExamPackage>>({});
   const [downloadBusy, setDownloadBusy] = useState<number | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
+  const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
   const connectivity = useConnectivity();
 
   const refreshCachedPackages = async () => {
@@ -50,6 +52,15 @@ const CbtAccessPortal: React.FC = () => {
     const timer = window.setInterval(loadPending, 5000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const loadLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentLabels(config.labels);
+    };
+
+    loadLabels();
+  }, [connectivity.status]);
 
   useEffect(() => {
     const loadExams = async () => {
@@ -161,7 +172,7 @@ const CbtAccessPortal: React.FC = () => {
                 CBT System
               </p>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: cbtTheme.muted }}>
-                Student Exam Portal
+                {assessmentLabels.studentPortalSubtitle}
               </p>
             </div>
           </div>
@@ -182,7 +193,7 @@ const CbtAccessPortal: React.FC = () => {
         <section>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b px-1 pb-3" style={{ borderColor: '#D7DEE9' }}>
             <h2 className="text-sm font-semibold uppercase tracking-[0.09em]" style={{ color: cbtTheme.body }}>
-              Available Exams
+              Available {assessmentLabels.assessmentNounPlural}
             </h2>
             <div className="text-right">
               <p className="text-xs font-semibold" style={{ color: '#1D4ED8' }}>{exams.length} Listed</p>
@@ -203,7 +214,7 @@ const CbtAccessPortal: React.FC = () => {
             </div>
           ) : exams.length === 0 ? (
             <div className="flex min-h-[170px] items-center justify-center px-4 text-sm" style={{ color: cbtTheme.muted }}>
-              No published exams are open right now.
+              No published {assessmentLabels.assessmentNounPlural.toLowerCase()} are open right now.
             </div>
           ) : (
             <div className="pt-3">

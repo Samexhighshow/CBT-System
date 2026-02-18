@@ -30,12 +30,21 @@ class ResultController extends Controller
         $perPage = $request->input('limit', 15);
         $attempts = $query->paginate($perPage);
 
-        $results = $attempts->getCollection()->map(function($attempt) use ($grading) {
+        $examRankingMaps = $attempts->getCollection()
+            ->pluck('exam_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->mapWithKeys(fn (int $id) => [$id => $this->buildExamRankingMap($id)])
+            ->all();
+
+        $results = $attempts->getCollection()->map(function($attempt) use ($grading, $examRankingMaps) {
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
             $safeTotal = max(1, (float) $totalMarks);
             $percentage = round(($attempt->score / $safeTotal) * 100, 2);
             $passed = $this->hasPassed((float) ($attempt->score ?? 0), $totalMarks, $passingMarks);
+            $rank = $examRankingMaps[(int) $attempt->exam_id][$attempt->id] ?? null;
 
             return [
                 'id' => $attempt->id,
@@ -49,8 +58,10 @@ class ResultController extends Controller
                 'percentage' => $percentage,
                 'passing_marks' => $passingMarks,
                 'passed' => $passed,
-                'grade' => $grading->gradeFromPercentage($percentage),
-                'position_grade' => $grading->positionBandFromPercentage($percentage),
+                'grade' => $grading->gradeLabel($percentage, $rank),
+                'position_grade' => $grading->positionLabel($percentage, $rank),
+                'rank_position' => $rank,
+                'rank_label' => $grading->ordinalPosition($rank),
                 'started_at' => $attempt->started_at,
                 'completed_at' => $attempt->completed_at,
                 'duration' => ($attempt->started_at && $attempt->completed_at)
@@ -108,8 +119,8 @@ class ResultController extends Controller
                 'total_marks' => $totalMarks,
                 'percentage' => $percentage,
                 'passed' => $passed,
-                'grade' => $grading->gradeFromPercentage($percentage),
-                'position_grade' => $grading->positionBandFromPercentage($percentage),
+                'grade' => $grading->gradeLabel($percentage, $rank),
+                'position_grade' => $grading->positionLabel($percentage, $rank),
                 'rank_position' => $rank,
                 'rank_label' => $grading->ordinalPosition($rank),
                 'completed_at' => $attempt->completed_at,
@@ -297,8 +308,8 @@ class ResultController extends Controller
                 'total_marks' => $totalMarks,
                 'percentage' => $percentage,
                 'passed' => $passed,
-                'grade' => $grading->gradeFromPercentage($percentage),
-                'position_grade' => $grading->positionBandFromPercentage($percentage),
+                'grade' => $grading->gradeLabel($percentage, $rank),
+                'position_grade' => $grading->positionLabel($percentage, $rank),
                 'rank_position' => $rank,
                 'rank_label' => $grading->ordinalPosition($rank),
                 'started_at' => $attempt->started_at,

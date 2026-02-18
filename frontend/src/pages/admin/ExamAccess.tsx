@@ -4,6 +4,7 @@ import { showSuccess, showError } from '../../utils/alerts';
 import useConnectivity from '../../hooks/useConnectivity';
 import offlineDB, { AccessCodeRecord } from '../../services/offlineDB';
 import syncService from '../../services/syncService';
+import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
 
 interface Exam {
   id: number;
@@ -56,10 +57,20 @@ const ExamAccess: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterUsed, setFilterUsed] = useState<'all' | 'used' | 'unused'>('all');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
 
   useEffect(() => {
     fetchTodayExams();
     fetchGeneratedAccess();
+  }, [connectivity.status]);
+
+  useEffect(() => {
+    const loadAssessmentLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentLabels(config.labels);
+    };
+
+    loadAssessmentLabels();
   }, [connectivity.status]);
 
   useEffect(() => {
@@ -399,7 +410,7 @@ const ExamAccess: React.FC = () => {
           <div class="container">
             <div class="header">
               <div class="title">CBT System</div>
-              <div class="title">Exam Access Code</div>
+              <div class="title">${assessmentLabels.accessCodeLabel}</div>
             </div>
             
             <div class="exam-info">
@@ -414,14 +425,14 @@ const ExamAccess: React.FC = () => {
             </div>
             
             <div class="code-section">
-              <div class="code-label">Your One-Time Access Code:</div>
+              <div class="code-label">Your One-Time ${assessmentLabels.accessCodeLabel}:</div>
               <div class="access-code">${generatedCode.access_code}</div>
             </div>
             
             <div class="instructions">
               <strong>Instructions:</strong>
               <ul>
-                <li>This access code is valid for ONE exam only</li>
+                <li>This access code is valid for ONE ${assessmentLabels.assessmentNoun} only</li>
                 <li>Once used, it cannot be used again</li>
                 <li>If regenerated, older unused code is invalidated</li>
                 <li>Code expires at the end of exam day</li>
@@ -502,10 +513,10 @@ const ExamAccess: React.FC = () => {
         {/* Header */}
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
-            Exam Access Code Generator
+            {assessmentLabels.accessCodeGeneratorTitle}
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Generate, re-generate, and print exam access codes for individual students
+            Generate, re-generate, and print {assessmentLabels.assessmentNoun.toLowerCase()} access codes for individual students
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700">
@@ -522,14 +533,14 @@ const ExamAccess: React.FC = () => {
           {/* Left: Code Generation Form */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              Generate Access Code
+              Generate {assessmentLabels.accessCodeLabel}
             </h2>
 
             <div className="space-y-4">
               {/* Select Exam */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Select Exam (Available)
+                  Select {assessmentLabels.assessmentNoun} (Available)
                 </label>
                 <select
                   value={selectedExam || ''}
@@ -542,7 +553,7 @@ const ExamAccess: React.FC = () => {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                   title="Select Exam (Available)"
                 >
-                  <option value="">-- Select an exam --</option>
+                  <option value="">-- Select a {assessmentLabels.assessmentNoun.toLowerCase()} --</option>
                   {exams.map((exam) => (
                     <option key={exam.id} value={exam.id}>
                       {exam.title} - {exam.subject_name} ({exam.start_time} - {exam.end_time})
@@ -551,7 +562,7 @@ const ExamAccess: React.FC = () => {
                 </select>
                 {exams.length === 0 && (
                   <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
-                    No published/scheduled exams available for the current window
+                    No published/scheduled {assessmentLabels.assessmentNounPlural.toLowerCase()} available for the current window
                   </p>
                 )}
               </div>
@@ -626,7 +637,7 @@ const ExamAccess: React.FC = () => {
                   ) : (
                     <>
                       <i className="bx bx-key"></i>
-                      <span>Generate Access Code</span>
+                      <span>Generate {assessmentLabels.accessCodeLabel}</span>
                     </>
                   )}
                 </button>
@@ -636,7 +647,7 @@ const ExamAccess: React.FC = () => {
               {generatedCode && (
                 <div className="space-y-4">
                   <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg">
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">Access Code Generated</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">{assessmentLabels.accessCodeLabel} Generated</p>
                     <div className="text-4xl font-bold text-blue-600 dark:text-blue-400 font-mono tracking-wider text-center py-4">
                       {generatedCode.access_code}
                     </div>
@@ -649,10 +660,10 @@ const ExamAccess: React.FC = () => {
                     <button
                       onClick={handlePrint}
                       className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center justify-center space-x-2"
-                      title="Print access code"
+                      title={`Print ${assessmentLabels.accessCodeLabel}`}
                     >
                       <i className="bx bx-printer"></i>
-                      <span>Print Code</span>
+                      <span>Print {assessmentLabels.accessCodeLabel}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -690,10 +701,10 @@ const ExamAccess: React.FC = () => {
                 <div>
                   <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">How to Use</h3>
                   <ol className="text-sm text-blue-800 dark:text-blue-400 space-y-2 list-decimal list-inside">
-                    <li>Select the exam from the dropdown</li>
+                    <li>Select the {assessmentLabels.assessmentNoun.toLowerCase()} from the dropdown</li>
                     <li>Enter student's registration number</li>
                     <li>Click "Search" to verify student exists</li>
-                    <li>Click "Generate Access Code"</li>
+                    <li>Click "Generate {assessmentLabels.accessCodeLabel}"</li>
                     <li>Click "Print Code" to print the ticket</li>
                     <li>Give printed code to the student</li>
                   </ol>
@@ -711,7 +722,7 @@ const ExamAccess: React.FC = () => {
                     <li>Codes expire at end of day</li>
                     <li>Regeneration is allowed if token is lost</li>
                     <li>New code invalidates previous unused code</li>
-                    <li>Token cannot restart exam after attempt exists</li>
+                    <li>Token cannot restart {assessmentLabels.assessmentNoun.toLowerCase()} after attempt exists</li>
                     <li>Invalid reg numbers won't generate</li>
                     <li>Print immediately after generation</li>
                   </ul>
@@ -735,7 +746,7 @@ const ExamAccess: React.FC = () => {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search by reg number, name, or exam..."
+                  placeholder={`Search by reg number, name, or ${assessmentLabels.assessmentNoun.toLowerCase()}...`}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 />
               </div>
@@ -766,10 +777,10 @@ const ExamAccess: React.FC = () => {
                     Student Name
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Exam
+                    {assessmentLabels.assessmentNoun}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Access Code
+                    {assessmentLabels.accessCodeLabel}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Status
@@ -787,7 +798,7 @@ const ExamAccess: React.FC = () => {
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                       <i className="bx bx-key text-4xl mb-2"></i>
-                      <p>No access codes generated yet</p>
+                      <p>No {assessmentLabels.accessCodeLabel.toLowerCase()} records yet</p>
                     </td>
                   </tr>
                 ) : (

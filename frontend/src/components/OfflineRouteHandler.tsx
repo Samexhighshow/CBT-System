@@ -28,6 +28,7 @@ const ONLINE_ONLY_ROUTES = [
 const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const connectivity = useConnectivity();
   const isOnline = connectivity.status !== 'OFFLINE';
+  const showOfflineBanner = !isOnline && connectivity.initialized && !connectivity.checking;
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -47,7 +48,7 @@ const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <>
-      {!isOnline && (
+      {showOfflineBanner && (
         <div className="fixed left-0 right-0 top-0 z-50 bg-yellow-500 px-4 py-2 text-center text-white shadow-lg">
           <div className="flex items-center justify-center gap-2">
             <i className="bx bx-wifi-off" />
@@ -62,7 +63,7 @@ const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children
           </div>
         </div>
       )}
-      <div className={!isOnline ? 'mt-12' : ''}>{children}</div>
+      <div className={showOfflineBanner ? 'mt-12' : ''}>{children}</div>
     </>
   );
 };

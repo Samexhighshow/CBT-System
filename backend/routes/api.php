@@ -49,6 +49,7 @@ Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv'])
 
 // Dedicated CBT runtime endpoints (public, session-token protected per request)
 Route::prefix('cbt')->group(function () {
+    Route::get('/config', [CbtInterfaceController::class, 'config']);
     Route::get('/exams', [CbtInterfaceController::class, 'exams']);
     Route::get('/offline-students', [CbtOfflineController::class, 'offlineStudents']);
     Route::get('/offline-exams', [CbtOfflineController::class, 'offlineExams']);

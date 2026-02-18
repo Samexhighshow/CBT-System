@@ -21,6 +21,18 @@ use Illuminate\Support\Str;
 
 class CbtInterfaceController extends Controller
 {
+    public function config(): JsonResponse
+    {
+        $mode = $this->assessmentDisplayMode();
+
+        return response()->json([
+            'data' => [
+                'mode' => $mode,
+                'labels' => $this->assessmentDisplayLabels($mode),
+            ],
+        ]);
+    }
+
     public function exams(Request $request): JsonResponse
     {
         $student = null;
@@ -71,7 +83,15 @@ class CbtInterfaceController extends Controller
             ];
         })->values();
 
-        return response()->json(['data' => $payload]);
+        $mode = $this->assessmentDisplayMode();
+
+        return response()->json([
+            'data' => $payload,
+            'meta' => [
+                'assessment_mode' => $mode,
+                'assessment_labels' => $this->assessmentDisplayLabels($mode),
+            ],
+        ]);
     }
 
     public function verify(Request $request, int $examId): JsonResponse
@@ -1517,5 +1537,36 @@ class CbtInterfaceController extends Controller
             'meta_json' => $meta,
             'created_at' => now(),
         ]);
+    }
+
+    private function assessmentDisplayMode(): string
+    {
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'exam')));
+        return in_array($mode, ['exam', 'ca_test'], true) ? $mode : 'exam';
+    }
+
+    private function assessmentDisplayLabels(?string $mode = null): array
+    {
+        $resolvedMode = $mode && in_array($mode, ['exam', 'ca_test'], true)
+            ? $mode
+            : $this->assessmentDisplayMode();
+
+        if ($resolvedMode === 'ca_test') {
+            return [
+                'assessment_noun' => 'CA Test',
+                'assessment_noun_plural' => 'CA Tests',
+                'access_code_label' => 'CA Test Access Code',
+                'access_code_generator_title' => 'CA Test Access Code Generator',
+                'student_portal_subtitle' => 'Student CA Test Portal',
+            ];
+        }
+
+        return [
+            'assessment_noun' => 'Exam',
+            'assessment_noun_plural' => 'Exams',
+            'access_code_label' => 'Exam Access Code',
+            'access_code_generator_title' => 'Exam Access Code Generator',
+            'student_portal_subtitle' => 'Student Exam Portal',
+        ];
     }
 }

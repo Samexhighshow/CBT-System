@@ -4,6 +4,7 @@ import { cbtApi } from '../services/cbtApi';
 import { clearStoredSession, loadStoredSession } from '../services/sessionStore';
 import { CbtAttemptState, CbtQuestion } from '../types';
 import { cbtFontFamily, cbtTheme } from '../theme';
+import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
 
 type AutoSaveState = 'Saved' | 'Saving...' | 'Save failed';
 type AnswerValue = {
@@ -91,6 +92,7 @@ const CbtExamSession: React.FC = () => {
   const [startingAttempt, setStartingAttempt] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
+  const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
 
   const eventThrottleRef = useRef<Record<string, number>>({});
   const sessionResumeLoggedRef = useRef(false);
@@ -99,6 +101,15 @@ const CbtExamSession: React.FC = () => {
   useEffect(() => {
     sessionResumeLoggedRef.current = false;
   }, [attemptId]);
+
+  useEffect(() => {
+    const loadLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentLabels(config.labels);
+    };
+
+    loadLabels();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -596,7 +607,7 @@ const CbtExamSession: React.FC = () => {
             className="mt-5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
             style={{ backgroundColor: cbtTheme.primary }}
           >
-            Back to Portal
+            Back to {assessmentLabels.assessmentNoun} Portal
           </button>
         </div>
       </div>
@@ -916,11 +927,11 @@ const CbtExamSession: React.FC = () => {
                     className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                     style={{ backgroundColor: cbtTheme.primary }}
                   >
-                    Submit Exam
+                    Submit {assessmentLabels.assessmentNoun}
                   </button>
                 ) : (
                   <p className="text-xs px-2" style={{ color: cbtTheme.muted }}>
-                    Submit appears on last question.
+                    Submit appears on last {assessmentLabels.assessmentNoun.toLowerCase()} question.
                   </p>
                 )}
               </div>
@@ -994,7 +1005,7 @@ const CbtExamSession: React.FC = () => {
                 className="rounded-lg border px-4 py-2 text-sm font-semibold"
                 style={{ borderColor: '#D1D5DB', color: cbtTheme.body }}
               >
-                Back to Portal
+                Back to {assessmentLabels.assessmentNoun} Portal
               </button>
               <button
                 type="button"
@@ -1116,7 +1127,7 @@ const CbtExamSession: React.FC = () => {
                 className="rounded-lg border px-4 py-2 text-sm font-semibold"
                 style={{ borderColor: '#D1D5DB', color: cbtTheme.body }}
               >
-                Back to Exam
+                Back to {assessmentLabels.assessmentNoun}
               </button>
               <button
                 type="button"
@@ -1142,10 +1153,10 @@ const CbtExamSession: React.FC = () => {
               OK
             </div>
             <h3 className="mt-4 text-[24px] font-bold tracking-[-0.02em]" style={{ color: '#065F46' }}>
-              Exam Submitted Successfully
+              {assessmentLabels.assessmentNoun} Submitted Successfully
             </h3>
             <p className="mt-2 text-sm leading-6" style={{ color: cbtTheme.muted }}>
-              Redirecting to exam selection...
+              Redirecting to {assessmentLabels.assessmentNoun.toLowerCase()} selection...
             </p>
           </div>
         </div>

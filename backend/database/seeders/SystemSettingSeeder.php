@@ -58,6 +58,7 @@ class SystemSettingSeeder extends Seeder
             ['key' => 'pass_mark_percentage', 'value' => '50', 'type' => 'string', 'description' => 'Default pass mark percentage when exam pass mark is not set'],
             ['key' => 'current_academic_session', 'value' => date('Y') . '/' . (date('Y') + 1), 'type' => 'string', 'description' => 'Current academic session used for exam defaults and result compilation'],
             ['key' => 'current_term', 'value' => 'First Term', 'type' => 'string', 'description' => 'Current academic term for exam defaults'],
+            ['key' => 'assessment_display_mode', 'value' => 'exam', 'type' => 'string', 'description' => 'Assessment display mode label: exam or ca_test'],
             ['key' => 'enable_term_result_compilation', 'value' => '1', 'type' => 'boolean', 'description' => 'Enable combining CA and Exam components into a term score'],
             ['key' => 'enable_cumulative_results', 'value' => '1', 'type' => 'boolean', 'description' => 'Enable cumulative result (CR) averaging across terms'],
             ['key' => 'default_ca_weight', 'value' => '40', 'type' => 'string', 'description' => 'Default CA percentage weight when exam assessment weight is not set'],

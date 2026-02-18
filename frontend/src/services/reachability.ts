@@ -6,9 +6,13 @@ const localBaseUrl = (process.env.REACT_APP_LOCAL_API_URL || cloudBaseUrl).repla
 const CHECK_TIMEOUT_LOCAL_MS = 4500;
 const CHECK_TIMEOUT_CLOUD_MS = 5500;
 const GRACE_WINDOW_MS = 30000;
+const CHECK_CACHE_TTL_MS = 4000;
 
 let lastKnownOnlineAt = 0;
 let lastKnownStatus: ConnectivityStatus = 'OFFLINE';
+let lastCheckAt = 0;
+let lastResult: ReachabilityResult | null = null;
+let inFlightCheck: Promise<ReachabilityResult> | null = null;
 
 const buildHealthUrls = (baseUrl: string): string[] => {
   const urls = new Set<string>();
@@ -35,7 +39,9 @@ const fetchWithTimeout = async (url: string, timeoutMs: number): Promise<boolean
       credentials: 'omit',
       signal: controller.signal,
     });
-    return response.ok;
+    // Any HTTP response means the backend is reachable.
+    // Non-2xx (e.g. 401/403/404/429/500) should not be treated as offline.
+    return response.status > 0;
   } catch {
     return false;
   } finally {
@@ -49,7 +55,7 @@ export interface ReachabilityResult {
   canReachCloud: boolean;
 }
 
-export const checkReachability = async (): Promise<ReachabilityResult> => {
+const runReachabilityCheck = async (): Promise<ReachabilityResult> => {
   const localHealthUrls = buildHealthUrls(localBaseUrl);
   const cloudHealthUrls = buildHealthUrls(cloudBaseUrl);
 
@@ -63,10 +69,23 @@ export const checkReachability = async (): Promise<ReachabilityResult> => {
     return false;
   };
 
-  const [localOk, cloudOk] = await Promise.all([
-    checkAny(localHealthUrls, CHECK_TIMEOUT_LOCAL_MS),
-    checkAny(cloudHealthUrls, CHECK_TIMEOUT_CLOUD_MS),
-  ]);
+  const sameEndpoint =
+    localBaseUrl.toLowerCase() === cloudBaseUrl.toLowerCase() &&
+    JSON.stringify(localHealthUrls) === JSON.stringify(cloudHealthUrls);
+
+  let localOk = false;
+  let cloudOk = false;
+
+  if (sameEndpoint) {
+    const ok = await checkAny(cloudHealthUrls, Math.max(CHECK_TIMEOUT_LOCAL_MS, CHECK_TIMEOUT_CLOUD_MS));
+    localOk = ok;
+    cloudOk = ok;
+  } else {
+    [localOk, cloudOk] = await Promise.all([
+      checkAny(localHealthUrls, CHECK_TIMEOUT_LOCAL_MS),
+      checkAny(cloudHealthUrls, CHECK_TIMEOUT_CLOUD_MS),
+    ]);
+  }
 
   let status: ConnectivityStatus = 'OFFLINE';
   if (cloudOk) {
@@ -87,6 +106,30 @@ export const checkReachability = async (): Promise<ReachabilityResult> => {
     canReachLocal: localOk,
     canReachCloud: cloudOk,
   };
+};
+
+export const checkReachability = async (force = false): Promise<ReachabilityResult> => {
+  const now = Date.now();
+
+  if (!force && lastResult && now - lastCheckAt < CHECK_CACHE_TTL_MS) {
+    return lastResult;
+  }
+
+  if (!force && inFlightCheck) {
+    return inFlightCheck;
+  }
+
+  inFlightCheck = runReachabilityCheck()
+    .then((result) => {
+      lastResult = result;
+      lastCheckAt = Date.now();
+      return result;
+    })
+    .finally(() => {
+      inFlightCheck = null;
+    });
+
+  return inFlightCheck;
 };
 
 export const getReachableBaseUrl = (result: ReachabilityResult): string | null => {

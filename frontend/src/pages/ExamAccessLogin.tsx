@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import { showSuccess, showError } from '../utils/alerts';
 import useAuthStore from '../store/authStore';
+import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../services/assessmentDisplay';
 
 const ExamAccessLogin: React.FC = () => {
   const navigate = useNavigate();
@@ -12,6 +13,16 @@ const ExamAccessLogin: React.FC = () => {
     access_code: '',
   });
   const [loading, setLoading] = useState(false);
+  const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
+
+  useEffect(() => {
+    const loadLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentLabels(config.labels);
+    };
+
+    loadLabels();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -74,10 +85,10 @@ const ExamAccessLogin: React.FC = () => {
               <i className="bx bx-key text-3xl text-blue-600 dark:text-blue-400"></i>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Exam Access
+              {assessmentLabels.assessmentNoun} Access
             </h1>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-              Enter your registration number and one-time access code
+              Enter your registration number and one-time {assessmentLabels.accessCodeLabel.toLowerCase()}
             </p>
           </div>
 
@@ -100,20 +111,20 @@ const ExamAccessLogin: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Access Code
+                {assessmentLabels.accessCodeLabel}
               </label>
               <input
                 type="text"
                 name="access_code"
                 value={formData.access_code}
                 onChange={handleChange}
-                placeholder="Enter 8-digit access code"
+                placeholder={`Enter ${assessmentLabels.accessCodeLabel.toLowerCase()}`}
                 maxLength={8}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono text-lg tracking-wider uppercase text-center"
                 required
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Get your access code from your exam supervisor
+                Get your access code from your {assessmentLabels.assessmentNoun.toLowerCase()} supervisor
               </p>
             </div>
 
@@ -130,7 +141,7 @@ const ExamAccessLogin: React.FC = () => {
               ) : (
                 <>
                   <i className="bx bx-log-in"></i>
-                  <span>Access Exam</span>
+                  <span>Access {assessmentLabels.assessmentNoun}</span>
                 </>
               )}
             </button>
@@ -144,7 +155,7 @@ const ExamAccessLogin: React.FC = () => {
                 <p className="font-semibold mb-1">Important:</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li>Each access code can only be used once</li>
-                  <li>Access codes expire at the end of exam day</li>
+                  <li>Access codes expire at the end of {assessmentLabels.assessmentNoun.toLowerCase()} day</li>
                   <li>Contact your supervisor if you have issues</li>
                 </ul>
               </div>

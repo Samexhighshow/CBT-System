@@ -35,6 +35,7 @@ interface PositionScaleRow {
 type SettingsTab = 'general' | 'registration' | 'security' | 'modules' | 'appearance' | 'grading' | 'results';
 type GradingScheme = 'waec' | 'letter' | 'position';
 type Term = 'First Term' | 'Second Term' | 'Third Term';
+type AssessmentDisplayMode = 'exam' | 'ca_test';
 
 const defaultEndpointToggles: EndpointToggles = {
   students: true,
@@ -78,6 +79,7 @@ const fixedPositionScale: PositionScaleRow[] = [
 
 const findSettingValue = (key: string, settingsList: Setting[]) => settingsList.find((s) => s.key === key)?.value;
 const normalizeTerm = (value: string): Term => (value === 'Second Term' || value === 'Third Term' ? value : 'First Term');
+const normalizeAssessmentDisplayMode = (value: string): AssessmentDisplayMode => (value === 'ca_test' ? 'ca_test' : 'exam');
 const clamp = (value: any, fallback = 0) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
@@ -112,6 +114,7 @@ const AdminSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   const [systemName, setSystemName] = useState('');
+  const [assessmentDisplayMode, setAssessmentDisplayMode] = useState<AssessmentDisplayMode>('exam');
   const [endpointToggles, setEndpointToggles] = useState<EndpointToggles>(defaultEndpointToggles);
   const [gradingScheme, setGradingScheme] = useState<GradingScheme>('waec');
   const [waecScale, setWaecScale] = useState<GradeScaleRow[]>(fixedWaecScale);
@@ -184,6 +187,7 @@ const AdminSettings: React.FC = () => {
       setSettings(rows);
 
       setSystemName(findSettingValue('system_name', rows) || 'CBT System');
+      setAssessmentDisplayMode(normalizeAssessmentDisplayMode(String(findSettingValue('assessment_display_mode', rows) || 'exam')));
       setEndpointToggles({ ...defaultEndpointToggles, ...(parseJson(findSettingValue('endpoint_toggles', rows), defaultEndpointToggles) || {}) });
 
       const scheme = String(findSettingValue('grading_scheme', rows) || 'waec').toLowerCase();
@@ -281,6 +285,25 @@ const AdminSettings: React.FC = () => {
             onBlur={(e) => updateSetting('system_name', e.target.value)}
             className="border dark:border-gray-600 rounded px-3 py-2 w-full bg-white dark:bg-gray-700 dark:text-white"
           />
+
+          <div className="mt-4">
+            <h3 className="font-semibold mb-2 dark:text-white">Assessment Mode Labels</h3>
+            <p className="text-xs text-slate-500 mb-2">
+              Controls global wording like Exam Access Code vs CA Test Access Code.
+            </p>
+            <select
+              value={assessmentDisplayMode}
+              onChange={async (e) => {
+                const next = normalizeAssessmentDisplayMode(e.target.value);
+                setAssessmentDisplayMode(next);
+                await updateSetting('assessment_display_mode', next, 'string');
+              }}
+              className="border dark:border-gray-600 rounded px-3 py-2 w-full bg-white dark:bg-gray-700 dark:text-white"
+            >
+              <option value="exam">Exam Mode Labels</option>
+              <option value="ca_test">CA Test Mode Labels</option>
+            </select>
+          </div>
         </div>
       );
     }

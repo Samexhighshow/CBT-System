@@ -50,6 +50,20 @@ class GradingService
         return $this->resolveLabelFromScale($percentage, $scale, 'grade');
     }
 
+    public function gradeLabel(?float $percentage, ?int $rankPosition = null): ?string
+    {
+        if ($percentage === null) {
+            return null;
+        }
+
+        if ($this->currentScheme() === 'position') {
+            return $this->ordinalPosition($rankPosition);
+        }
+
+        $scale = $this->gradeScale();
+        return $this->resolveLabelFromScale($percentage, $scale, 'grade');
+    }
+
     public function positionBandFromPercentage(?float $percentage): ?string
     {
         if ($percentage === null) {
@@ -58,6 +72,24 @@ class GradingService
 
         $scale = $this->positionScale();
         return $this->resolveLabelFromScale($percentage, $scale, 'label');
+    }
+
+    public function positionLabel(?float $percentage, ?int $rankPosition = null): ?string
+    {
+        if ($this->currentScheme() === 'position') {
+            return $this->ordinalPosition($rankPosition);
+        }
+
+        if ($percentage === null) {
+            return null;
+        }
+
+        return $this->positionBandFromPercentage($percentage);
+    }
+
+    public function scheme(): string
+    {
+        return $this->currentScheme();
     }
 
     public function passMarkPercentage(): float

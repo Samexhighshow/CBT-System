@@ -1,0 +1,76 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Calibri;}}
+\fs24
+\b CBT System: Online vs Offline How It Works\b0\par
+\par
+This document explains how the CBT system behaves in online and offline modes, and how they sync together. It is written so you can understand the flow once without jumping between files.\par
+\par
+\b 1) Core Idea (Single Source of Truth)\b0\par
+- The online server is the source of truth.\par
+- Offline mode is a temporary local capture of answers and exam progress.\par
+- When the device goes back online, offline data is synchronized to the server.\par
+\par
+\b 2) Online Mode (Normal Flow)\b0\par
+When the device has internet access, the system behaves like a standard CBT platform:\par
+- Admin creates classes, subjects, and exams.\par
+- Questions are linked to subjects and classes.\par
+- Students start the exam and receive questions from the server.\par
+- Answers are submitted to the server in real time (auto-save).\par
+- The server grades objective questions automatically.\par
+- Essays or long answers are marked for manual grading.\par
+- Results are stored centrally and can be reviewed in Results & Marking.\par
+\par
+\b 3) Offline Mode (When Internet Drops)\b0\par
+When the device loses internet while an exam is in progress:\par
+- The app switches to offline capture mode.\par
+- The exam data and answers are stored locally (inside the browser storage).\par
+- The student continues the exam without losing progress.\par
+- Auto-save continues, but the data is saved locally instead of sending to the server.\par
+\par
+\b 4) Offline Exam Data (What Is Stored Locally)\b0\par
+The offline bundle typically includes:\par
+- Exam ID and metadata (title, duration, timing).\par
+- Question IDs and the question content shown to the student.\par
+- The student's answers per question.\par
+- Time tracking (start time, remaining time).\par
+- Any flags needed to detect completion.\par
+\par
+\b 5) Sync (Returning Online)\b0\par
+Once the internet is back:\par
+- The app detects connectivity.\par
+- Offline exam attempts are pushed to the server in a single sync request.\par
+- The server validates the attempt (exam exists, questions match, timing ok).\par
+- If valid, the server stores the answers and runs auto-grading.\par
+- The local offline record is cleared after a successful sync.\par
+\par
+\b 6) Conflict Handling\b0\par
+If the same exam attempt was submitted both offline and online, the server applies rules such as:\par
+- Keep the earliest valid submission.\par
+- Reject duplicate submissions for the same attempt ID.\par
+- Log conflicts for admin review if needed.\par
+\par
+\b 7) What the Student Sees\b0\par
+Online:\par
+- Normal exam UI with live saving and submission.\par
+Offline:\par
+- A warning that the device is offline.\par
+- The exam continues without interruption.\par
+- Sync confirmation is shown once online and uploaded.\par
+\par
+\b 8) What the Admin Sees\b0\par
+Online only affects admin data, not the student experience:\par
+- Admin sees all attempts in Results & Marking once synced.\par
+- Offline attempts only appear after they are synced.\par
+- Pending manual marking is still tracked after sync.\par
+\par
+\b 9) Why This Is Safe\b0\par
+- The server is the single source of truth.\par
+- Offline data is only accepted if it matches valid exam data.\par
+- The system prevents ghost exams or invalid questions.\par
+- Sync is idempotent: the same offline record will not double-count.\par
+\par
+\b 10) Quick Summary (One-Liner)\b0\par
+Online mode = live server submissions. Offline mode = local capture + safe sync once back online.\par
+\par
+\b If you want a diagram or a step-by-step user guide with screenshots, tell me and I will add it.\b0\par
+}
