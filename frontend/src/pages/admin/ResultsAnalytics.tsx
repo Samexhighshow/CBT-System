@@ -67,7 +67,6 @@ const ResultsAnalytics: React.FC = () => {
     total_attempts: 0,
   });
   const [examId, setExamId] = useState<string>('');
-  const [attempts, setAttempts] = useState<AttemptSummary[]>([]);
   const [studentName, setStudentName] = useState<string>('');
   const [exams, setExams] = useState<ExamOption[]>([]);
   const [markingSummary, setMarkingSummary] = useState<MarkingSummary>({
@@ -334,7 +333,6 @@ const ResultsAnalytics: React.FC = () => {
               };
             })
           : [];
-        setAttempts(mapped);
         await loadCompiledResults(mapped, examId);
 
         if (mapped.length > 0) {
@@ -354,7 +352,6 @@ const ResultsAnalytics: React.FC = () => {
           });
         }
       } else {
-        setAttempts([]);
         setCompiledRows([]);
       }
     } catch (error: any) {
@@ -365,7 +362,6 @@ const ResultsAnalytics: React.FC = () => {
         pass_rate: 0,
         total_attempts: 0,
       });
-      setAttempts([]);
       setCompiledRows([]);
     } finally {
       setLoading(false);

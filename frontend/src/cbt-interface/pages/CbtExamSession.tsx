@@ -436,11 +436,6 @@ const CbtExamSession: React.FC = () => {
     [answers, orderedQuestionIds, questions]
   );
 
-  const flaggedCount = useMemo(
-    () => orderedQuestionIds.filter((id) => !!flagged[id]).length,
-    [flagged, orderedQuestionIds]
-  );
-
   const unansweredCount = Math.max(0, questions.length - answeredCount);
 
   const formatAnswerSummary = useCallback((question: CbtQuestion): string => {
@@ -553,15 +548,15 @@ const CbtExamSession: React.FC = () => {
     }, 1200);
   };
 
-  const flushTextAnswerSave = async (questionId: number) => {
+  const flushTextAnswerSave = useCallback(async (questionId: number) => {
     if (textAutosaveTimersRef.current[questionId]) {
       window.clearTimeout(textAutosaveTimersRef.current[questionId]);
       delete textAutosaveTimersRef.current[questionId];
     }
     await persistAnswer(questionId, answers[questionId]);
-  };
+  }, [answers, persistAnswer]);
 
-  const flushAllPendingTextSaves = async () => {
+  const flushAllPendingTextSaves = useCallback(async () => {
     const pendingQuestionIds = Object.keys(textAutosaveTimersRef.current)
       .map((rawId) => Number(rawId))
       .filter((value) => Number.isFinite(value));
@@ -570,7 +565,7 @@ const CbtExamSession: React.FC = () => {
       // eslint-disable-next-line no-await-in-loop
       await flushTextAnswerSave(qid);
     }
-  };
+  }, [flushTextAnswerSave]);
 
   const handleTrueFalseTextAnswer = async (questionId: number, boolText: 'true' | 'false') => {
     const nextValue: AnswerValue = { answerText: boolText };

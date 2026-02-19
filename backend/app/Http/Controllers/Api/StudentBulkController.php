@@ -5,10 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\Department;
+use App\Models\User;
+use App\Models\SchoolClass;
+use App\Services\RegistrationNumberService;
+use App\Jobs\SendStudentOnboardingEmailJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
 
 class StudentBulkController extends Controller
 {
@@ -20,6 +25,7 @@ class StudentBulkController extends Controller
         $request->validate([
             'file' => 'required|file|mimes:csv,txt|max:10240', // 10MB max
         ]);
+        $sendCredentials = $request->boolean('send_credentials', false);
 
         $file = $request->file('file');
         $data = array_map('str_getcsv', file($file->getPathname()));
@@ -29,6 +35,10 @@ class StudentBulkController extends Controller
         
         $imported = 0;
         $errors = [];
+        $studentRole = Role::firstOrCreate([
+            'name' => 'student',
+            'guard_name' => 'web',
+        ]);
 
         DB::beginTransaction();
         try {
@@ -47,10 +57,14 @@ class StudentBulkController extends Controller
                     'guardian_phone' => $row[7] ?? null,
                 ];
 
+                if (empty($rowData['registration_number'])) {
+                    $rowData['registration_number'] = RegistrationNumberService::generateUniqueRegistrationNumber();
+                }
+
                 $validator = Validator::make($rowData, [
                     'first_name' => 'required|string|max:255',
                     'last_name' => 'required|string|max:255',
-                    'email' => 'required|email|unique:students,email',
+                    'email' => 'required|email|unique:students,email|unique:users,email',
                     'registration_number' => 'required|string|unique:students,registration_number',
                     'class_level' => 'required|in:JSS1,JSS2,JSS3,SSS1,SSS2,SSS3',
                     'department_id' => 'nullable|exists:departments,id',
@@ -65,7 +79,54 @@ class StudentBulkController extends Controller
                     continue;
                 }
 
-                Student::create($rowData);
+                $temporaryPassword = $this->generateTemporaryPassword();
+                $studentId = $this->generateStudentId((string) $rowData['registration_number']);
+                $classId = $this->resolveClassIdByLevel((string) $rowData['class_level']);
+                $user = User::create([
+                    'name' => trim(($rowData['first_name'] ?? '') . ' ' . ($rowData['last_name'] ?? '')),
+                    'email' => $rowData['email'],
+                    'password' => Hash::make($temporaryPassword),
+                    'phone_number' => $rowData['phone'] ?? null,
+                ]);
+                $user->assignRole($studentRole);
+                $user->markEmailAsVerified();
+
+                $student = Student::create([
+                    'student_id' => $studentId,
+                    'registration_number' => $rowData['registration_number'],
+                    'first_name' => $rowData['first_name'],
+                    'last_name' => $rowData['last_name'],
+                    'email' => $rowData['email'],
+                    'password' => Hash::make($temporaryPassword),
+                    'phone' => $rowData['phone'],
+                    'phone_number' => $rowData['phone'],
+                    'class_level' => $rowData['class_level'],
+                    'class_id' => $classId,
+                    'department_id' => $rowData['department_id'],
+                    'date_of_birth' => now()->subYears(14)->toDateString(),
+                    'gender' => 'male',
+                    'address' => 'To be updated by student',
+                    'guardian_first_name' => $rowData['first_name'],
+                    'guardian_last_name' => $rowData['last_name'],
+                    'guardian_relationship' => 'Parent',
+                    'guardian_phone' => $rowData['guardian_phone'] ?: 'N/A',
+                    'guardian_gender' => 'male',
+                    'status' => 'active',
+                    'is_active' => true,
+                ]);
+
+                if ($sendCredentials && !empty($student->email)) {
+                    $frontendBase = rtrim((string) env('FRONTEND_URL', 'http://localhost:3000'), '/');
+                    $link = $frontendBase . '/register?email=' . urlencode((string) $student->email) . '&reg=' . urlencode((string) $student->registration_number);
+                    SendStudentOnboardingEmailJob::dispatch(
+                        (string) $student->email,
+                        trim((string) ($student->first_name . ' ' . $student->last_name)),
+                        (string) $student->registration_number,
+                        $temporaryPassword,
+                        $link
+                    )->onQueue('emails');
+                }
+
                 $imported++;
             }
 
@@ -74,6 +135,7 @@ class StudentBulkController extends Controller
             return response()->json([
                 'message' => "Successfully imported {$imported} students",
                 'imported' => $imported,
+                'email_delivery' => $sendCredentials ? 'queued' : 'disabled',
                 'errors' => $errors,
             ]);
 
@@ -137,12 +199,48 @@ class StudentBulkController extends Controller
      */
     public function downloadTemplate()
     {
-        $csv = "First Name,Last Name,Email,Registration Number,Class Level,Department ID,Phone,Guardian Phone\n";
-        $csv .= "John,Doe,john.doe@example.com,STU001,JSS1,1,08012345678,08087654321\n";
-        $csv .= "Jane,Smith,jane.smith@example.com,STU002,SSS2,2,08023456789,08098765432\n";
+        $csv = "First Name,Last Name,Email,Registration Number(optional),Class Level,Department ID,Phone,Guardian Phone\n";
+        $csv .= "John,Doe,john.doe@example.com,,JSS1,1,08012345678,08087654321\n";
+        $csv .= "Jane,Smith,jane.smith@example.com,,SSS2,2,08023456789,08098765432\n";
 
         return response($csv, 200)
             ->header('Content-Type', 'text/csv')
             ->header('Content-Disposition', 'attachment; filename="student_import_template.csv"');
+    }
+
+    private function generateTemporaryPassword(int $length = 10): string
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+        $max = strlen($alphabet) - 1;
+        $chars = [];
+        for ($i = 0; $i < $length; $i++) {
+            $chars[] = $alphabet[random_int(0, $max)];
+        }
+        return implode('', $chars);
+    }
+
+    private function generateStudentId(string $registrationNumber): string
+    {
+        $candidate = strtoupper(trim($registrationNumber));
+        if (!Student::where('student_id', $candidate)->exists()) {
+            return $candidate;
+        }
+
+        do {
+            $generated = 'STD' . now()->format('Y') . str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+        } while (Student::where('student_id', $generated)->exists());
+
+        return $generated;
+    }
+
+    private function resolveClassIdByLevel(string $classLevel): ?int
+    {
+        $normalized = strtoupper(trim($classLevel));
+        $aliases = ['SS1' => 'SSS1', 'SS2' => 'SSS2', 'SS3' => 'SSS3'];
+        $target = $aliases[$normalized] ?? $normalized;
+        $class = SchoolClass::query()
+            ->whereRaw('REPLACE(UPPER(name), " ", "") = ?', [str_replace(' ', '', $target)])
+            ->first();
+        return $class?->id;
     }
 }
