@@ -48,7 +48,7 @@ Route::get('/health', fn() => response()->json(['status' => 'ok']))->middleware(
 Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv']);
 
 // Dedicated CBT runtime endpoints (public, session-token protected per request)
-Route::prefix('cbt')->group(function () {
+Route::prefix('cbt')->middleware('throttle:120,1')->group(function () {
     Route::get('/config', [CbtInterfaceController::class, 'config']);
     Route::get('/exams', [CbtInterfaceController::class, 'exams']);
     Route::get('/offline-students', [CbtOfflineController::class, 'offlineStudents']);
@@ -64,18 +64,18 @@ Route::prefix('cbt')->group(function () {
 });
 
 // Auth & Verification
-Route::post('/auth/login', [AuthController::class, 'login']);
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:20,1');
 Route::post('/auth/email/verification-notification', [AuthController::class, 'sendVerification']);
 Route::get('/auth/verify-email/{id}', [AuthController::class, 'verifyEmail']);
-Route::post('/auth/password/forgot', [AuthController::class, 'sendPasswordResetLink']);
-Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
+Route::post('/auth/password/forgot', [AuthController::class, 'sendPasswordResetLink'])->middleware('throttle:10,1');
+Route::post('/auth/password/reset', [AuthController::class, 'resetPassword'])->middleware('throttle:20,1');
 
 // OTP password reset (public)
-Route::post('/auth/password/otp/request', [AuthController::class, 'requestPasswordOtp']);
-Route::post('/auth/password/otp/verify', [AuthController::class, 'resetPasswordWithOtp']);
+Route::post('/auth/password/otp/request', [AuthController::class, 'requestPasswordOtp'])->middleware('throttle:10,1');
+Route::post('/auth/password/otp/verify', [AuthController::class, 'resetPasswordWithOtp'])->middleware('throttle:20,1');
 
 // Student exam access verification (public endpoint for login)
-Route::post('/exam-access/verify', [ExamAccessController::class, 'verify']);
+Route::post('/exam-access/verify', [ExamAccessController::class, 'verify'])->middleware('throttle:30,1');
 
 // Admin signup applicant (public) - DISABLED: Users should only be created via registration portal or manual setup
 // Route::post('/admin/signup', [UserController::class, 'store']);
@@ -89,7 +89,7 @@ Route::prefix('students')->group(function () {
     Route::get('/by-reg-number', [StudentController::class, 'getByRegistrationNumber']);
     Route::get('/by-reg-number/{regNumber}', [StudentController::class, 'getByRegistrationNumber']);
     Route::get('/{id}', [StudentController::class, 'show']);
-    Route::post('/', [StudentController::class, 'store']);
+    Route::post('/', [StudentController::class, 'store'])->middleware('throttle:30,1');
     Route::put('/{id}', [StudentController::class, 'update']);
     Route::delete('/{id}', [StudentController::class, 'destroy']);
     Route::get('/{id}/exams', [StudentController::class, 'getExams']);
@@ -97,7 +97,7 @@ Route::prefix('students')->group(function () {
     Route::get('/{id}/statistics', [StudentController::class, 'getStatistics']);
 
     // Bulk operations
-    Route::post('/import', [StudentBulkController::class, 'importCsv']);
+    Route::post('/import', [StudentBulkController::class, 'importCsv'])->middleware('throttle:10,1');
     Route::get('/export', [StudentBulkController::class, 'exportCsv']);
     Route::get('/import/template', [StudentBulkController::class, 'downloadTemplate']);
 });
@@ -138,10 +138,10 @@ Route::prefix('exams')->group(function () {
 });
 
 // Offline sync endpoints (cloud and LAN)
-Route::post('/sync/attempt', [OfflineExamController::class, 'syncAttempt']);
-Route::post('/local-sync/attempt', [OfflineExamController::class, 'syncAttempt']);
-Route::post('/sync/access-codes', [CbtOfflineController::class, 'syncAccessCodes']);
-Route::post('/sync/code-usage', [CbtOfflineController::class, 'syncCodeUsage']);
+Route::post('/sync/attempt', [OfflineExamController::class, 'syncAttempt'])->middleware('throttle:120,1');
+Route::post('/local-sync/attempt', [OfflineExamController::class, 'syncAttempt'])->middleware('throttle:120,1');
+Route::post('/sync/access-codes', [CbtOfflineController::class, 'syncAccessCodes'])->middleware('throttle:120,1');
+Route::post('/sync/code-usage', [CbtOfflineController::class, 'syncCodeUsage'])->middleware('throttle:120,1');
 
 // Questions
 Route::prefix('questions')->group(function () {
@@ -478,7 +478,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/attempts/{attemptId}', [MarkingController::class, 'attempt']);
         Route::post('/attempts/{attemptId}/questions/{questionId}/score', [MarkingController::class, 'scoreQuestion']);
         Route::post('/attempts/{attemptId}/finalize', [MarkingController::class, 'finalize']);
+        Route::post('/attempts/{attemptId}/force-submit', [MarkingController::class, 'forceSubmit']);
+        Route::post('/attempts/{attemptId}/extend-time', [MarkingController::class, 'extendTime']);
         Route::delete('/attempts/{attemptId}', [MarkingController::class, 'clearAttempt']);
+    });
+
+    Route::middleware('role:Admin|Main Admin')->prefix('exams')->group(function () {
+        Route::post('/{id}/lock', [ExamController::class, 'lockExam']);
+        Route::post('/{id}/unlock', [ExamController::class, 'unlockExam']);
     });
     
     // Announcements Management (Admin)

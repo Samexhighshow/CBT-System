@@ -47,11 +47,21 @@ interface TermCompilationPayload {
   terms: TermSummary[];
 }
 
+interface CompiledResultRow {
+  term: string;
+  subject: string;
+  ca_score: number | null;
+  exam_score: number | null;
+  compiled_score: number | null;
+  cumulative_average: number | null;
+}
+
 const MyResults: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [studentId, setStudentId] = useState<number | null>(null);
   const [results, setResults] = useState<ResultRow[]>([]);
+  const [compiledResults, setCompiledResults] = useState<CompiledResultRow[]>([]);
   const [stats, setStats] = useState<ResultStats>({
     average_score: 0,
     total_exams: 0,
@@ -75,8 +85,10 @@ const MyResults: React.FC = () => {
         const rows: ResultRow[] = resultsRes.value.data?.data || [];
         setResults(rows);
         setTermCompilation(resultsRes.value.data?.term_compilation || null);
+        setCompiledResults(resultsRes.value.data?.compiled_results || []);
       } else {
         setResults([]);
+        setCompiledResults([]);
         setTermCompilation(null);
       }
 
@@ -126,6 +138,12 @@ const MyResults: React.FC = () => {
     return results.filter((row) => row.exam_title.toLowerCase().includes(term) || row.subject.toLowerCase().includes(term));
   }, [results, search]);
 
+  const filteredCompiledResults = useMemo(() => {
+    if (!search.trim()) return compiledResults;
+    const term = search.toLowerCase();
+    return compiledResults.filter((row) => row.subject.toLowerCase().includes(term) || row.term.toLowerCase().includes(term));
+  }, [compiledResults, search]);
+
   const downloadPdf = () => {
     if (!studentId) return;
     window.open(`${API_URL}/reports/student/${studentId}/pdf`, '_blank');
@@ -143,7 +161,7 @@ const MyResults: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">My Results</h1>
-          <p className="text-sm text-slate-600 mt-1">View your scores, pass status, and performance trend.</p>
+          <p className="text-sm text-slate-600 mt-1">View your compiled scores, pass status, and performance trend.</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={downloadPdf} variant="secondary" className="flex items-center gap-1.5">
@@ -182,19 +200,59 @@ const MyResults: React.FC = () => {
 
       <Card>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-          <h2 className="text-xl font-semibold text-slate-900">Result History</h2>
+          <h2 className="text-xl font-semibold text-slate-900">Compiled Results (CA + Exam)</h2>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search exam or subject"
+            placeholder="Search subject or term"
             className="w-full md:w-72 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
           />
         </div>
 
         {loading ? (
           <SkeletonList items={5} />
+        ) : filteredCompiledResults.length === 0 ? (
+          <p className="text-sm text-slate-500">No compiled results found yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="text-left border-b border-slate-200 text-slate-600">
+                  <th className="py-2">Term</th>
+                  <th className="py-2">Subject</th>
+                  <th className="py-2">CA (%)</th>
+                  <th className="py-2">Exam (%)</th>
+                  <th className="py-2">Compiled (%)</th>
+                  <th className="py-2">CR (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCompiledResults.map((row, idx) => (
+                  <tr key={`${row.term}-${row.subject}-${idx}`} className="border-b border-slate-100">
+                    <td className="py-2 text-slate-700">{row.term}</td>
+                    <td className="py-2 font-medium text-slate-900">{row.subject}</td>
+                    <td className="py-2 text-slate-700">{row.ca_score !== null ? row.ca_score.toFixed(2) : '-'}</td>
+                    <td className="py-2 text-slate-700">{row.exam_score !== null ? row.exam_score.toFixed(2) : '-'}</td>
+                    <td className="py-2 font-semibold text-slate-900">{row.compiled_score !== null ? row.compiled_score.toFixed(2) : '-'}</td>
+                    <td className="py-2 text-slate-700">{row.cumulative_average !== null ? row.cumulative_average.toFixed(2) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 className="text-xl font-semibold text-slate-900">Attempt History (Audit)</h2>
+          <p className="text-xs text-slate-500">{filteredResults.length} attempt(s)</p>
+        </div>
+
+        {loading ? (
+          <SkeletonList items={5} />
         ) : filteredResults.length === 0 ? (
-          <p className="text-sm text-slate-500">No results found.</p>
+          <p className="text-sm text-slate-500">No attempt history found.</p>
         ) : (
           <div className="space-y-3">
             {filteredResults.map((row) => (
@@ -202,15 +260,17 @@ const MyResults: React.FC = () => {
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{row.exam_title}</p>
-                    <p className="text-xs text-slate-600 mt-1">{row.subject} • {row.completed_at ? new Date(row.completed_at).toLocaleString() : 'Completed'}</p>
+                    <p className="text-xs text-slate-600 mt-1">
+                      {row.subject} | {row.completed_at ? new Date(row.completed_at).toLocaleString() : 'Completed'}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-extrabold text-slate-900">{row.score}/{row.total_marks}</p>
                     <p className={`text-xs font-semibold ${row.passed ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {row.percentage.toFixed(1)}% • {row.passed ? 'Passed' : 'Failed'}
+                      {row.percentage.toFixed(1)}% | {row.passed ? 'Passed' : 'Failed'}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-1">
-                      Grade: {row.grade || '-'} {row.position_grade ? `• Band: ${row.position_grade}` : ''}
+                      Grade: {row.grade || '-'} {row.position_grade ? `| Band: ${row.position_grade}` : ''}
                     </p>
                   </div>
                 </div>
@@ -223,7 +283,7 @@ const MyResults: React.FC = () => {
       {termCompilation?.enabled && (
         <Card>
           <div className="flex items-center justify-between gap-3 mb-4">
-            <h2 className="text-xl font-semibold text-slate-900">Term Compilation (CR)</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Term Breakdown</h2>
             <p className="text-xs text-slate-500">Session: {termCompilation.current_session}</p>
           </div>
 

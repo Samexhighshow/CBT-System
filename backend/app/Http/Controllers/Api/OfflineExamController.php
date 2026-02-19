@@ -7,7 +7,9 @@ use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptEvent;
+use App\Models\IdempotencyKey;
 use App\Models\Question;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -24,6 +26,8 @@ class OfflineExamController extends Controller
                 ->findOrFail($examId);
 
             $packageVersion = $exam->updated_at?->timestamp ?? now()->timestamp;
+            $packageId = hash('sha256', "exam-package:{$exam->id}:{$packageVersion}");
+            $packageSignature = hash_hmac('sha256', $packageId, (string) env('OFFLINE_PACKAGE_SIGNING_KEY', config('app.key')));
 
             $questions = $exam->questions->map(function ($question) {
                 return [
@@ -43,6 +47,8 @@ class OfflineExamController extends Controller
             return response()->json([
                 'examId' => $exam->id,
                 'packageVersion' => (string) $packageVersion,
+                'packageId' => $packageId,
+                'packageSignature' => $packageSignature,
                 'exam' => [
                     'id' => $exam->id,
                     'title' => $exam->title,
@@ -81,7 +87,14 @@ class OfflineExamController extends Controller
             'cheatLogs' => 'nullable|array',
             'receiptCode' => 'nullable|string|max:100',
             'signature' => 'nullable|string',
+            'packageId' => 'nullable|string|max:191',
+            'packageSignature' => 'nullable|string|max:255',
         ]);
+
+        $idempotencyReplay = $this->resolveIdempotentReplay($request, (int) $validated['examId'], (int) $validated['studentId']);
+        if ($idempotencyReplay) {
+            return $idempotencyReplay;
+        }
 
         $signature = (string) ($validated['signature'] ?? '');
         $salt = (string) env('OFFLINE_SYNC_SALT', '');
@@ -101,12 +114,48 @@ class OfflineExamController extends Controller
             }
         }
 
+        if (!empty($validated['packageId']) || !empty($validated['packageSignature'])) {
+            $expectedSignature = hash_hmac('sha256', (string) ($validated['packageId'] ?? ''), (string) env('OFFLINE_PACKAGE_SIGNING_KEY', config('app.key')));
+            if (($validated['packageSignature'] ?? '') !== $expectedSignature) {
+                return response()->json([
+                    'message' => 'Invalid exam package signature',
+                    'code' => 'invalid_package_signature',
+                ], 422);
+            }
+        }
+
         $existing = ExamAttempt::where('attempt_uuid', $validated['attemptId'])->first();
         if ($existing) {
-            return response()->json([
+            $payload = [
                 'message' => 'Attempt already synced',
                 'attempt_id' => $existing->id,
+            ];
+
+            return $this->storeIdempotentResponse($request, (int) $validated['examId'], (int) $validated['studentId'], $payload, 200);
+        }
+
+        $existingByExamStudent = ExamAttempt::where('exam_id', $validated['examId'])
+            ->where('student_id', $validated['studentId'])
+            ->whereIn('status', ['submitted', 'completed'])
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existingByExamStudent) {
+            ExamAttemptEvent::create([
+                'attempt_id' => $existingByExamStudent->id,
+                'event_type' => 'sync_conflict',
+                'meta_json' => [
+                    'incoming_attempt_uuid' => $validated['attemptId'],
+                    'resolution' => 'rejected_existing_server_attempt',
+                ],
+                'created_at' => now(),
             ]);
+
+            return response()->json([
+                'message' => 'Attempt already synced for this student and exam.',
+                'code' => 'already_synced',
+                'server_attempt_id' => $existingByExamStudent->id,
+            ], 409);
         }
 
         $exam = Exam::with(['questions.options'])->findOrFail($validated['examId']);
@@ -119,9 +168,16 @@ class OfflineExamController extends Controller
                 'exam_id' => $exam->id,
                 'student_id' => $validated['studentId'],
                 'started_at' => $validated['startedAt'],
+                'client_started_at' => $validated['startedAt'],
+                'server_started_at' => now(),
                 'submitted_at' => $validated['submittedAt'],
+                'client_submitted_at' => $validated['submittedAt'],
+                'server_submitted_at' => now(),
                 'ended_at' => $validated['submittedAt'],
+                'assessment_mode' => $this->resolveAttemptMode($exam),
                 'status' => 'submitted',
+                'sync_status' => 'SYNCED',
+                'sync_version' => 1,
                 'synced_at' => now(),
             ]);
 
@@ -216,16 +272,20 @@ class OfflineExamController extends Controller
                 'status' => $status,
                 'score' => round($score, 2),
                 'completed_at' => $status === 'completed' ? now() : null,
+                'sync_status' => 'SYNCED',
+                'sync_version' => max(1, (int) $attempt->sync_version) + 1,
             ]);
 
             DB::commit();
 
-            return response()->json([
+            $payload = [
                 'message' => 'Attempt synced successfully',
                 'attempt_id' => $attempt->id,
                 'status' => $status,
                 'score' => round($score, 2),
-            ]);
+            ];
+
+            return $this->storeIdempotentResponse($request, (int) $validated['examId'], (int) $validated['studentId'], $payload, 200);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Offline sync error: ' . $e->getMessage());
@@ -275,8 +335,15 @@ class OfflineExamController extends Controller
                 'exam_id' => $request->exam_id,
                 'student_id' => $request->student_id,
                 'started_at' => $request->started_at,
+                'client_started_at' => $request->started_at,
+                'server_started_at' => now(),
                 'ended_at' => $request->submitted_at,
+                'client_submitted_at' => $request->submitted_at,
+                'server_submitted_at' => now(),
+                'assessment_mode' => $this->resolveAttemptMode(Exam::findOrFail((int) $request->exam_id)),
                 'status' => 'completed',
+                'sync_status' => 'SYNCED',
+                'sync_version' => 1,
                 'cheating_events' => $request->cheating_events ? json_encode($request->cheating_events) : null,
             ]);
 
@@ -308,6 +375,8 @@ class OfflineExamController extends Controller
             
             $attempt->update([
                 'score' => $score,
+                'sync_status' => 'SYNCED',
+                'sync_version' => max(1, (int) $attempt->sync_version) + 1,
             ]);
 
             DB::commit();
@@ -470,6 +539,17 @@ class OfflineExamController extends Controller
         ], true);
     }
 
+    private function resolveAttemptMode(Exam $exam): string
+    {
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        if ($mode === 'ca_test' || $mode === 'exam') {
+            return $mode;
+        }
+
+        $assessmentType = strtolower(trim((string) ($exam->assessment_type ?? '')));
+        return $assessmentType === 'ca test' ? 'ca_test' : 'exam';
+    }
+
     /**
      * Check sync status
      */
@@ -486,5 +566,48 @@ class OfflineExamController extends Controller
             'success' => true,
             'statuses' => array_fill_keys($request->submission_ids, 'pending'),
         ]);
+    }
+
+    private function resolveIdempotentReplay(Request $request, ?int $examId = null, ?int $studentId = null): ?\Illuminate\Http\JsonResponse
+    {
+        $key = trim((string) $request->header('Idempotency-Key', ''));
+        if ($key === '') {
+            return null;
+        }
+
+        $requestHash = hash('sha256', json_encode($request->all(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $existing = IdempotencyKey::where('idempotency_key', $key)->first();
+        if (!$existing) {
+            return null;
+        }
+
+        if ($existing->request_hash !== $requestHash) {
+            return response()->json([
+                'message' => 'Idempotency key reuse with a different payload is not allowed.',
+                'code' => 'idempotency_payload_mismatch',
+            ], 409);
+        }
+
+        $body = $existing->response_json ? json_decode((string) $existing->response_json, true) : [];
+        return response()->json($body, (int) $existing->response_status);
+    }
+
+    private function storeIdempotentResponse(Request $request, ?int $examId, ?int $studentId, array $payload, int $status = 200): \Illuminate\Http\JsonResponse
+    {
+        $key = trim((string) $request->header('Idempotency-Key', ''));
+        if ($key !== '') {
+            IdempotencyKey::updateOrCreate(
+                ['idempotency_key' => $key],
+                [
+                    'exam_id' => $examId,
+                    'student_id' => $studentId,
+                    'request_hash' => hash('sha256', json_encode($request->all(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+                    'response_status' => $status,
+                    'response_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ]
+            );
+        }
+
+        return response()->json($payload, $status);
     }
 }

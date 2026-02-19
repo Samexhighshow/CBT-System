@@ -199,14 +199,15 @@ export const useRoleBasedNav = () => {
   // Filter navigation links based on user permissions
   const filterNavLinks = useCallback((navLinks: NavLinkConfig[]): NavLinkConfig[] => {
     if (userPages.length === 0) return navLinks;
+    const canAccess = (link: NavLinkConfig) => userPages.includes(link.permissionName || link.name);
 
     return navLinks
       .map((link) => {
         if (!link.subItems) {
-          return userPages.includes(link.name) ? link : null;
+          return canAccess(link) ? link : null;
         }
 
-        const subItems = link.subItems.filter((sub) => userPages.includes(sub.name));
+        const subItems = link.subItems.filter((sub) => canAccess(sub));
         if (subItems.length === 0) return null;
 
         return { ...link, subItems };

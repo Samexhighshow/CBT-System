@@ -61,6 +61,9 @@ export interface ExamPackage {
   examId: number;
   downloadedAt: string;
   packageVersion: string;
+  packageId?: string;
+  packageSignature?: string;
+  expiresAt?: string | null;
   data: any;
 }
 

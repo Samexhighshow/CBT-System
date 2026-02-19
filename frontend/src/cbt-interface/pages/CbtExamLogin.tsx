@@ -108,12 +108,8 @@ const CbtExamLogin: React.FC = () => {
   }, [exam]);
 
   const assessmentLoginNoun = useMemo(() => {
-    const examType = String(exam?.assessment_type || '').trim();
-    if (examType !== '') {
-      return examType;
-    }
     return assessmentLabels.assessmentNoun;
-  }, [assessmentLabels.assessmentNoun, exam?.assessment_type]);
+  }, [assessmentLabels.assessmentNoun]);
 
   const examWindowText = useMemo(() => {
     if (!exam) return 'Window not set';
@@ -254,7 +250,7 @@ const CbtExamLogin: React.FC = () => {
             </div>
           </div>
           <p className="hidden text-xs font-semibold uppercase tracking-[0.09em] md:block" style={{ color: '#1D4ED8' }}>
-            Exam Verification • {connectivity.status}
+            {assessmentLabels.assessmentNoun} Verification | {connectivity.status}
           </p>
         </div>
       </header>
@@ -391,3 +387,4 @@ const CbtExamLogin: React.FC = () => {
 };
 
 export default CbtExamLogin;
+

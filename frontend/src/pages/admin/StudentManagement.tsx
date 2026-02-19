@@ -38,7 +38,6 @@ const StudentManagement: React.FC = () => {
     first_name: '',
     last_name: '',
     email: '',
-    registration_number: '',
     department_id: 0,
     class_level: 'JSS1',
     status: 'active',
@@ -490,7 +489,7 @@ const StudentManagement: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium">Registration Number</label>
-                <input className="mt-1 w-full border rounded px-3 py-2" value={form.registration_number} onChange={e => setForm({ ...form, registration_number: e.target.value })} aria-label="Registration number" placeholder="Reg. number" />
+                <input className="mt-1 w-full border rounded px-3 py-2 bg-gray-50 text-gray-500" value="Auto-generated" readOnly aria-label="Registration number auto generated" />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -508,13 +507,16 @@ const StudentManagement: React.FC = () => {
                 </select>
               </div>
             </div>
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+              Registration number and temporary password will be generated automatically and sent to the student's email.
+            </div>
           </div>
           <div className="border-t px-4 py-3 flex justify-end gap-2">
             <button className="px-4 py-2 border rounded" onClick={() => setShowRegisterModal(false)}>Cancel</button>
             <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={async () => {
               try {
-                await api.post('/students', form);
-                showSuccess('Student registered');
+                await api.post('/students', { ...form, quick_register: true });
+                showSuccess('Student created and onboarding email sent');
                 setShowRegisterModal(false);
                 loadStudents();
               } catch (error) {

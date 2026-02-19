@@ -443,6 +443,48 @@ const CbtExamSession: React.FC = () => {
 
   const unansweredCount = Math.max(0, questions.length - answeredCount);
 
+  const formatAnswerSummary = useCallback((question: CbtQuestion): string => {
+    const answerValue = answers[question.id];
+    const questionType = normalizeQuestionType(question.question_type);
+
+    if (isMultiSelectType(questionType)) {
+      const selected = answerValue?.optionIds || [];
+      if (selected.length === 0) return 'Not answered';
+      const labels = selected
+        .map((id) => {
+          const optionIndex = question.options.findIndex((item) => item.id === id);
+          if (optionIndex < 0) return null;
+          const letter = String.fromCharCode(65 + optionIndex);
+          return `${letter}. ${question.options[optionIndex]?.option_text || ''}`;
+        })
+        .filter(Boolean) as string[];
+      return labels.length > 0 ? labels.join(' | ') : 'Answered';
+    }
+
+    if (isSingleChoiceType(questionType)) {
+      const selectedOptionId = answerValue?.optionId;
+      const selectedOptionIndex = question.options.findIndex((item) => item.id === selectedOptionId);
+      if (selectedOptionIndex >= 0) {
+        const letter = String.fromCharCode(65 + selectedOptionIndex);
+        return `${letter}. ${question.options[selectedOptionIndex]?.option_text || ''}`;
+      }
+      if ((answerValue?.answerText || '').trim() !== '') {
+        return (answerValue?.answerText || '').trim();
+      }
+      return 'Not answered';
+    }
+
+    const text = (answerValue?.answerText || '').trim();
+    return text !== '' ? text : 'Not answered';
+  }, [answers]);
+
+  const startedAtDate = attemptState?.started_at ? new Date(attemptState.started_at) : null;
+  const submittedAtDate = attemptState?.submitted_at ? new Date(attemptState.submitted_at) : null;
+  const effectiveEndDate = submittedAtDate || (showSubmitSuccess ? new Date() : null);
+  const timeTakenSeconds = startedAtDate && effectiveEndDate
+    ? Math.max(0, Math.floor((effectiveEndDate.getTime() - startedAtDate.getTime()) / 1000))
+    : null;
+
   const persistAnswer = async (questionId: number, value?: AnswerValue, forceFlag?: boolean) => {
     if (!sessionToken || !attemptState || attemptState.status !== 'in_progress') return;
 
@@ -508,7 +550,7 @@ const CbtExamSession: React.FC = () => {
     }
     textAutosaveTimersRef.current[questionId] = window.setTimeout(() => {
       persistAnswer(questionId, nextValue);
-    }, 650);
+    }, 1200);
   };
 
   const flushTextAnswerSave = async (questionId: number) => {
@@ -517,6 +559,17 @@ const CbtExamSession: React.FC = () => {
       delete textAutosaveTimersRef.current[questionId];
     }
     await persistAnswer(questionId, answers[questionId]);
+  };
+
+  const flushAllPendingTextSaves = async () => {
+    const pendingQuestionIds = Object.keys(textAutosaveTimersRef.current)
+      .map((rawId) => Number(rawId))
+      .filter((value) => Number.isFinite(value));
+
+    for (const qid of pendingQuestionIds) {
+      // eslint-disable-next-line no-await-in-loop
+      await flushTextAnswerSave(qid);
+    }
   };
 
   const handleTrueFalseTextAnswer = async (questionId: number, boolText: 'true' | 'false') => {
@@ -562,13 +615,15 @@ const CbtExamSession: React.FC = () => {
 
     try {
       setSubmitting(true);
+      await flushAllPendingTextSaves();
       setAutoSaveStatus('Saving...');
       await cbtApi.submitAttempt(attemptId, sessionToken);
       setAutoSaveStatus('Saved');
       setShowReview(false);
       setShowSubmitSuccess(true);
-      clearStoredSession(attemptId);
+      setAttemptState((prev) => (prev ? { ...prev, status: 'submitted', submitted_at: new Date().toISOString() } : prev));
       window.setTimeout(() => navigate('/cbt'), 3500);
+      window.setTimeout(() => clearStoredSession(attemptId), 3600);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Submit failed. Try again.');
     } finally {
@@ -578,8 +633,19 @@ const CbtExamSession: React.FC = () => {
 
   const goToQuestion = (index: number) => {
     if (index < 0 || index >= questions.length) return;
+    if (currentQuestionType && isTextType(currentQuestionType)) {
+      void flushTextAnswerSave(currentQuestionId);
+    }
     setCurrentIndex(index);
   };
+
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      void flushAllPendingTextSaves();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [flushAllPendingTextSaves]);
 
   if (loading) {
     return (
@@ -650,6 +716,98 @@ const CbtExamSession: React.FC = () => {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  if (showReview || showSubmitSuccess) {
+    return (
+      <div className="min-h-screen" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>
+        <header className="border-b" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+          <div className="mx-auto w-full max-w-[1400px] px-4 py-4 md:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h1 className="text-[24px] font-bold tracking-[-0.02em]" style={{ color: cbtTheme.title }}>
+                {showSubmitSuccess ? `${assessmentLabels.assessmentNoun} Submission Report` : 'Review Before Final Submit'}
+              </h1>
+              <div className="text-sm" style={{ color: cbtTheme.muted }}>
+                {storedSession?.registrationNumber || 'No Reg Number'}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-[1400px] px-4 py-5 md:px-6">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-xl border p-3" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+              <p className="text-xs" style={{ color: cbtTheme.muted }}>Total Questions</p>
+              <p className="text-xl font-bold" style={{ color: cbtTheme.title }}>{questions.length}</p>
+            </div>
+            <div className="rounded-xl border p-3" style={{ backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }}>
+              <p className="text-xs" style={{ color: '#065F46' }}>Answered</p>
+              <p className="text-xl font-bold" style={{ color: '#047857' }}>{answeredCount}</p>
+            </div>
+            <div className="rounded-xl border p-3" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
+              <p className="text-xs" style={{ color: '#B91C1C' }}>Unanswered</p>
+              <p className="text-xl font-bold" style={{ color: '#B91C1C' }}>{unansweredCount}</p>
+            </div>
+            <div className="rounded-xl border p-3" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+              <p className="text-xs" style={{ color: cbtTheme.muted }}>Time Taken</p>
+              <p className="text-xl font-bold" style={{ color: cbtTheme.title }}>
+                {timeTakenSeconds !== null ? formatDuration(timeTakenSeconds) : '-'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+            {questions.map((question, index) => {
+              const summary = formatAnswerSummary(question);
+              const notAnswered = summary === 'Not answered';
+              return (
+                <div key={question.id} className="border-b p-4 last:border-b-0" style={{ borderColor: cbtTheme.border }}>
+                  <p className="text-sm font-semibold" style={{ color: cbtTheme.title }}>
+                    Q{index + 1}. {question.question_text}
+                  </p>
+                  <p className="mt-2 text-sm" style={{ color: notAnswered ? '#B91C1C' : '#047857' }}>
+                    Selected: {summary}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+            {!showSubmitSuccess && (
+              <button
+                type="button"
+                onClick={() => setShowReview(false)}
+                className="rounded-lg border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: '#D1D5DB', color: cbtTheme.body }}
+              >
+                Back to {assessmentLabels.assessmentNoun}
+              </button>
+            )}
+            {!showSubmitSuccess ? (
+              <button
+                type="button"
+                onClick={handleFinalSubmit}
+                disabled={submitting}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: cbtTheme.primary }}
+              >
+                {submitting ? 'Submitting...' : 'Final Submit'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate('/cbt')}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                style={{ backgroundColor: cbtTheme.primary }}
+              >
+                Back to {assessmentLabels.assessmentNoun} Selection
+              </button>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>
@@ -1017,147 +1175,6 @@ const CbtExamSession: React.FC = () => {
                 {startingAttempt ? 'Starting...' : 'Start Now'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showReview && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/30 p-4">
-          <div className="w-full max-w-3xl rounded-2xl border p-5 md:p-6" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
-            <h2 className="text-[24px] font-bold leading-[1.2] tracking-[-0.02em]" style={{ color: cbtTheme.title }}>
-              Review Before Final Submit
-            </h2>
-            <p className="mt-1 text-sm leading-6" style={{ color: cbtTheme.muted }}>
-              Confirm your answers before final submission.
-            </p>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border p-3" style={{ backgroundColor: cbtTheme.panelBg, borderColor: cbtTheme.border }}>
-                <p className="text-xs" style={{ color: cbtTheme.muted }}>
-                  Total Questions
-                </p>
-                <p className="text-lg font-bold" style={{ color: cbtTheme.title }}>
-                  {questions.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl border p-3" style={{ backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }}>
-                <p className="text-xs" style={{ color: '#065F46' }}>
-                  Answered
-                </p>
-                <p className="text-lg font-bold" style={{ color: '#047857' }}>
-                  {answeredCount}
-                </p>
-              </div>
-
-              <div className="rounded-xl border p-3" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
-                <p className="text-xs" style={{ color: '#B91C1C' }}>
-                  Unanswered
-                </p>
-                <p className="text-lg font-bold" style={{ color: '#B91C1C' }}>
-                  {unansweredCount}
-                </p>
-              </div>
-
-              <div className="rounded-xl border p-3" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
-                <p className="text-xs" style={{ color: '#92400E' }}>
-                  Flagged
-                </p>
-                <p className="text-lg font-bold" style={{ color: '#B45309' }}>
-                  {flaggedCount}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 max-h-72 overflow-auto rounded-xl border" style={{ borderColor: cbtTheme.border }}>
-              {questions.map((question, index) => {
-                const answerValue = answers[question.id];
-                const questionType = normalizeQuestionType(question.question_type);
-                let summary = 'Not Answered';
-                let summaryColor = '#B91C1C';
-
-                if (isMultiSelectType(questionType)) {
-                  const selected = answerValue?.optionIds || [];
-                  if (selected.length > 0) {
-                    const letters = selected
-                      .map((id) => question.options.findIndex((item) => item.id === id))
-                      .filter((idx) => idx >= 0)
-                      .map((idx) => String.fromCharCode(65 + idx))
-                      .join(', ');
-                    summary = letters ? `Selected: ${letters}` : 'Answered';
-                    summaryColor = '#047857';
-                  }
-                } else if (isSingleChoiceType(questionType)) {
-                  const selectedOptionId = answerValue?.optionId;
-                  const selectedOptionIndex = question.options.findIndex((item) => item.id === selectedOptionId);
-                  if (selectedOptionIndex >= 0) {
-                    summary = `Selected: ${String.fromCharCode(65 + selectedOptionIndex)}`;
-                    summaryColor = '#047857';
-                  } else if ((answerValue?.answerText || '').trim() !== '') {
-                    summary = `Selected: ${answerValue?.answerText}`;
-                    summaryColor = '#047857';
-                  }
-                } else if ((answerValue?.answerText || '').trim() !== '') {
-                  const text = (answerValue?.answerText || '').trim();
-                  summary = `Text saved${text.length > 40 ? ': ' + text.slice(0, 40) + '...' : ''}`;
-                  summaryColor = '#047857';
-                }
-
-                return (
-                  <div
-                    key={question.id}
-                    className="flex items-center justify-between border-b px-3 py-2 text-sm last:border-b-0"
-                    style={{ borderColor: cbtTheme.border }}
-                  >
-                    <p style={{ color: cbtTheme.body }}>
-                      Q{index + 1} {flagged[question.id] ? '(Flagged)' : ''}
-                    </p>
-                    <p style={{ color: summaryColor }}>
-                      {summary}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowReview(false)}
-                className="rounded-lg border px-4 py-2 text-sm font-semibold"
-                style={{ borderColor: '#D1D5DB', color: cbtTheme.body }}
-              >
-                Back to {assessmentLabels.assessmentNoun}
-              </button>
-              <button
-                type="button"
-                onClick={handleFinalSubmit}
-                disabled={submitting}
-                className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                style={{ backgroundColor: cbtTheme.primary }}
-              >
-                {submitting ? 'Submitting...' : 'Final Submit'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showSubmitSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/25 p-4">
-          <div className="w-full max-w-md rounded-2xl border p-6 text-center" style={{ backgroundColor: cbtTheme.cardBg, borderColor: '#A7F3D0' }}>
-            <div
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full text-base font-bold text-white"
-              style={{ backgroundColor: cbtTheme.success }}
-            >
-              OK
-            </div>
-            <h3 className="mt-4 text-[24px] font-bold tracking-[-0.02em]" style={{ color: '#065F46' }}>
-              {assessmentLabels.assessmentNoun} Submitted Successfully
-            </h3>
-            <p className="mt-2 text-sm leading-6" style={{ color: cbtTheme.muted }}>
-              Redirecting to {assessmentLabels.assessmentNoun.toLowerCase()} selection...
-            </p>
           </div>
         </div>
       )}

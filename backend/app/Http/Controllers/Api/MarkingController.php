@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AttemptAction;
 use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
@@ -28,7 +29,9 @@ class MarkingController extends Controller
             ->orderByDesc('created_at')
             ->get()
             ->map(function (Exam $exam) {
-                $attempts = ExamAttempt::where('exam_id', $exam->id)->get();
+                $attempts = ExamAttempt::where('exam_id', $exam->id)
+                    ->whereNotIn('status', ['voided'])
+                    ->get();
 
                 $pendingAttempts = $attempts->where('status', 'submitted')->count();
                 $completedAttempts = $attempts->where('status', 'completed')->count();
@@ -54,6 +57,7 @@ class MarkingController extends Controller
 
         $attempts = ExamAttempt::with('student:id,registration_number,first_name,last_name,class_level')
             ->where('exam_id', $examId)
+            ->whereNotIn('status', ['voided'])
             ->orderByRaw("CASE WHEN status = 'submitted' THEN 0 ELSE 1 END")
             ->orderByDesc('updated_at')
             ->get()
@@ -297,6 +301,7 @@ class MarkingController extends Controller
             ExamAnswer::where('attempt_id', $attempt->id)->delete();
             ExamAttemptSession::where('attempt_id', $attempt->id)->delete();
             ExamAttemptEvent::where('attempt_id', $attempt->id)->delete();
+            $this->logAttemptAction($attempt, 'reset_attempt');
             $attempt->delete();
         });
 
@@ -308,6 +313,91 @@ class MarkingController extends Controller
                 'student_reg_number' => $attempt->student?->registration_number,
                 'exam_id' => $attempt->exam?->id,
                 'exam_title' => $attempt->exam?->title,
+            ],
+        ]);
+    }
+
+    public function forceSubmit(int $attemptId): JsonResponse
+    {
+        $attempt = ExamAttempt::with(['student:id,registration_number,first_name,last_name', 'exam:id,title'])
+            ->findOrFail($attemptId);
+
+        $result = $this->recalculateAttemptScore($attempt, true);
+        $now = now();
+
+        $attempt->update([
+            'ended_at' => $attempt->ended_at ?? $now,
+            'submitted_at' => $attempt->submitted_at ?? $now,
+            'server_submitted_at' => $attempt->server_submitted_at ?? $now,
+            'last_activity_at' => $now,
+            'sync_status' => 'SYNCED',
+            'sync_version' => max(1, (int) $attempt->sync_version) + 1,
+        ]);
+
+        ExamAttemptSession::where('attempt_id', $attempt->id)
+            ->where('is_active', true)
+            ->update([
+                'is_active' => false,
+                'ended_at' => $now,
+                'revoked_reason' => 'force_submitted_by_admin',
+            ]);
+
+        ExamAttemptEvent::create([
+            'attempt_id' => $attempt->id,
+            'event_type' => 'force_submitted_by_admin',
+            'meta_json' => ['source' => 'admin_marking'],
+            'created_at' => $now,
+        ]);
+
+        $this->logAttemptAction($attempt, 'force_submit');
+
+        return response()->json([
+            'message' => 'Attempt force-submitted successfully.',
+            'data' => $result,
+        ]);
+    }
+
+    public function extendTime(Request $request, int $attemptId): JsonResponse
+    {
+        $validated = $request->validate([
+            'minutes' => 'required|integer|min:1|max:180',
+        ]);
+
+        $attempt = ExamAttempt::with(['student:id,registration_number,first_name,last_name', 'exam:id,title'])
+            ->findOrFail($attemptId);
+
+        $baseEndsAt = $attempt->ends_at ?? now();
+        $minutes = (int) $validated['minutes'];
+        $newEndsAt = $baseEndsAt->copy()->addMinutes($minutes);
+
+        $attempt->update([
+            'ends_at' => $newEndsAt,
+            'extra_time_minutes' => max(0, (int) $attempt->extra_time_minutes) + $minutes,
+            'sync_version' => max(1, (int) $attempt->sync_version) + 1,
+            'sync_status' => 'SYNCED',
+        ]);
+
+        ExamAttemptEvent::create([
+            'attempt_id' => $attempt->id,
+            'event_type' => 'attempt_time_extended',
+            'meta_json' => [
+                'minutes' => $minutes,
+                'new_ends_at' => $newEndsAt->toIso8601String(),
+            ],
+            'created_at' => now(),
+        ]);
+
+        $this->logAttemptAction($attempt, 'extend_time', [
+            'minutes' => $minutes,
+            'new_ends_at' => $newEndsAt->toIso8601String(),
+        ]);
+
+        return response()->json([
+            'message' => 'Attempt time extended successfully.',
+            'data' => [
+                'attempt_id' => $attempt->id,
+                'new_ends_at' => $newEndsAt->toIso8601String(),
+                'extra_time_minutes' => (int) $attempt->extra_time_minutes,
             ],
         ]);
     }
@@ -617,5 +707,17 @@ class MarkingController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    private function logAttemptAction(ExamAttempt $attempt, string $actionType, array $meta = []): void
+    {
+        AttemptAction::create([
+            'attempt_id' => $attempt->id,
+            'exam_id' => $attempt->exam_id,
+            'student_id' => $attempt->student_id,
+            'actor_user_id' => auth()->id(),
+            'action_type' => $actionType,
+            'meta_json' => $meta,
+        ]);
     }
 }

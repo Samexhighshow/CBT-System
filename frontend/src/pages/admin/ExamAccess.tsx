@@ -258,7 +258,53 @@ const ExamAccess: React.FC = () => {
       const studentId = Number(foundStudent.id);
       const now = new Date().toISOString();
       const batchId = crypto.randomUUID();
+      const selectedExamMeta = exams.find((item) => item.id === examId);
 
+      // ONLINE PATH: generate from server as source-of-truth so student verify always matches backend.
+      if (connectivity.status !== 'OFFLINE') {
+        const response = await api.post('/admin/exam-access/generate', {
+          exam_id: examId,
+          student_id: studentId,
+        });
+
+        const payload = response.data?.data || {};
+        const serverCode = String(payload.access_code || '').toUpperCase();
+        const codeId = String(payload.code_id || crypto.randomUUID());
+        const issuedAt = String(payload.generated_at || now);
+        // Keep offline cache in sync for fallback usage.
+        await offlineDB.accessCodes.put({
+          codeId,
+          examId,
+          studentId,
+          code: serverCode,
+          status: 'NEW',
+          issuedAt,
+          updatedAt: now,
+          usedAt: null,
+          attemptId: null,
+          usedByDeviceId: null,
+          batchId,
+        });
+
+        setGeneratedCode({
+          id: codeId,
+          local_code_id: codeId,
+          student_reg_number: foundStudent.reg_number,
+          student_name: foundStudent.name,
+          exam_title: payload.exam_title || selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam #${examId}`,
+          access_code: serverCode,
+          status: 'NEW',
+          generated_at: issuedAt,
+          used: false,
+          used_at: null,
+        });
+
+        showSuccess(response.data?.message || 'Access code generated successfully!');
+        await fetchGeneratedAccess();
+        return;
+      }
+
+      // OFFLINE PATH: local-first + queued sync.
       const existingCodes = await offlineDB.accessCodes
         .where('[examId+studentId]')
         .equals([examId, studentId])
@@ -271,7 +317,6 @@ const ExamAccess: React.FC = () => {
         );
 
         if (!regenerate) {
-          const selectedExamMeta = exams.find((item) => item.id === examId);
           setGeneratedCode({
             id: existingNew.codeId,
             local_code_id: existingNew.codeId,
@@ -305,7 +350,6 @@ const ExamAccess: React.FC = () => {
       }
 
       const codeId = crypto.randomUUID();
-      const selectedExamMeta = exams.find((item) => item.id === examId);
 
       await offlineDB.students.put({
         studentId,
@@ -344,9 +388,6 @@ const ExamAccess: React.FC = () => {
       });
 
       await syncService.enqueue(String(examId), 'UPSERT_ACCESS_CODES', batchId);
-      if (connectivity.status !== 'OFFLINE') {
-        await syncService.syncNow();
-      }
 
       setGeneratedCode({
         id: codeId,

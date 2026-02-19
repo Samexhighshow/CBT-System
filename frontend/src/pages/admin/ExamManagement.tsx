@@ -493,22 +493,6 @@ const ExamManagement: React.FC = () => {
 
   const closeActionsMenu = () => setOpenRowMenu(null);
 
-    const handleToggleResults = async (exam: ExamRow | any) => {
-      try {
-        const newStatus = !exam.results_released;
-        await api.post(`/exams/${exam.id}/toggle-results`, {
-          results_released: newStatus,
-        });
-        showSuccess(newStatus ? 'Results released to students' : 'Results hidden from students');
-        loadExams();
-        if (viewingExam?.id === exam.id) {
-          setViewingExam({ ...viewingExam, results_released: newStatus });
-        }
-      } catch (error: any) {
-        showError(error.response?.data?.message || 'Failed to update results visibility');
-      }
-    };
-
   const handleView = async (id: number) => {
     try {
       setViewLoading(true);
@@ -1092,15 +1076,6 @@ const ExamManagement: React.FC = () => {
               >
                 <i className='bx bx-lock text-amber-500'></i>
                 <span className="font-medium">Close</span>
-              </button>
-              <button
-                onClick={() => { handleToggleResults(openRowMenu.exam as any); closeActionsMenu(); }}
-                className={`w-full text-left px-4 py-3 text-sm flex items-center gap-3 border-b border-gray-100 transition-colors ${
-                  openRowMenu.exam.results_released ? 'text-red-700 hover:bg-red-50' : 'text-green-700 hover:bg-green-50'
-                }`}
-              >
-                <i className={`bx text-base ${openRowMenu.exam.results_released ? 'bx-hide text-red-500' : 'bx-show text-green-500'}`}></i>
-                <span className="font-medium">{openRowMenu.exam.results_released ? 'Hide Results' : 'Release Results'}</span>
               </button>
               <button
                 onClick={async () => { await openManageForExam(openRowMenu.exam); closeActionsMenu(); }}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, SkeletonCard, SkeletonList } from '../../components';
 import { api } from '../../services/api';
+import { showError, showSuccess } from '../../utils/alerts';
 
 interface AnalyticsData {
   average_score: number;
@@ -11,6 +12,7 @@ interface AnalyticsData {
 
 interface AttemptSummary {
   id: number;
+  student_id?: number;
   student_name: string;
   registration_number?: string;
   department?: string;
@@ -31,6 +33,9 @@ interface AttemptSummary {
 interface ExamOption {
   id: number;
   title: string;
+  subject_name?: string;
+  class_name?: string;
+  results_released?: boolean;
 }
 
 interface MarkingSummary {
@@ -38,6 +43,19 @@ interface MarkingSummary {
   completed_marked: number;
   total_marking_attempts: number;
   exams_with_pending: number;
+}
+
+interface CompiledAdminRow {
+  student_id: number;
+  student_name: string;
+  registration_number: string;
+  class_level: string;
+  term: string;
+  subject: string;
+  ca_score: number | null;
+  exam_score: number | null;
+  compiled_score: number | null;
+  cumulative_average: number | null;
 }
 
 const ResultsAnalytics: React.FC = () => {
@@ -59,9 +77,12 @@ const ResultsAnalytics: React.FC = () => {
     exams_with_pending: 0,
   });
   const [loadingMarkingSummary, setLoadingMarkingSummary] = useState(false);
-  const [attemptSort, setAttemptSort] = useState<'student_asc' | 'student_desc' | 'score_desc' | 'score_asc' | 'recent'>('recent');
-  const [perPage, setPerPage] = useState(25);
-  const [page, setPage] = useState(1);
+  const [releaseClass, setReleaseClass] = useState<string>('');
+  const [releaseSubject, setReleaseSubject] = useState<string>('');
+  const [releaseExamId, setReleaseExamId] = useState<string>('');
+  const [releaseLoading, setReleaseLoading] = useState(false);
+  const [compiledRows, setCompiledRows] = useState<CompiledAdminRow[]>([]);
+  const [loadingCompiledRows, setLoadingCompiledRows] = useState(false);
 
   useEffect(() => {
     loadExams();
@@ -74,10 +95,154 @@ const ResultsAnalytics: React.FC = () => {
     try {
       const response = await api.get('/exams');
       const data = response.data?.data || response.data || [];
-      setExams(Array.isArray(data) ? data.map((e: any) => ({ id: e.id, title: e.title })) : []);
+      setExams(Array.isArray(data) ? data.map((e: any) => ({
+        id: e.id,
+        title: e.title,
+        subject_name: e.subject?.name || '',
+        class_name: e.school_class?.name || '',
+        results_released: !!e.results_released,
+      })) : []);
     } catch (error: any) {
       console.error('Failed to fetch exams:', error);
       setExams([]);
+    }
+  };
+
+  const classOptions = useMemo(
+    () => Array.from(new Set(exams.map((e) => String(e.class_name || '').trim()).filter(Boolean))).sort(),
+    [exams]
+  );
+
+  const subjectOptions = useMemo(
+    () => Array.from(new Set(exams.map((e) => String(e.subject_name || '').trim()).filter(Boolean))).sort(),
+    [exams]
+  );
+
+  const releaseCandidates = useMemo(() => {
+    if (releaseExamId) {
+      return exams.filter((e) => String(e.id) === releaseExamId);
+    }
+    return exams.filter((e) => {
+      const classOk = releaseClass ? (e.class_name || '') === releaseClass : true;
+      const subjectOk = releaseSubject ? (e.subject_name || '') === releaseSubject : true;
+      return classOk && subjectOk;
+    });
+  }, [exams, releaseClass, releaseSubject, releaseExamId]);
+
+  const handleReleaseVisibility = async (release: boolean) => {
+    if (releaseCandidates.length === 0) {
+      showError('No exams matched the selected exam/subject/class filter.');
+      return;
+    }
+
+    try {
+      setReleaseLoading(true);
+      const settled = await Promise.allSettled(
+        releaseCandidates.map((exam) =>
+          api.post(`/exams/${exam.id}/toggle-results`, { results_released: release })
+        )
+      );
+
+      const successCount = settled.filter((item) => item.status === 'fulfilled').length;
+      const failCount = settled.length - successCount;
+
+      if (successCount > 0) {
+        showSuccess(
+          release
+            ? `Released results for ${successCount} exam(s).`
+            : `Hidden results for ${successCount} exam(s).`
+        );
+      }
+      if (failCount > 0) {
+        showError(`${failCount} exam(s) failed to update results visibility.`);
+      }
+
+      await loadExams();
+    } catch (error: any) {
+      showError(error?.response?.data?.message || 'Failed to update result visibility.');
+    } finally {
+      setReleaseLoading(false);
+    }
+  };
+
+  const loadCompiledResults = async (attemptRows: AttemptSummary[], selectedExamId: string) => {
+    if (!selectedExamId || attemptRows.length === 0) {
+      setCompiledRows([]);
+      return;
+    }
+
+    try {
+      setLoadingCompiledRows(true);
+
+      const selectedExam = exams.find((e) => String(e.id) === selectedExamId);
+      const subjectName = (selectedExam?.subject_name || '').trim().toLowerCase();
+
+      const byStudent = new Map<number, AttemptSummary>();
+      attemptRows.forEach((row) => {
+        if (row.student_id && !byStudent.has(row.student_id)) {
+          byStudent.set(row.student_id, row);
+        }
+      });
+
+      const studentIds = Array.from(byStudent.keys());
+      const settled = await Promise.allSettled(
+        studentIds.map((studentId) => api.get(`/results/student/${studentId}`, { params: { limit: 1 } }))
+      );
+
+      const termOrder: Record<string, number> = {
+        'first term': 1,
+        'second term': 2,
+        'third term': 3,
+      };
+
+      const rows: CompiledAdminRow[] = [];
+      settled.forEach((item, idx) => {
+        if (item.status !== 'fulfilled') return;
+
+        const studentId = studentIds[idx];
+        const attempt = byStudent.get(studentId);
+        if (!attempt) return;
+
+        const compiled: any[] = item.value.data?.compiled_results || [];
+        if (!Array.isArray(compiled) || compiled.length === 0) return;
+
+        const filtered = subjectName
+          ? compiled.filter((entry) => String(entry.subject || '').trim().toLowerCase() === subjectName)
+          : compiled;
+        if (filtered.length === 0) return;
+
+        const best = [...filtered].sort((a, b) => {
+          const aTerm = termOrder[String(a.term || '').trim().toLowerCase()] || 0;
+          const bTerm = termOrder[String(b.term || '').trim().toLowerCase()] || 0;
+          return bTerm - aTerm;
+        })[0];
+
+        rows.push({
+          student_id: studentId,
+          student_name: attempt.student_name || 'Unknown',
+          registration_number: attempt.registration_number || '-',
+          class_level: attempt.class_level || 'N/A',
+          term: String(best.term || '-'),
+          subject: String(best.subject || selectedExam?.subject_name || '-'),
+          ca_score: best.ca_score ?? null,
+          exam_score: best.exam_score ?? null,
+          compiled_score: best.compiled_score ?? null,
+          cumulative_average: best.cumulative_average ?? null,
+        });
+      });
+
+      rows.sort((a, b) => {
+        const aScore = a.compiled_score ?? -1;
+        const bScore = b.compiled_score ?? -1;
+        return bScore - aScore;
+      });
+
+      setCompiledRows(rows);
+    } catch (error) {
+      console.error('Failed to load compiled results for selected exam:', error);
+      setCompiledRows([]);
+    } finally {
+      setLoadingCompiledRows(false);
     }
   };
 
@@ -150,6 +315,7 @@ const ResultsAnalytics: React.FC = () => {
 
               return {
                 id: row.id,
+                student_id: Number(row.student?.id ?? 0),
                 student_name: row.student?.name || 'Unknown',
                 registration_number: row.student?.registration_number,
                 department: undefined,
@@ -169,6 +335,7 @@ const ResultsAnalytics: React.FC = () => {
             })
           : [];
         setAttempts(mapped);
+        await loadCompiledResults(mapped, examId);
 
         if (mapped.length > 0) {
           const totalSubmissions = mapped.length;
@@ -188,6 +355,7 @@ const ResultsAnalytics: React.FC = () => {
         }
       } else {
         setAttempts([]);
+        setCompiledRows([]);
       }
     } catch (error: any) {
       console.error('Failed to fetch analytics:', error);
@@ -198,58 +366,12 @@ const ResultsAnalytics: React.FC = () => {
         total_attempts: 0,
       });
       setAttempts([]);
+      setCompiledRows([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredAttempts = useMemo(() => {
-    if (!studentName) return attempts;
-    const term = studentName.toLowerCase();
-    return attempts.filter((a) => a.student_name?.toLowerCase().includes(term));
-  }, [attempts, studentName]);
-
-  const sortedAttempts = useMemo(() => {
-    return [...filteredAttempts].sort((a, b) => {
-      switch (attemptSort) {
-        case 'student_asc':
-          return (a.student_name || '').localeCompare(b.student_name || '');
-        case 'student_desc':
-          return (b.student_name || '').localeCompare(a.student_name || '');
-        case 'score_desc':
-          return (b.percentage || 0) - (a.percentage || 0);
-        case 'score_asc':
-          return (a.percentage || 0) - (b.percentage || 0);
-        case 'recent':
-        default: {
-          const aTime = a.completed_at ? new Date(a.completed_at).getTime() : 0;
-          const bTime = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-          return bTime - aTime;
-        }
-      }
-    });
-  }, [filteredAttempts, attemptSort]);
-
-  const totalPages = Math.max(1, Math.ceil(sortedAttempts.length / perPage));
-  const currentPage = Math.min(page, totalPages);
-  const pagedAttempts = sortedAttempts.slice((currentPage - 1) * perPage, currentPage * perPage);
-
-  const getPageNumbers = (current: number, total: number): Array<number | string> => {
-    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-    const pages: Array<number | string> = [1];
-    const start = Math.max(2, current - 1);
-    const end = Math.min(total - 1, current + 1);
-    if (start > 2) pages.push('...');
-    for (let i = start; i <= end; i += 1) pages.push(i);
-    if (end < total - 1) pages.push('...');
-    pages.push(total);
-    return pages;
-  };
-
-  useEffect(() => {
-    setPage(1);
-  }, [examId, studentName, perPage, attemptSort, attempts.length]);
-  
   return (
     <div className="app-shell section-shell">
       <div className="stack-tight">
@@ -294,6 +416,73 @@ const ResultsAnalytics: React.FC = () => {
                 Refresh Marking Summary
               </button>
             </div>
+          </div>
+        </Card>
+
+        <Card className="panel-compact border border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white">
+          <div className="flex flex-col gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-emerald-900">Release Results Control</h2>
+              <p className="text-xs text-emerald-800 mt-1">
+                Release or hide results by exam, subject, or class from one place.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <select
+                value={releaseClass}
+                onChange={(e) => setReleaseClass(e.target.value)}
+                className="input-compact border border-emerald-200 text-sm bg-white"
+              >
+                <option value="">All Classes</option>
+                {classOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+              <select
+                value={releaseSubject}
+                onChange={(e) => setReleaseSubject(e.target.value)}
+                className="input-compact border border-emerald-200 text-sm bg-white"
+              >
+                <option value="">All Subjects</option>
+                {subjectOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+              <select
+                value={releaseExamId}
+                onChange={(e) => setReleaseExamId(e.target.value)}
+                className="input-compact border border-emerald-200 text-sm bg-white"
+              >
+                <option value="">All Matching Exams</option>
+                {exams
+                  .filter((e) => !releaseClass || (e.class_name || '') === releaseClass)
+                  .filter((e) => !releaseSubject || (e.subject_name || '') === releaseSubject)
+                  .map((exam) => (
+                    <option key={exam.id} value={String(exam.id)}>
+                      {exam.title}
+                    </option>
+                  ))}
+              </select>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleReleaseVisibility(true)}
+                  disabled={releaseLoading}
+                  className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  Release
+                </button>
+                <button
+                  onClick={() => handleReleaseVisibility(false)}
+                  disabled={releaseLoading}
+                  className="btn-compact bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  Hide
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600">
+              Target exams: <span className="font-semibold">{releaseCandidates.length}</span>
+            </p>
           </div>
         </Card>
 
@@ -369,154 +558,64 @@ const ResultsAnalytics: React.FC = () => {
         <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
-              <h2 className="text-lg font-semibold">Attempt Details</h2>
+              <h2 className="text-lg font-semibold">Compiled Results (CA + Exam)</h2>
               <p className="text-xs text-slate-500">
-                {sortedAttempts.length} matching attempts
-                {sortedAttempts.length > 0 ? ` | Showing ${((currentPage - 1) * perPage) + 1}-${Math.min(currentPage * perPage, sortedAttempts.length)}` : ''}
+                {examId ? 'Primary merged scores for selected exam subject.' : 'Select an exam to load compiled results.'}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {examId && <span className="text-xs text-slate-500">Filtered by exam</span>}
-              <select
-                value={attemptSort}
-                onChange={(e) => setAttemptSort(e.target.value as any)}
-                className="px-3 py-1.5 border border-gray-300 rounded-md text-xs bg-white"
-              >
-                <option value="recent">Most Recent</option>
-                <option value="student_asc">Student A-Z</option>
-                <option value="student_desc">Student Z-A</option>
-                <option value="score_desc">Score High-Low</option>
-                <option value="score_asc">Score Low-High</option>
-              </select>
-              <select
-                value={perPage}
-                onChange={(e) => setPerPage(Number(e.target.value))}
-                className="px-3 py-1.5 border border-gray-300 rounded-md text-xs bg-white"
-              >
-                <option value={10}>10 per page</option>
-                <option value={25}>25 per page</option>
-                <option value={50}>50 per page</option>
-                <option value={100}>100 per page</option>
-              </select>
-            </div>
+            {examId && <span className="text-xs text-slate-500">{compiledRows.length} row(s)</span>}
           </div>
-          {sortedAttempts.length === 0 && !loading && (
-            <p className="text-gray-500">No attempts found for the selected filters.</p>
+
+          {!examId && <p className="text-gray-500 text-sm">Choose an exam above to view compiled CA + Exam scores.</p>}
+          {examId && loadingCompiledRows && <SkeletonList items={4} />}
+          {examId && !loadingCompiledRows && compiledRows.length === 0 && (
+            <p className="text-gray-500 text-sm">No compiled rows found for this exam subject yet.</p>
           )}
-          {loading && <SkeletonList />}
-          {!loading && sortedAttempts.length > 0 && (
-            <>
+
+          {examId && !loadingCompiledRows && compiledRows.length > 0 && (
             <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] text-xs border-collapse bg-white">
+              <table className="w-full min-w-[860px] text-xs border-collapse bg-white">
                 <thead>
-                  <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
+                  <tr className="bg-gray-50 text-gray-700 border-b">
                     <th className="px-3 py-2 text-left font-semibold">Student</th>
                     <th className="px-3 py-2 text-left font-semibold">Class</th>
-                    <th className="px-3 py-2 text-left font-semibold">Score (Marks)</th>
-                    <th className="px-3 py-2 text-left font-semibold">Grade</th>
-                    <th className="px-3 py-2 text-left font-semibold">Position</th>
-                    <th className="px-3 py-2 text-left font-semibold">Status</th>
+                    <th className="px-3 py-2 text-left font-semibold">Term</th>
+                    <th className="px-3 py-2 text-left font-semibold">Subject</th>
+                    <th className="px-3 py-2 text-left font-semibold">CA (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold">Exam (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold">Compiled (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold">CR (%)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedAttempts.map((a, index) => (
+                  {compiledRows.map((row, index) => (
                     <tr
-                      key={a.id}
-                      className={`border-b border-gray-200 transition-colors ${
+                      key={`${row.student_id}-${row.term}-${row.subject}-${index}`}
+                      className={`border-b border-gray-200 ${
                         index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                       } hover:bg-blue-50/60`}
                     >
-                      <td className="px-3 py-2 text-sm text-slate-700">{a.student_name}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700">{a.class_level}</td>
                       <td className="px-3 py-2 text-sm text-slate-700">
-                        <div>{a.score}/{a.total_marks} marks ({(a.percentage ?? 0).toFixed(1)}%)</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          {a.answered_count}/{a.question_count} answered
-                          {a.pending_manual_count > 0 ? ` · ${a.pending_manual_count} pending manual` : ''}
-                        </div>
+                        <div className="font-medium">{row.student_name}</div>
+                        <div className="text-[11px] text-slate-500">{row.registration_number}</div>
                       </td>
-                      <td className="px-3 py-2 text-sm text-slate-700">
-                        {a.grade || '-'}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-slate-700">
-                        <div>{a.rank_label || '-'}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">{a.position_grade || '-'}</div>
-                      </td>
-                      <td className="px-3 py-2 text-sm">
-                        <span
-                          className={`px-2 py-1 rounded-full text-[11px] font-semibold ${
-                            a.status === 'completed'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : a.status === 'submitted'
-                                ? 'bg-amber-100 text-amber-800'
-                                : a.status === 'in_progress'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : a.status === 'expired'
-                                    ? 'bg-rose-100 text-rose-800'
-                                    : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {a.status === 'completed'
-                            ? 'Completed'
-                            : a.status === 'submitted'
-                              ? 'Pending Marking'
-                              : a.status === 'in_progress'
-                                ? 'In Progress'
-                                : a.status === 'expired'
-                                  ? 'Expired'
-                                  : 'Unknown'}
-                        </span>
-                      </td>
+                      <td className="px-3 py-2 text-sm text-slate-700">{row.class_level}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700">{row.term}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700">{row.subject}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700">{row.ca_score !== null ? row.ca_score.toFixed(2) : '-'}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700">{row.exam_score !== null ? row.exam_score.toFixed(2) : '-'}</td>
+                      <td className="px-3 py-2 text-sm font-semibold text-slate-900">{row.compiled_score !== null ? row.compiled_score.toFixed(2) : '-'}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700">{row.cumulative_average !== null ? row.cumulative_average.toFixed(2) : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            <div className="mt-3 px-1 py-3 border-t border-gray-200 bg-gray-50/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
-              <div className="text-gray-600">
-                Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, sortedAttempts.length)} of {sortedAttempts.length}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-                >
-                  Prev
-                </button>
-                {getPageNumbers(currentPage, totalPages).map((pageNum, idx) => (
-                  pageNum === '...' ? (
-                    <span key={`ellipsis-${idx}`} className="px-2 text-gray-400">...</span>
-                  ) : (
-                    <button
-                      key={pageNum}
-                      onClick={() => setPage(pageNum as number)}
-                      className={`min-w-[34px] px-2.5 py-1.5 border rounded-md ${
-                        pageNum === currentPage
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  )
-                ))}
-                <button
-                  onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-            </>
           )}
-        </Card>
-      </div>
+        </Card>`n      </div>
     </div>
   );
 };
 
 export default ResultsAnalytics;
+

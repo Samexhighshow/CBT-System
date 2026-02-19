@@ -35,6 +35,19 @@ const CbtAccessPortal: React.FC = () => {
   const connectivity = useConnectivity();
 
   const refreshCachedPackages = async () => {
+    // Cleanup old packages (after exam ends + 1 day) to keep storage healthy.
+    const existingPackages = await offlineDB.examPackages.toArray();
+    const now = Date.now();
+    for (const pkg of existingPackages) {
+      const endsAt = pkg.data?.exam?.end_datetime ? new Date(pkg.data.exam.end_datetime).getTime() : null;
+      if (endsAt && !Number.isNaN(endsAt)) {
+        const ttl = endsAt + (24 * 60 * 60 * 1000);
+        if (now > ttl) {
+          await offlineDB.examPackages.delete(pkg.examId);
+        }
+      }
+    }
+
     const packages = await offlineDB.examPackages.toArray();
     const map: Record<number, ExamPackage> = {};
     packages.forEach((pkg) => {
@@ -132,6 +145,18 @@ const CbtAccessPortal: React.FC = () => {
       }
 
       setDownloadBusy(examId);
+
+      // Storage guard: prevent large downloads from silently failing.
+      if (navigator.storage?.estimate) {
+        const estimate = await navigator.storage.estimate();
+        if (typeof estimate.quota === 'number' && typeof estimate.usage === 'number') {
+          const remaining = estimate.quota - estimate.usage;
+          if (remaining < 5 * 1024 * 1024) {
+            throw new Error('Not enough local storage to cache this exam package.');
+          }
+        }
+      }
+
       const response = await fetch(`${baseUrl}/exams/${examId}/package`, { cache: 'no-store' });
       if (!response.ok) {
         throw new Error('Failed to download exam package.');
@@ -142,6 +167,9 @@ const CbtAccessPortal: React.FC = () => {
         examId,
         downloadedAt: new Date().toISOString(),
         packageVersion: String(payload?.packageVersion || payload?.version || '1'),
+        packageId: payload?.packageId || payload?.package_id,
+        packageSignature: payload?.packageSignature || payload?.package_signature,
+        expiresAt: payload?.exam?.end_datetime || null,
         data: payload?.data || payload,
       };
 

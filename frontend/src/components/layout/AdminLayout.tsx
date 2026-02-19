@@ -3,12 +3,13 @@ import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import AvatarDropdown from '../AvatarDropdown';
 import useAuthStore from '../../store/authStore';
 import FooterMinimal from '../FooterMinimal';
-import { adminNavLinks, NavLinkConfig } from '../../config/adminNav';
+import { buildAdminNavLinks, NavLinkConfig } from '../../config/adminNav';
 import { useRoleBasedNav } from '../../hooks/useRoleBasedNav';
 import { TeacherSubjectSelection, StudentSubjectSelection } from '../index';
 import Loading from '../Loading';
 import { api } from '../../services/api';
 import { showSuccess } from '../../utils/alerts';
+import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
 
 const AdminLayout: React.FC = () => {
   const navigate = useNavigate();
@@ -20,8 +21,29 @@ const AdminLayout: React.FC = () => {
   const [showTeacherSubjects, setShowTeacherSubjects] = useState(false);
   const [showStudentSubjects, setShowStudentSubjects] = useState(false);
   const [checkedFirstLogin, setCheckedFirstLogin] = useState(false);
+  const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
   const dropdownCloseTimerRef = useRef<number | null>(null);
   const { loading: navLoading, filterNavLinks } = useRoleBasedNav();
+
+  useEffect(() => {
+    let mounted = true;
+    const loadAssessmentLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      if (mounted) {
+        setAssessmentLabels(config.labels);
+      }
+    };
+
+    loadAssessmentLabels();
+    const handleLabelsUpdated = () => {
+      loadAssessmentLabels();
+    };
+    window.addEventListener('assessment-display-updated', handleLabelsUpdated);
+    return () => {
+      mounted = false;
+      window.removeEventListener('assessment-display-updated', handleLabelsUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -95,7 +117,7 @@ const AdminLayout: React.FC = () => {
   }
 
   // Filter nav links based on user's role-based permissions
-  const navLinks: NavLinkConfig[] = filterNavLinks(adminNavLinks);
+  const navLinks: NavLinkConfig[] = filterNavLinks(buildAdminNavLinks(assessmentLabels));
 
   const isActivePath = (path: string) => {
     if (path === '/admin') {

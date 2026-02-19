@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AttemptAction;
 use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
@@ -624,6 +625,7 @@ class ExamController extends Controller
             'student_id' => $student->id,
             'started_at' => $startAt,
             'ends_at' => $endsAt,
+            'assessment_mode' => $this->resolveAttemptMode($exam),
             'status' => 'in_progress',
         ]);
 
@@ -809,6 +811,17 @@ class ExamController extends Controller
         return $scheduleEnd ?? $endByDuration;
     }
 
+    private function resolveAttemptMode(Exam $exam): string
+    {
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        if ($mode === 'ca_test' || $mode === 'exam') {
+            return $mode;
+        }
+
+        $assessmentType = strtolower(trim((string) ($exam->assessment_type ?? '')));
+        return $assessmentType === 'ca test' ? 'ca_test' : 'exam';
+    }
+
     private function requiresManualMarking(?Question $question): bool
     {
         if (!$question) {
@@ -900,6 +913,17 @@ class ExamController extends Controller
             $exam->results_released = $newStatus;
             $exam->save();
 
+            AttemptAction::create([
+                'attempt_id' => null,
+                'exam_id' => $exam->id,
+                'student_id' => null,
+                'actor_user_id' => auth()->id(),
+                'action_type' => 'result_released',
+                'meta_json' => [
+                    'results_released' => $exam->results_released,
+                ],
+            ]);
+
             $action = $newStatus ? 'released' : 'hidden';
 
         return response()->json([
@@ -911,6 +935,48 @@ class ExamController extends Controller
                     'results_released' => $exam->results_released,
                     'updated_at' => $exam->updated_at->toDateTimeString()
             ]
+        ]);
+    }
+
+    public function lockExam(Request $request, $id)
+    {
+        $exam = Exam::findOrFail($id);
+        $exam->status = 'closed';
+        $exam->published = false;
+        $exam->save();
+
+        AttemptAction::create([
+            'exam_id' => $exam->id,
+            'actor_user_id' => auth()->id(),
+            'action_type' => 'lock_exam',
+            'meta_json' => ['locked_at' => now()->toIso8601String()],
+        ]);
+
+        return response()->json([
+            'message' => 'Exam locked successfully. New logins are blocked.',
+            'exam' => $exam,
+        ]);
+    }
+
+    public function unlockExam(Request $request, $id)
+    {
+        $exam = Exam::findOrFail($id);
+        if ($exam->status === 'closed') {
+            $exam->status = 'scheduled';
+        }
+        $exam->published = true;
+        $exam->save();
+
+        AttemptAction::create([
+            'exam_id' => $exam->id,
+            'actor_user_id' => auth()->id(),
+            'action_type' => 'unlock_exam',
+            'meta_json' => ['unlocked_at' => now()->toIso8601String()],
+        ]);
+
+        return response()->json([
+            'message' => 'Exam unlocked successfully.',
+            'exam' => $exam,
         ]);
     }
 

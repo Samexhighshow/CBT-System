@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
 use App\Models\Student;
+use App\Models\SystemSetting;
 
 class Exam extends Model
 {
@@ -320,9 +321,26 @@ class Exam extends Model
         }
 
         // 6. Check remaining attempts (if retake is enabled)
+        // Voided attempts are replacement artifacts and must not consume attempt slots.
         $allowedAttempts = $this->allowed_attempts ?? 1;
-        $attemptCount = $this->attempts()->where('student_id', $student->id)->count();
-        
+        $attemptMode = $this->resolveAttemptModeForEligibility();
+
+        $attemptQuery = $this->attempts()
+            ->where('student_id', $student->id)
+            ->whereNotIn('status', ['voided']);
+
+        if ($attemptMode === 'ca_test') {
+            $attemptQuery->where('assessment_mode', 'ca_test');
+        } else {
+            // Backward compatibility: legacy rows without assessment_mode are treated as exam-mode attempts.
+            $attemptQuery->where(function ($q) {
+                $q->where('assessment_mode', 'exam')
+                    ->orWhereNull('assessment_mode');
+            });
+        }
+
+        $attemptCount = (clone $attemptQuery)->count();
+
         if ($attemptCount >= $allowedAttempts) {
             return [
                 'eligible' => false,
@@ -330,7 +348,8 @@ class Exam extends Model
                 'message' => 'You have reached the maximum number of attempts for this exam.',
                 'details' => [
                     'attempts_taken' => $attemptCount,
-                    'max_attempts' => $allowedAttempts
+                    'max_attempts' => $allowedAttempts,
+                    'attempt_mode' => $attemptMode,
                 ]
             ];
         }
@@ -341,12 +360,24 @@ class Exam extends Model
             'reason' => null,
             'message' => 'You are eligible to take this exam.',
             'details' => [
-                'attempts_remaining' => $allowedAttempts - $attemptCount,
+                'attempts_remaining' => max(0, $allowedAttempts - $attemptCount),
                 'duration_minutes' => $this->duration_minutes,
                 'start_time' => $start ? $start->toDateTimeString() : null,
-                'end_time' => $end ? $end->toDateTimeString() : null
+                'end_time' => $end ? $end->toDateTimeString() : null,
+                'attempt_mode' => $attemptMode,
             ]
         ];
+    }
+
+    private function resolveAttemptModeForEligibility(): string
+    {
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        if ($mode === 'ca_test' || $mode === 'exam') {
+            return $mode;
+        }
+
+        $assessmentType = strtolower(trim((string) ($this->assessment_type ?? '')));
+        return $assessmentType === 'ca test' ? 'ca_test' : 'exam';
     }
 
     /**

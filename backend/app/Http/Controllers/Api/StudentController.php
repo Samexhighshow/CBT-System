@@ -7,10 +7,14 @@ use App\Models\Student;
 use App\Models\SystemSetting;
 use App\Models\Question;
 use App\Models\User;
+use App\Models\SchoolClass;
+use App\Mail\StudentOnboardingMail;
 use App\Services\GradingService;
+use App\Services\RegistrationNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
 
@@ -131,46 +135,79 @@ class StudentController extends Controller
             ], 403);
         }
 
+        $quickRegister = $request->boolean('quick_register', false);
+
         $validated = $request->validate([
             'registration_number' => 'nullable|string|unique:students,registration_number',
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'other_names' => 'nullable|string|max:255',
             'email' => 'required|email|unique:students,email|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => $quickRegister ? 'nullable|string|min:8|confirmed' : 'required|string|min:8|confirmed',
             'phone_number' => 'nullable|string|max:20',
-            'date_of_birth' => 'required|date',
-            'gender' => 'required|in:male,female',
-            'class_id' => 'required|exists:school_classes,id',
+            'date_of_birth' => $quickRegister ? 'nullable|date' : 'required|date',
+            'gender' => $quickRegister ? 'nullable|in:male,female' : 'required|in:male,female',
+            'class_id' => $quickRegister ? 'nullable|exists:school_classes,id' : 'required|exists:school_classes,id',
+            'class_level' => $quickRegister ? 'nullable|in:JSS1,JSS2,JSS3,SSS1,SSS2,SSS3,SS1,SS2,SS3' : 'nullable',
             'department_id' => 'nullable|exists:departments,id',
             'address' => 'nullable|string',
-            'guardian_first_name' => 'required|string|max:255',
-            'guardian_last_name' => 'required|string|max:255',
-            'guardian_relationship' => 'required|string|max:255',
-            'guardian_phone' => 'required|string|max:20',
-            'guardian_gender' => 'required|in:male,female',
+            'guardian_first_name' => $quickRegister ? 'nullable|string|max:255' : 'required|string|max:255',
+            'guardian_last_name' => $quickRegister ? 'nullable|string|max:255' : 'required|string|max:255',
+            'guardian_relationship' => $quickRegister ? 'nullable|string|max:255' : 'required|string|max:255',
+            'guardian_phone' => $quickRegister ? 'nullable|string|max:20' : 'required|string|max:20',
+            'guardian_gender' => $quickRegister ? 'nullable|in:male,female' : 'required|in:male,female',
         ]);
 
+        if ($quickRegister && empty($validated['class_id']) && !empty($validated['class_level'])) {
+            $validated['class_id'] = $this->resolveClassIdByLevel((string) $validated['class_level']);
+        }
+
         // Get class details to determine class_level
-        $class = \App\Models\SchoolClass::find($validated['class_id']);
+        $class = !empty($validated['class_id']) ? \App\Models\SchoolClass::find($validated['class_id']) : null;
         if (!$class) {
-            return response()->json([
-                'message' => 'Invalid class selected.'
-            ], 422);
+            if (!$quickRegister) {
+                return response()->json([
+                    'message' => 'Invalid class selected.'
+                ], 422);
+            }
         }
 
         // Set class_level based on class name
-        $className = $class->name;
-        $classLevel = $this->getClassLevel($className);
-
-        $validated['class_level'] = $classLevel;
+        if ($class) {
+            $className = $class->name;
+            $classLevel = $this->getClassLevel($className);
+            $validated['class_level'] = $classLevel;
+        } else {
+            $validated['class_level'] = strtoupper((string) ($validated['class_level'] ?? 'JSS1'));
+        }
 
         // Auto-generate registration number if not provided
         if (empty($validated['registration_number'])) {
             $autoGenerate = SystemSetting::get('registration_number_auto_generate', 'true');
             if (filter_var($autoGenerate, FILTER_VALIDATE_BOOLEAN)) {
-                $validated['registration_number'] = \App\Services\RegistrationNumberService::generateRegistrationNumber();
+                $validated['registration_number'] = RegistrationNumberService::generateUniqueRegistrationNumber();
             }
+        }
+        if (empty($validated['registration_number'])) {
+            $validated['registration_number'] = RegistrationNumberService::generateUniqueRegistrationNumber();
+        }
+
+        $generatedPassword = null;
+        if (empty($validated['password'])) {
+            $generatedPassword = $this->generateTemporaryPassword();
+            $validated['password'] = $generatedPassword;
+            $validated['password_confirmation'] = $generatedPassword;
+        }
+
+        if ($quickRegister) {
+            $validated['date_of_birth'] = $validated['date_of_birth'] ?? now()->subYears(14)->toDateString();
+            $validated['gender'] = $validated['gender'] ?? 'male';
+            $validated['guardian_first_name'] = $validated['guardian_first_name'] ?? $validated['first_name'];
+            $validated['guardian_last_name'] = $validated['guardian_last_name'] ?? $validated['last_name'];
+            $validated['guardian_relationship'] = $validated['guardian_relationship'] ?? 'Parent';
+            $validated['guardian_phone'] = $validated['guardian_phone'] ?? 'N/A';
+            $validated['guardian_gender'] = $validated['guardian_gender'] ?? 'male';
+            $validated['address'] = $validated['address'] ?? 'To be updated by student';
         }
 
         $validated['student_id'] = $this->generateStudentId($validated['registration_number'] ?? null);
@@ -201,11 +238,29 @@ class StudentController extends Controller
             return Student::create($validated);
         });
 
-        // Send registration email with registration number
-        // TODO: Implement email notification with Mailable
+        if ($quickRegister && $generatedPassword) {
+            try {
+                $frontendBase = rtrim((string) env('FRONTEND_URL', 'http://localhost:3000'), '/');
+                $link = $frontendBase . '/register?email=' . urlencode((string) $student->email) . '&reg=' . urlencode((string) $student->registration_number);
+                Mail::to((string) $student->email)->queue(new StudentOnboardingMail(
+                    trim((string) ($student->first_name . ' ' . $student->last_name)),
+                    (string) $student->registration_number,
+                    $generatedPassword,
+                    $link
+                ));
+            } catch (\Throwable $mailError) {
+                \Log::warning('Student onboarding email failed', [
+                    'student_id' => $student->id,
+                    'email' => $student->email,
+                    'error' => $mailError->getMessage(),
+                ]);
+            }
+        }
 
         return response()->json([
-            'message' => 'Student registered successfully',
+            'message' => $quickRegister
+                ? 'Student created. Registration number generated and onboarding email queued.'
+                : 'Student registered successfully',
             'registration_number' => $student->registration_number,
             'student' => $student->load(['department', 'schoolClass'])
         ], 201);
@@ -226,6 +281,35 @@ class StudentController extends Controller
         if (strpos($name, 'SSS3') !== false || strpos($name, 'SS3') !== false || strpos($name, 'SENIOR 3') !== false) return 'SS3';
         
         return 'JSS1'; // Default
+    }
+
+    private function resolveClassIdByLevel(string $classLevel): ?int
+    {
+        $normalized = strtoupper(trim($classLevel));
+        $aliases = [
+            'SS1' => 'SSS1',
+            'SS2' => 'SSS2',
+            'SS3' => 'SSS3',
+        ];
+        $target = $aliases[$normalized] ?? $normalized;
+
+        $class = SchoolClass::query()
+            ->whereRaw('UPPER(name) = ?', [$target])
+            ->orWhereRaw('REPLACE(UPPER(name), " ", "") = ?', [str_replace(' ', '', $target)])
+            ->first();
+
+        return $class?->id;
+    }
+
+    private function generateTemporaryPassword(int $length = 10): string
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+        $max = strlen($alphabet) - 1;
+        $chars = [];
+        for ($i = 0; $i < $length; $i++) {
+            $chars[] = $alphabet[random_int(0, $max)];
+        }
+        return implode('', $chars);
     }
 
     /**

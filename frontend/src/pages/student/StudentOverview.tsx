@@ -19,14 +19,13 @@ interface QuickItem {
   accent: string;
 }
 
-interface ResultPreview {
-  id: number;
-  exam_title: string;
-  score: number;
-  total_marks: number;
-  percentage: number;
-  passed: boolean;
-  completed_at?: string;
+interface CompiledPreview {
+  term: string;
+  subject: string;
+  ca_score: number | null;
+  exam_score: number | null;
+  compiled_score: number | null;
+  cumulative_average: number | null;
 }
 
 const StudentOverview: React.FC = () => {
@@ -40,7 +39,7 @@ const StudentOverview: React.FC = () => {
     averageScore: 0,
     passRate: 0,
   });
-  const [recentResults, setRecentResults] = useState<ResultPreview[]>([]);
+  const [compiledResults, setCompiledResults] = useState<CompiledPreview[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -49,10 +48,10 @@ const StudentOverview: React.FC = () => {
         const profile = await getCurrentStudentProfile();
         setStudent(profile);
 
-        const [statsResult, resultsResult] = await Promise.allSettled([
+        const [statsResult, compiledResult] = await Promise.allSettled([
           api.get(`/analytics/student/${profile.id}/dashboard`),
           api.get(`/results/student/${profile.id}`, {
-            params: { limit: 5 },
+            params: { limit: 100 },
           }),
         ]);
 
@@ -84,11 +83,11 @@ const StudentOverview: React.FC = () => {
           }
         }
 
-        if (resultsResult.status === 'fulfilled') {
-          const rows: ResultPreview[] = resultsResult.value.data?.data || [];
-          setRecentResults(rows.slice(0, 4));
+        if (compiledResult.status === 'fulfilled') {
+          const rows: CompiledPreview[] = compiledResult.value.data?.compiled_results || [];
+          setCompiledResults(rows.slice(0, 6));
         } else {
-          setRecentResults([]);
+          setCompiledResults([]);
         }
       } catch (error) {
         console.error('Failed to load student overview data', error);
@@ -191,27 +190,37 @@ const StudentOverview: React.FC = () => {
       </div>
 
       <Card>
-        <h2 className="text-lg font-bold text-slate-900 mb-3">Recent Results</h2>
+        <h2 className="text-lg font-bold text-slate-900 mb-3">Compiled Results</h2>
         {loading ? (
-          <p className="text-sm text-slate-500">Loading recent results...</p>
-        ) : recentResults.length === 0 ? (
-          <p className="text-sm text-slate-500">No completed results yet.</p>
+          <p className="text-sm text-slate-500">Loading compiled results...</p>
+        ) : compiledResults.length === 0 ? (
+          <p className="text-sm text-slate-500">No compiled results yet.</p>
         ) : (
-          <div className="space-y-3">
-            {recentResults.map((result) => (
-              <div key={result.id} className="rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{result.exam_title}</p>
-                  <p className="text-xs text-slate-500">{result.completed_at ? new Date(result.completed_at).toLocaleString() : 'Completed'}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-slate-900">{result.score}/{result.total_marks}</p>
-                  <p className={`text-xs font-semibold ${result.passed ? 'text-emerald-700' : 'text-red-700'}`}>
-                    {result.percentage?.toFixed(1)}% {result.passed ? 'Passed' : 'Pending'}
-                  </p>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="text-left border-b border-slate-200 text-slate-600">
+                  <th className="py-2">Term</th>
+                  <th className="py-2">Subject</th>
+                  <th className="py-2">CA (%)</th>
+                  <th className="py-2">Exam (%)</th>
+                  <th className="py-2">Compiled (%)</th>
+                  <th className="py-2">CR (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compiledResults.map((row, idx) => (
+                  <tr key={`${row.term}-${row.subject}-${idx}`} className="border-b border-slate-100">
+                    <td className="py-2 text-slate-700">{row.term}</td>
+                    <td className="py-2 font-medium text-slate-900">{row.subject}</td>
+                    <td className="py-2 text-slate-700">{row.ca_score !== null ? row.ca_score.toFixed(2) : '-'}</td>
+                    <td className="py-2 text-slate-700">{row.exam_score !== null ? row.exam_score.toFixed(2) : '-'}</td>
+                    <td className="py-2 font-semibold text-slate-900">{row.compiled_score !== null ? row.compiled_score.toFixed(2) : '-'}</td>
+                    <td className="py-2 text-slate-700">{row.cumulative_average !== null ? row.cumulative_average.toFixed(2) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>

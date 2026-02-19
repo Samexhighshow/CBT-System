@@ -24,6 +24,16 @@ const withSessionHeader = (sessionToken: string) => ({
   },
 });
 
+const stableHash = (value: any): string => {
+  const raw = JSON.stringify(value);
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = ((hash << 5) - hash) + raw.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+};
+
 export const cbtApi = {
   listExams: async (regNumber?: string): Promise<CbtOpenExam[]> => {
     const baseURL = await resolveBaseUrl();
@@ -80,8 +90,12 @@ export const cbtApi = {
     payload: { question_id: number; option_id?: number; option_ids?: number[]; answer_text?: string; flagged?: boolean }
   ): Promise<void> => {
     const baseURL = await resolveBaseUrl();
+    const idempotencyKey = `answer-${attemptId}-${payload.question_id}-${stableHash(payload)}`;
     await cbtClient.post(`/cbt/attempts/${attemptId}/answer`, payload, {
-      ...withSessionHeader(sessionToken),
+      headers: {
+        ...withSessionHeader(sessionToken).headers,
+        'Idempotency-Key': idempotencyKey,
+      },
       baseURL,
     });
   },
@@ -106,7 +120,10 @@ export const cbtApi = {
   submitAttempt: async (attemptId: number, sessionToken: string) => {
     const baseURL = await resolveBaseUrl();
     const response = await cbtClient.post(`/cbt/attempts/${attemptId}/submit`, {}, {
-      ...withSessionHeader(sessionToken),
+      headers: {
+        ...withSessionHeader(sessionToken).headers,
+        'Idempotency-Key': `submit-${attemptId}`,
+      },
       baseURL,
     });
     return response.data?.data;

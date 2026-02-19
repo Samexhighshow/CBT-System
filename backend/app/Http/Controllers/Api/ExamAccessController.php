@@ -22,6 +22,8 @@ class ExamAccessController extends Controller
     public function index()
     {
         try {
+            $this->normalizeLegacyUnusedCodes();
+
             $accessRecords = ExamAccess::with(['exam:id,title', 'student:id,registration_number,first_name,last_name'])
                 ->orderBy('created_at', 'desc')
                 ->get()
@@ -230,6 +232,24 @@ class ExamAccessController extends Controller
             $access = $query->first();
 
             if (!$access) {
+                $crossExamAccess = ExamAccess::where('access_code', $accessCode)->latest('id')->first();
+                if ($crossExamAccess) {
+                    $studentForCode = $crossExamAccess->student;
+                    $belongsToSameStudent = $regNumber === '' || (
+                        $studentForCode && strtoupper((string) $studentForCode->registration_number) === $regNumber
+                    ) || strtoupper((string) ($crossExamAccess->student_reg_number ?? '')) === $regNumber;
+
+                    if ($belongsToSameStudent) {
+                        $otherExamTitle = Exam::where('id', $crossExamAccess->exam_id)->value('title');
+                        return response()->json([
+                            'success' => false,
+                            'message' => $otherExamTitle
+                                ? "Access code belongs to a different exam ({$otherExamTitle}). Please select the correct exam."
+                                : 'Access code belongs to a different exam. Please select the correct exam.',
+                        ], 403);
+                    }
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid access code for this exam',
@@ -251,6 +271,8 @@ class ExamAccessController extends Controller
             }
 
             $student = $access->student;
+            $exam = Exam::find($access->exam_id);
+            $attemptMode = $this->resolveAttemptMode($exam);
 
             if ($regNumber !== '' && $student && strtoupper((string) $student->registration_number) !== $regNumber) {
                 return response()->json([
@@ -264,6 +286,9 @@ class ExamAccessController extends Controller
                 $resumableAttempt = ExamAttempt::where('exam_id', $access->exam_id)
                     ->where('student_id', $student->id)
                     ->whereIn('status', ['pending', 'in_progress'])
+                    ->where(function ($q) use ($attemptMode) {
+                        $this->applyAttemptModeScope($q, $attemptMode);
+                    })
                     ->where(function ($q) {
                         $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
                     })
@@ -274,15 +299,27 @@ class ExamAccessController extends Controller
             if (!$resumableAttempt && $student) {
                 $latestAttempt = ExamAttempt::where('exam_id', $access->exam_id)
                     ->where('student_id', $student->id)
+                    ->where(function ($q) use ($attemptMode) {
+                        $this->applyAttemptModeScope($q, $attemptMode);
+                    })
                     ->latest('id')
                     ->first();
 
                 // Allow session replacement: if a new unused access code is provided and there's a previous attempt,
                 // void the old attempt to allow a fresh start
                 if ($latestAttempt && !$access->used) {
+                    $latestStatus = strtolower((string) ($latestAttempt->status ?? ''));
+                    $latestIsInProgress = in_array($latestStatus, ['pending', 'in_progress'], true);
+                    $allowRetakes = SystemSetting::get('allow_exam_retakes', '0');
+
                     // Check if this is a new access code (generated after the latest attempt)
-                    if ($access->created_at && $latestAttempt->created_at && $access->created_at > $latestAttempt->created_at) {
-                        // This is session replacement - void the old attempt
+                    if (
+                        $latestIsInProgress
+                        && $access->created_at
+                        && $latestAttempt->created_at
+                        && $access->created_at > $latestAttempt->created_at
+                    ) {
+                        // Session replacement for in-progress attempt.
                         $latestAttempt->update([
                             'status' => 'voided',
                             'updated_at' => now(),
@@ -290,7 +327,6 @@ class ExamAccessController extends Controller
                         $latestAttempt = null;
                     } else {
                         // Old access code or exam retake not allowed
-                        $allowRetakes = SystemSetting::get('allow_exam_retakes', '0');
                         if ($allowRetakes !== '1' && $allowRetakes !== 1 && $allowRetakes !== true) {
                             return response()->json([
                                 'success' => false,
@@ -298,12 +334,14 @@ class ExamAccessController extends Controller
                                 'attempt_status' => $latestAttempt->status,
                             ], 409);
                         }
-                        // Retakes are allowed, void the old attempt
-                        $latestAttempt->update([
-                            'status' => 'voided',
-                            'updated_at' => now(),
-                        ]);
-                        $latestAttempt = null;
+                        // Preserve completed/submitted attempt history for compilation.
+                        if ($latestIsInProgress) {
+                            $latestAttempt->update([
+                                'status' => 'voided',
+                                'updated_at' => now(),
+                            ]);
+                            $latestAttempt = null;
+                        }
                     }
                 }
             }
@@ -455,7 +493,14 @@ class ExamAccessController extends Controller
 
         return ExamAccess::where('exam_id', $examId)
             ->where('student_id', $studentId)
-            ->where('used', false)
+            ->where(function ($q) {
+                $q->where('used', false)->orWhereNull('used');
+            })
+            ->where(function ($q) {
+                $q->whereNull('status')
+                    ->orWhere('status', 'NEW')
+                    ->orWhere('status', '');
+            })
             ->update([
                 'status' => 'VOID',
                 'used' => true,
@@ -463,5 +508,77 @@ class ExamAccessController extends Controller
                 'expires_at' => $now,
                 'updated_at' => $now,
             ]);
+    }
+
+    /**
+     * One-time safety normalizer for legacy rows:
+     * keep only latest NEW/unused code per exam+student and void the rest.
+     */
+    private function normalizeLegacyUnusedCodes(): void
+    {
+        $rows = ExamAccess::query()
+            ->where(function ($q) {
+                $q->where('used', false)->orWhereNull('used');
+            })
+            ->where(function ($q) {
+                $q->whereNull('status')
+                    ->orWhere('status', 'NEW')
+                    ->orWhere('status', '');
+            })
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get(['id', 'exam_id', 'student_id']);
+
+        if ($rows->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+        $seen = [];
+        $toVoid = [];
+
+        foreach ($rows as $row) {
+            $key = ((int) $row->exam_id) . ':' . ((int) $row->student_id);
+            if (!isset($seen[$key])) {
+                $seen[$key] = true; // keep newest row for this pair
+                continue;
+            }
+            $toVoid[] = (int) $row->id;
+        }
+
+        if (!empty($toVoid)) {
+            ExamAccess::whereIn('id', $toVoid)->update([
+                'status' => 'VOID',
+                'used' => true,
+                'used_at' => $now,
+                'expires_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+    }
+
+    private function resolveAttemptMode(?Exam $exam): string
+    {
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        if ($mode === 'ca_test' || $mode === 'exam') {
+            return $mode;
+        }
+
+        $assessmentType = strtolower(trim((string) ($exam?->assessment_type ?? '')));
+        return $assessmentType === 'ca test' ? 'ca_test' : 'exam';
+    }
+
+    private function applyAttemptModeScope($query, string $mode): void
+    {
+        if ($mode === 'ca_test') {
+            $query->where('assessment_mode', 'ca_test');
+            return;
+        }
+
+        // Backward compatibility: treat null assessment_mode as exam mode.
+        $query->where(function ($q) {
+            $q->where('assessment_mode', 'exam')
+                ->orWhereNull('assessment_mode');
+        });
     }
 }

@@ -9,6 +9,7 @@ use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptEvent;
 use App\Models\ExamAttemptSession;
+use App\Models\IdempotencyKey;
 use App\Models\Question;
 use App\Models\Student;
 use App\Models\SystemSetting;
@@ -117,6 +118,16 @@ class CbtInterfaceController extends Controller
             ->first();
 
         if (!$access) {
+            $crossExamAccess = ExamAccess::where('access_code', strtoupper($validated['access_code']))->latest('id')->first();
+            if ($crossExamAccess && $this->accessMatchesStudent($crossExamAccess, $student)) {
+                $otherExamTitle = Exam::where('id', $crossExamAccess->exam_id)->value('title');
+                return response()->json([
+                    'message' => $otherExamTitle
+                        ? "Access code belongs to a different exam ({$otherExamTitle}). Please select the correct exam."
+                        : 'Access code belongs to a different exam. Please select the correct exam.',
+                ], 403);
+            }
+
             return response()->json([
                 'message' => 'Invalid access code for this exam.',
             ], 403);
@@ -140,9 +151,14 @@ class CbtInterfaceController extends Controller
             ], 403);
         }
 
+        $attemptMode = $this->resolveAttemptMode($exam);
+
         $activeAttempt = ExamAttempt::where('exam_id', $exam->id)
             ->where('student_id', $student->id)
             ->whereIn('status', ['pending', 'in_progress'])
+            ->where(function ($q) use ($attemptMode) {
+                $this->applyAttemptModeScope($q, $attemptMode);
+            })
             ->latest('id')
             ->first();
 
@@ -153,15 +169,27 @@ class CbtInterfaceController extends Controller
 
         $latestAttempt = ExamAttempt::where('exam_id', $exam->id)
             ->where('student_id', $student->id)
+            ->where(function ($q) use ($attemptMode) {
+                $this->applyAttemptModeScope($q, $attemptMode);
+            })
             ->latest('id')
             ->first();
 
         // Allow session replacement: if a new unused access code is provided and there's a previous attempt,
         // void the old attempt to allow a fresh start. This enables re-taking exams with a new access code.
         if (!$activeAttempt && $latestAttempt && !$access->used) {
+            $latestStatus = strtolower((string) ($latestAttempt->status ?? ''));
+            $latestIsInProgress = in_array($latestStatus, ['pending', 'in_progress'], true);
+            $allowRetakes = SystemSetting::get('allow_exam_retakes', '0');
+
             // Check if this is a new access code (generated after the latest attempt)
-            if ($access->created_at && $latestAttempt->created_at && $access->created_at > $latestAttempt->created_at) {
-                // This is session replacement - void the old attempt
+            if (
+                $latestIsInProgress
+                && $access->created_at
+                && $latestAttempt->created_at
+                && $access->created_at > $latestAttempt->created_at
+            ) {
+                // Session replacement for an in-progress/pending attempt.
                 $latestAttempt->update([
                     'status' => 'voided',
                     'updated_at' => now(),
@@ -169,7 +197,6 @@ class CbtInterfaceController extends Controller
                 $latestAttempt = null;
             } else {
                 // Old access code or exam retake not allowed
-                $allowRetakes = SystemSetting::get('allow_exam_retakes', '0');
                 if ($allowRetakes !== '1' && $allowRetakes !== 1 && $allowRetakes !== true) {
                     return response()->json([
                         'message' => 'Student already has an attempt for this exam. A new token cannot restart it.',
@@ -177,12 +204,15 @@ class CbtInterfaceController extends Controller
                         'attempt_status' => $latestAttempt->status,
                     ], 409);
                 }
-                // Retakes are allowed, void the old attempt
-                $latestAttempt->update([
-                    'status' => 'voided',
-                    'updated_at' => now(),
-                ]);
-                $latestAttempt = null;
+                // If a stale in-progress attempt exists and retake/mode-switch is allowed,
+                // void it. Completed/submitted attempts are preserved for compilation history.
+                if ($latestIsInProgress) {
+                    $latestAttempt->update([
+                        'status' => 'voided',
+                        'updated_at' => now(),
+                    ]);
+                    $latestAttempt = null;
+                }
             }
         }
 
@@ -227,6 +257,7 @@ class CbtInterfaceController extends Controller
                 'ends_at' => null,
                 'last_activity_at' => now(),
                 'question_order' => $questionOrder,
+                'assessment_mode' => $attemptMode,
                 'status' => 'pending',
             ]);
 
@@ -323,6 +354,10 @@ class CbtInterfaceController extends Controller
 
     public function start(Request $request, int $attemptId): JsonResponse
     {
+        $validated = $request->validate([
+            'client_started_at' => 'nullable|date',
+        ]);
+
         $attempt = ExamAttempt::with(['exam.subject:id,name', 'exam.schoolClass:id,name'])->findOrFail($attemptId);
 
         $session = $this->validateSession($request, $attempt);
@@ -347,7 +382,14 @@ class CbtInterfaceController extends Controller
 
         if ($attempt->status !== 'in_progress') {
             $now = now();
+            $examStart = $attempt->exam?->start_datetime ?? $attempt->exam?->start_time;
             $examEnd = $attempt->exam?->end_datetime ?? $attempt->exam?->end_time;
+            if ($examStart instanceof Carbon && $now->lt($examStart)) {
+                return response()->json([
+                    'message' => 'Exam has not started yet.',
+                    'code' => 'exam_not_started',
+                ], 409);
+            }
             if ($examEnd instanceof Carbon && $examEnd->lte($now)) {
                 return response()->json([
                     'message' => 'Exam window has already closed.',
@@ -366,6 +408,10 @@ class CbtInterfaceController extends Controller
             $attempt->update([
                 'started_at' => $attempt->started_at ?? $now,
                 'ends_at' => $attempt->ends_at ?? $endsAt,
+                'client_started_at' => $attempt->client_started_at ?? ($validated['client_started_at'] ?? null),
+                'server_started_at' => $attempt->server_started_at ?? $now,
+                'time_anomaly_flag' => $attempt->time_anomaly_flag || $this->isClientTimeAnomalous($validated['client_started_at'] ?? null, $now),
+                'time_anomaly_reason' => $attempt->time_anomaly_reason ?: $this->timeAnomalyReason($validated['client_started_at'] ?? null, $now, 'start_clock_skew'),
                 'last_activity_at' => $now,
                 'status' => 'in_progress',
             ]);
@@ -517,6 +563,11 @@ class CbtInterfaceController extends Controller
 
         $attempt = ExamAttempt::with('exam:id')->findOrFail($attemptId);
 
+        $idempotencyReplay = $this->resolveIdempotentReplay($request, $attempt->exam_id, $attempt->student_id);
+        if ($idempotencyReplay instanceof JsonResponse) {
+            return $idempotencyReplay;
+        }
+
         $session = $this->validateSession($request, $attempt);
         if ($session instanceof JsonResponse) {
             return $session;
@@ -657,7 +708,7 @@ class CbtInterfaceController extends Controller
         /** @var ExamAttemptSession $session */
         $session->update(['last_seen_at' => $now]);
 
-        return response()->json([
+        $responsePayload = [
             'message' => 'Answer saved.',
             'data' => [
                 'question_id' => $questionId,
@@ -665,7 +716,14 @@ class CbtInterfaceController extends Controller
                 'flagged' => (bool) ($answer->flagged ?? false),
                 'option_ids' => $this->extractSelectedOptionIds($answer),
             ],
+        ];
+
+        $attempt->increment('sync_version');
+        $attempt->update([
+            'sync_status' => 'PENDING_SYNC',
         ]);
+
+        return $this->storeIdempotentResponse($request, $attempt->exam_id, $attempt->student_id, $responsePayload, 200);
     }
 
     public function ping(Request $request, int $attemptId): JsonResponse
@@ -823,7 +881,16 @@ class CbtInterfaceController extends Controller
 
     public function submit(Request $request, int $attemptId): JsonResponse
     {
+        $validated = $request->validate([
+            'client_submitted_at' => 'nullable|date',
+        ]);
+
         $attempt = ExamAttempt::with('exam')->findOrFail($attemptId);
+
+        $idempotencyReplay = $this->resolveIdempotentReplay($request, $attempt->exam_id, $attempt->student_id);
+        if ($idempotencyReplay instanceof JsonResponse) {
+            return $idempotencyReplay;
+        }
 
         $session = $this->validateSession($request, $attempt);
         if ($session instanceof JsonResponse) {
@@ -838,16 +905,18 @@ class CbtInterfaceController extends Controller
         }
 
         if ($attempt->isSubmitted()) {
-            return response()->json([
+            $payload = [
                 'message' => 'Attempt already submitted.',
                 'data' => [
                     'status' => $attempt->status,
                     'score' => $attempt->score,
                 ],
-            ]);
+            ];
+
+            return $this->storeIdempotentResponse($request, $attempt->exam_id, $attempt->student_id, $payload, 200);
         }
 
-        $result = $this->finalizeAttempt($attempt, 'submitted_by_student');
+        $result = $this->finalizeAttempt($attempt, 'submitted_by_student', $validated['client_submitted_at'] ?? null);
 
         ExamAttemptSession::where('attempt_id', $attempt->id)
             ->where('is_active', true)
@@ -857,10 +926,12 @@ class CbtInterfaceController extends Controller
                 'revoked_reason' => 'submitted',
             ]);
 
-        return response()->json([
+        $payload = [
             'message' => 'Attempt submitted successfully.',
             'data' => $result,
-        ]);
+        ];
+
+        return $this->storeIdempotentResponse($request, $attempt->exam_id, $attempt->student_id, $payload, 200);
     }
 
     private function validateSession(Request $request, ExamAttempt $attempt): ExamAttemptSession|JsonResponse
@@ -1083,9 +1154,13 @@ class CbtInterfaceController extends Controller
     {
         $durationEnd = $startedAt->copy()->addMinutes(max(1, (int) ($exam->duration_minutes ?? 60)));
         $scheduleEnd = $exam->end_datetime ?? $exam->end_time;
+        $graceMinutes = max(0, (int) SystemSetting::get('exam_end_grace_minutes', 0));
 
-        if ($scheduleEnd instanceof Carbon && $scheduleEnd->lt($durationEnd)) {
-            return $scheduleEnd->copy();
+        if ($scheduleEnd instanceof Carbon) {
+            $scheduleWithGrace = $scheduleEnd->copy()->addMinutes($graceMinutes);
+            if ($scheduleWithGrace->lt($durationEnd)) {
+                return $scheduleWithGrace;
+            }
         }
 
         return $durationEnd;
@@ -1114,6 +1189,31 @@ class CbtInterfaceController extends Controller
         return false;
     }
 
+    private function resolveAttemptMode(Exam $exam): string
+    {
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        if ($mode === 'ca_test' || $mode === 'exam') {
+            return $mode;
+        }
+
+        $assessmentType = strtolower(trim((string) ($exam->assessment_type ?? '')));
+        return $assessmentType === 'ca test' ? 'ca_test' : 'exam';
+    }
+
+    private function applyAttemptModeScope($query, string $mode): void
+    {
+        if ($mode === 'ca_test') {
+            $query->where('assessment_mode', 'ca_test');
+            return;
+        }
+
+        // Backward compatibility: treat null assessment_mode as exam mode.
+        $query->where(function ($q) {
+            $q->where('assessment_mode', 'exam')
+                ->orWhereNull('assessment_mode');
+        });
+    }
+
     private function expireAttempt(ExamAttempt $attempt): void
     {
         if ($attempt->isSubmitted()) {
@@ -1135,7 +1235,7 @@ class CbtInterfaceController extends Controller
             ]);
     }
 
-    private function finalizeAttempt(ExamAttempt $attempt, string $eventType): array
+    private function finalizeAttempt(ExamAttempt $attempt, string $eventType, ?string $clientSubmittedAt = null): array
     {
         $questionIds = collect($attempt->question_order ?: []);
         if ($questionIds->isEmpty()) {
@@ -1216,10 +1316,16 @@ class CbtInterfaceController extends Controller
             'status' => $status,
             'score' => round($totalScore, 2),
             'ended_at' => $now,
+            'client_submitted_at' => $clientSubmittedAt ? Carbon::parse($clientSubmittedAt) : $attempt->client_submitted_at,
+            'server_submitted_at' => $now,
+            'time_anomaly_flag' => $attempt->time_anomaly_flag || $this->isClientTimeAnomalous($clientSubmittedAt, $now),
+            'time_anomaly_reason' => $attempt->time_anomaly_reason ?: $this->timeAnomalyReason($clientSubmittedAt, $now, 'submit_clock_skew'),
             'submitted_at' => $now,
             'completed_at' => $status === 'completed' ? $now : $attempt->completed_at,
             'last_activity_at' => $now,
             'duration_seconds' => $attempt->started_at ? $attempt->started_at->diffInSeconds($now) : null,
+            'sync_status' => 'SYNCED',
+            'sync_version' => max(1, (int) $attempt->sync_version) + 1,
         ]);
 
         $this->logEvent($attempt->id, $eventType, [
@@ -1560,6 +1666,72 @@ class CbtInterfaceController extends Controller
             'meta_json' => $meta,
             'created_at' => now(),
         ]);
+    }
+
+    private function resolveIdempotentReplay(Request $request, ?int $examId = null, ?int $studentId = null): ?JsonResponse
+    {
+        $key = trim((string) $request->header('Idempotency-Key', ''));
+        if ($key === '') {
+            return null;
+        }
+
+        $requestHash = hash('sha256', json_encode($request->all(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $existing = IdempotencyKey::where('idempotency_key', $key)->first();
+        if (!$existing) {
+            return null;
+        }
+
+        if ($existing->request_hash !== $requestHash) {
+            return response()->json([
+                'message' => 'Idempotency key reuse with a different payload is not allowed.',
+                'code' => 'idempotency_payload_mismatch',
+            ], 409);
+        }
+
+        $body = $existing->response_json ? json_decode((string) $existing->response_json, true) : [];
+        return response()->json($body, (int) $existing->response_status);
+    }
+
+    private function storeIdempotentResponse(Request $request, ?int $examId, ?int $studentId, array $payload, int $status = 200): JsonResponse
+    {
+        $key = trim((string) $request->header('Idempotency-Key', ''));
+        if ($key !== '') {
+            IdempotencyKey::updateOrCreate(
+                ['idempotency_key' => $key],
+                [
+                    'exam_id' => $examId,
+                    'student_id' => $studentId,
+                    'request_hash' => hash('sha256', json_encode($request->all(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+                    'response_status' => $status,
+                    'response_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ]
+            );
+        }
+
+        return response()->json($payload, $status);
+    }
+
+    private function isClientTimeAnomalous(?string $clientTime, Carbon $serverTime): bool
+    {
+        if (!$clientTime) {
+            return false;
+        }
+
+        try {
+            $client = Carbon::parse($clientTime);
+            return abs($client->diffInSeconds($serverTime, false)) > 120;
+        } catch (\Throwable $e) {
+            return true;
+        }
+    }
+
+    private function timeAnomalyReason(?string $clientTime, Carbon $serverTime, string $defaultReason): ?string
+    {
+        if (!$this->isClientTimeAnomalous($clientTime, $serverTime)) {
+            return null;
+        }
+
+        return $defaultReason;
     }
 
     private function assessmentDisplayMode(): string

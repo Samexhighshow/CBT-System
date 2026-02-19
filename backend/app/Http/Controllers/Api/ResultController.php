@@ -24,7 +24,7 @@ class ResultController extends Controller
         
         $query = ExamAttempt::with(['exam.subject'])
             ->where('student_id', $studentId)
-            ->where('status', 'completed')
+            ->whereIn('status', ['completed', 'submitted'])
             ->orderBy('completed_at', 'desc');
 
         $perPage = $request->input('limit', 15);
@@ -70,11 +70,20 @@ class ResultController extends Controller
             ];
         });
 
-        $termCompilation = $this->buildTermCompilationForStudent($attempts->getCollection());
+        // IMPORTANT: compile against the student's full completed history,
+        // not only the current paginated page.
+        $allCompletedAttempts = ExamAttempt::with(['exam.subject'])
+            ->where('student_id', $studentId)
+            ->whereIn('status', ['completed', 'submitted'])
+            ->get();
+
+        $termCompilation = $this->buildTermCompilationForStudent($allCompletedAttempts);
+        $compiledResults = $this->flattenCompiledResults($termCompilation);
 
         return response()->json([
             'data' => $results,
             'term_compilation' => $termCompilation,
+            'compiled_results' => $compiledResults,
             'current_page' => $attempts->currentPage(),
             'last_page' => $attempts->lastPage(),
             'per_page' => $attempts->perPage(),
@@ -425,7 +434,7 @@ class ResultController extends Controller
             ];
         }
 
-        $latestByExam = $attempts
+        $latestByExamComponent = $attempts
             ->sortByDesc(function (ExamAttempt $attempt) {
                 $stamp = $attempt->completed_at
                     ?? $attempt->submitted_at
@@ -433,10 +442,13 @@ class ResultController extends Controller
                     ?? $attempt->updated_at;
                 return $stamp ? $stamp->getTimestamp() : 0;
             })
-            ->unique('exam_id')
+            ->unique(function (ExamAttempt $attempt) {
+                $component = $this->attemptComponent($attempt);
+                return ((int) $attempt->exam_id) . ':' . $component;
+            })
             ->values();
 
-        $records = $latestByExam
+        $records = $latestByExamComponent
             ->map(function (ExamAttempt $attempt) {
                 $exam = $attempt->exam;
                 if (!$exam) {
@@ -447,10 +459,11 @@ class ResultController extends Controller
                 $safeTotal = max(1, $totalMarks);
                 $percentage = round((((float) ($attempt->score ?? 0)) / $safeTotal) * 100, 2);
 
-                $assessmentType = trim((string) ($exam->assessment_type ?? ''));
-                $component = strtolower($assessmentType) === 'ca test' ? 'ca' : 'exam';
+                $component = $this->attemptComponent($attempt);
+                $assessmentType = $component === 'ca' ? 'CA Test' : 'Exam';
 
                 return [
+                    'exam_id' => (int) $exam->id,
                     'term' => $this->resolveExamTerm($exam),
                     'academic_session' => $this->resolveExamSession($exam),
                     'subject' => $exam->subject?->name ?? 'Unknown',
@@ -598,6 +611,20 @@ class ResultController extends Controller
         ];
     }
 
+    private function attemptComponent(ExamAttempt $attempt): string
+    {
+        $mode = strtolower(trim((string) ($attempt->assessment_mode ?? '')));
+        if ($mode === 'ca_test') {
+            return 'ca';
+        }
+        if ($mode === 'exam') {
+            return 'exam';
+        }
+
+        $assessmentType = strtolower(trim((string) ($attempt->exam?->assessment_type ?? '')));
+        return $assessmentType === 'ca test' ? 'ca' : 'exam';
+    }
+
     private function weightedAverage(Collection $records, bool $useAssessmentWeight, float $fallbackWeight): ?float
     {
         if ($records->isEmpty()) {
@@ -692,5 +719,33 @@ class ResultController extends Controller
         }
 
         return $rankMap;
+    }
+
+    private function flattenCompiledResults(array $termCompilation): array
+    {
+        $terms = collect($termCompilation['terms'] ?? []);
+        if ($terms->isEmpty()) {
+            return [];
+        }
+
+        return $terms
+            ->flatMap(function (array $termRow) {
+                $term = (string) ($termRow['term'] ?? '');
+                $cumulativeAverage = $termRow['cumulative_average'] ?? null;
+                $subjects = collect($termRow['subjects'] ?? []);
+
+                return $subjects->map(function (array $subjectRow) use ($term, $cumulativeAverage) {
+                    return [
+                        'term' => $term,
+                        'subject' => (string) ($subjectRow['subject'] ?? 'Unknown'),
+                        'ca_score' => $subjectRow['ca_score'] ?? null,
+                        'exam_score' => $subjectRow['exam_score'] ?? null,
+                        'compiled_score' => $subjectRow['term_score'] ?? null,
+                        'cumulative_average' => $cumulativeAverage,
+                    ];
+                });
+            })
+            ->values()
+            ->all();
     }
 }

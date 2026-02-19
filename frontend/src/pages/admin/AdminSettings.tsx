@@ -112,6 +112,9 @@ const tabs: Array<{ key: SettingsTab; label: string; icon: string }> = [
 ];
 
 const cardClass = 'border dark:border-gray-700 rounded p-4 bg-white dark:bg-gray-800';
+const notifyAssessmentDisplayChanged = () => {
+  window.dispatchEvent(new Event('assessment-display-updated'));
+};
 
 const AdminSettings: React.FC = () => {
   const [settings, setSettings] = useState<Setting[]>([]);
@@ -178,6 +181,9 @@ const AdminSettings: React.FC = () => {
     try {
       await api.put(`/settings/${key}`, { value, ...(type ? { type } : {}) });
       showSuccess('Setting updated');
+      if (key === 'assessment_display_mode') {
+        notifyAssessmentDisplayChanged();
+      }
       await fetchSettings();
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to update setting');

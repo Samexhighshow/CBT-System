@@ -10,6 +10,7 @@ import { checkReachability, getReachableBaseUrl } from './reachability';
 const SYNC_LIMIT = 10;
 const SYNC_INTERVAL_MS = 2 * 60 * 1000;
 const MAX_BACKOFF_MS = 10 * 60 * 1000;
+const SYNCED_DATA_RETENTION_DAYS = 14;
 
 export interface SyncSummary {
   processed: number;
@@ -93,7 +94,9 @@ class SyncService {
     }
 
     await this.syncDown();
-    return this.syncNow();
+    const summary = await this.syncNow();
+    await this.cleanupSyncedData();
+    return summary;
   }
 
   async syncDown(): Promise<void> {
@@ -292,10 +295,11 @@ class SyncService {
       return false;
     }
 
-    const [answers, cheatLogs, deviceId] = await Promise.all([
+    const [answers, cheatLogs, deviceId, examPackage] = await Promise.all([
       offlineDB.answers.where('attemptId').equals(attemptId).toArray(),
       offlineDB.cheatLogs.where('attemptId').equals(attemptId).toArray(),
       ensureDeviceId(),
+      offlineDB.examPackages.get(attempt.examId),
     ]);
 
     if (answers.length === 0 && attempt.status !== 'SUBMITTED_LOCAL') {
@@ -310,6 +314,8 @@ class SyncService {
       submittedAt: attempt.submittedAt || nowIso(),
       receiptCode: attempt.receiptCode,
       deviceId,
+      packageId: examPackage?.packageId,
+      packageSignature: examPackage?.packageSignature,
       answers: answers.map((item) => ({
         questionId: item.questionId,
         answer: item.answer,
@@ -327,6 +333,7 @@ class SyncService {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'Idempotency-Key': `sync-attempt-${attempt.attemptId}`,
       },
       body: JSON.stringify(payload),
     });
@@ -340,6 +347,28 @@ class SyncService {
     });
 
     return true;
+  }
+
+  private async cleanupSyncedData(): Promise<void> {
+    const cutoff = Date.now() - (SYNCED_DATA_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const syncedAttempts = await offlineDB.attempts.where('status').equals('SYNCED').toArray();
+    const expired = syncedAttempts.filter((row) => {
+      const submitted = row.submittedAt ? new Date(row.submittedAt).getTime() : 0;
+      const lastSaved = row.lastSavedAt ? new Date(row.lastSavedAt).getTime() : 0;
+      const ts = Math.max(submitted, lastSaved);
+      return ts > 0 && ts < cutoff;
+    });
+
+    for (const attempt of expired) {
+      // eslint-disable-next-line no-await-in-loop
+      await offlineDB.answers.where('attemptId').equals(attempt.attemptId).delete();
+      // eslint-disable-next-line no-await-in-loop
+      await offlineDB.cheatLogs.where('attemptId').equals(attempt.attemptId).delete();
+      // eslint-disable-next-line no-await-in-loop
+      await offlineDB.syncQueue.where('entityId').equals(attempt.attemptId).delete();
+      // eslint-disable-next-line no-await-in-loop
+      await offlineDB.attempts.delete(attempt.attemptId);
+    }
   }
 
   private async syncOfflineUsers(baseUrl: string): Promise<void> {
