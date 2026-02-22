@@ -48,6 +48,16 @@ const StudentLogin: React.FC = () => {
       login(user, token);
 
       try {
+        const profileRes = await axios.get(`${API_URL}/student/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const registrationCompleted = profileRes.data?.registration_completed !== false;
+        const mustChangePassword = profileRes.data?.must_change_password === true;
+        if (!registrationCompleted || mustChangePassword) {
+          navigate('/student/announcements');
+          return;
+        }
+
         const prefRes = await axios.get(`${API_URL}/preferences/student/subjects`, {
           headers: { Authorization: `Bearer ${token}` },
         });

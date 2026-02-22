@@ -14,6 +14,21 @@ interface Student {
   department_id: number;
   class_level: string;
   status: string;
+  other_names?: string | null;
+  phone_number?: string | null;
+  date_of_birth?: string | null;
+  gender?: string | null;
+  address?: string | null;
+  guardian_first_name?: string | null;
+  guardian_last_name?: string | null;
+  guardian_relationship?: string | null;
+  guardian_phone?: string | null;
+  guardian_gender?: string | null;
+  registration_completed?: boolean;
+  created_via_admin?: boolean;
+  department?: { id: number; name: string } | null;
+  school_class?: { id: number; name: string } | null;
+  subjects?: Array<{ id: number; name: string; code?: string }>;
 }
 
 interface StudentStats {
@@ -34,8 +49,11 @@ const StudentManagement: React.FC = () => {
   const [departments, setDepartments] = useState<Array<{id: number; name: string}>>([]);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState<null | Student>(null);
+  const [viewStudentDetails, setViewStudentDetails] = useState<Student | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
   const [form, setForm] = useState({
     first_name: '',
+    other_names: '',
     last_name: '',
     email: '',
     department_id: 0,
@@ -48,6 +66,8 @@ const StudentManagement: React.FC = () => {
     sss: 0,
     active: 0,
   });
+
+  const isSssClass = (classLevel: string) => String(classLevel || '').toUpperCase().startsWith('SS');
 
   useEffect(() => {
     loadStudents();
@@ -105,6 +125,109 @@ const StudentManagement: React.FC = () => {
         showError('Failed to delete student');
       }
     }
+  };
+
+  const openStudentDetails = async (student: Student) => {
+    setShowViewModal(student);
+    setViewLoading(true);
+    try {
+      const response = await api.get(`/students/${student.id}`);
+      setViewStudentDetails(response.data || student);
+    } catch {
+      setViewStudentDetails(student);
+      showError('Failed to load full student profile details');
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  const closeStudentDetails = () => {
+    setShowViewModal(null);
+    setViewStudentDetails(null);
+    setViewLoading(false);
+  };
+
+  const exportStudentProfilePdf = (student: Student) => {
+    const fullName = `${student.first_name || ''} ${student.last_name || ''}`.trim();
+    const printable = window.open('', '_blank', 'width=900,height=1000');
+    if (!printable) {
+      showError('Unable to open print window. Please allow popups.');
+      return;
+    }
+
+    const field = (label: string, value: any) =>
+      `<div class="field"><span class="label">${label}</span><span class="value">${value ?? '-'}</span></div>`;
+
+    printable.document.write(`
+      <!doctype html>
+      <html>
+      <head>
+        <title>${(student.registration_number || 'student').replace(/[^\w-]/g, '_')}_profile</title>
+        <style>
+          body { font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 28px; color: #0f172a; }
+          .sheet { background: #fff; border: 1px solid #e2e8f0; padding: 26px; }
+          .header { border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 18px; }
+          .title { font-size: 26px; font-weight: 700; margin: 0; }
+          .subtitle { font-size: 12px; color: #64748b; margin-top: 6px; letter-spacing: 0.04em; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+          .field { border: 1px solid #e2e8f0; padding: 8px 10px; min-height: 40px; }
+          .label { display: block; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px; }
+          .value { font-size: 14px; color: #0f172a; font-weight: 600; }
+          .block { margin-top: 16px; }
+          .subjects { margin-top: 8px; font-size: 13px; color: #1e293b; }
+          .footer { margin-top: 16px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+        </style>
+      </head>
+      <body>
+        <div class="sheet">
+          <div class="header">
+            <h1 class="title">Student Registration Profile</h1>
+            <div class="subtitle">CBT System Official Registration Snapshot</div>
+          </div>
+
+          <div class="grid">
+            ${field('Full Name', fullName || '-')}
+            ${field('Registration Number', student.registration_number || '-')}
+            ${field('Email', student.email || '-')}
+            ${field('Class Level', student.school_class?.name || student.class_level || '-')}
+            ${field('Department', student.department?.name || '-')}
+            ${field('Status', student.status || '-')}
+            ${field('Date of Birth', student.date_of_birth || '-')}
+            ${field('Gender', student.gender || '-')}
+            ${field('Phone', student.phone_number || '-')}
+            ${field('Address', student.address || '-')}
+          </div>
+
+          <div class="block">
+            <div class="subtitle">Guardian Information</div>
+            <div class="grid">
+              ${field('Guardian First Name', student.guardian_first_name || '-')}
+              ${field('Guardian Last Name', student.guardian_last_name || '-')}
+              ${field('Relationship', student.guardian_relationship || '-')}
+              ${field('Guardian Phone', student.guardian_phone || '-')}
+              ${field('Guardian Gender', student.guardian_gender || '-')}
+            </div>
+          </div>
+
+          <div class="block">
+            <div class="subtitle">Assigned Subjects</div>
+            <div class="subjects">
+              ${(student.subjects || []).length > 0
+                ? (student.subjects || []).map((s) => `${s.name}${s.code ? ` (${s.code})` : ''}`).join(', ')
+                : 'No subject assignments yet'}
+            </div>
+          </div>
+
+          <div class="footer">
+            Generated: ${new Date().toLocaleString()} | Student ID: ${student.id}
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+    printable.document.close();
+    printable.focus();
+    printable.print();
   };
 
   const handleBulkUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -410,7 +533,7 @@ const StudentManagement: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-sm">
-                        <button onClick={() => setShowViewModal(student)} className="text-blue-600 hover:text-blue-800 mr-3">View</button>
+                        <button onClick={() => openStudentDetails(student)} className="text-blue-600 hover:text-blue-800 mr-3">View</button>
                         <button onClick={() => handleDelete(student.id)} className="text-red-600 hover:text-red-800">Delete</button>
                       </td>
                     </tr>
@@ -478,14 +601,38 @@ const StudentManagement: React.FC = () => {
                 <input className="mt-1 w-full border rounded px-3 py-2" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} aria-label="First name" placeholder="First name" />
               </div>
               <div>
-                <label className="block text-sm font-medium">Last Name</label>
-                <input className="mt-1 w-full border rounded px-3 py-2" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} aria-label="Last name" placeholder="Last name" />
+                <label className="block text-sm font-medium">Middle Name</label>
+                <input className="mt-1 w-full border rounded px-3 py-2" value={form.other_names} onChange={e => setForm({ ...form, other_names: e.target.value })} aria-label="Middle name" placeholder="Middle name (optional)" />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
+                <label className="block text-sm font-medium">Last Name</label>
+                <input className="mt-1 w-full border rounded px-3 py-2" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} aria-label="Last name" placeholder="Last name" />
+              </div>
+              <div>
                 <label className="block text-sm font-medium">Email</label>
                 <input type="email" className="mt-1 w-full border rounded px-3 py-2" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} aria-label="Email" placeholder="Email" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium">Class Level</label>
+                <select
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={form.class_level}
+                  onChange={e => {
+                    const nextClass = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      class_level: nextClass,
+                      department_id: isSssClass(nextClass) ? prev.department_id : 0,
+                    }));
+                  }}
+                  aria-label="Class level"
+                >
+                  {['JSS1','JSS2','JSS3','SSS1','SSS2','SSS3'].map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium">Registration Number</label>
@@ -494,16 +641,18 @@ const StudentManagement: React.FC = () => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium">Department</label>
-                <select className="mt-1 w-full border rounded px-3 py-2" value={form.department_id} onChange={e => setForm({ ...form, department_id: Number(e.target.value) })} aria-label="Department">
+                <label className="block text-sm font-medium">
+                  Department {isSssClass(form.class_level) ? <span className="text-red-600">*</span> : <span className="text-gray-500">(Optional for JSS)</span>}
+                </label>
+                <select
+                  className={`mt-1 w-full border rounded px-3 py-2 ${!isSssClass(form.class_level) ? 'bg-gray-50 text-gray-500' : ''}`}
+                  value={form.department_id}
+                  onChange={e => setForm({ ...form, department_id: Number(e.target.value) })}
+                  aria-label="Department"
+                  disabled={!isSssClass(form.class_level)}
+                >
                   <option value={0}>Select department</option>
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Class Level</label>
-                <select className="mt-1 w-full border rounded px-3 py-2" value={form.class_level} onChange={e => setForm({ ...form, class_level: e.target.value })} aria-label="Class level">
-                  {['JSS1','JSS2','JSS3','SSS1','SSS2','SSS3'].map(l => <option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
             </div>
@@ -515,12 +664,25 @@ const StudentManagement: React.FC = () => {
             <button className="px-4 py-2 border rounded" onClick={() => setShowRegisterModal(false)}>Cancel</button>
             <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={async () => {
               try {
-                await api.post('/students', { ...form, quick_register: true });
-                showSuccess('Student created and onboarding email sent');
+                if (isSssClass(form.class_level) && !form.department_id) {
+                  showError('Please select a department for SSS class registration.');
+                  return;
+                }
+                const response = await api.post('/students', { ...form, quick_register: true });
+                showSuccess(response?.data?.message || 'Student created and onboarding email sent');
                 setShowRegisterModal(false);
+                setForm({
+                  first_name: '',
+                  other_names: '',
+                  last_name: '',
+                  email: '',
+                  department_id: 0,
+                  class_level: 'JSS1',
+                  status: 'active',
+                });
                 loadStudents();
-              } catch (error) {
-                showError('Failed to register student');
+              } catch (error: any) {
+                showError(error?.response?.data?.message || 'Failed to register student');
               }
             }}>Save</button>
           </div>
@@ -529,26 +691,73 @@ const StudentManagement: React.FC = () => {
 
       {/* View Student Modal (no subjects) */}
       <div className={`fixed inset-0 ${showViewModal ? 'flex' : 'hidden'} items-center justify-center z-50`}>
-        <div className="absolute inset-0 bg-black/40" onClick={() => setShowViewModal(null)} />
-        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-xl mx-4">
+        <div className="absolute inset-0 bg-black/40" onClick={closeStudentDetails} />
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <h3 className="text-lg font-semibold">Student Details</h3>
-            <button aria-label="Close" className="text-gray-500 hover:text-gray-700" onClick={() => setShowViewModal(null)}>
+            <button aria-label="Close" className="text-gray-500 hover:text-gray-700" onClick={closeStudentDetails}>
               <i className='bx bx-x text-2xl'></i>
             </button>
           </div>
           {showViewModal && (
-            <div className="p-4 space-y-2 text-sm">
-              <p><strong>Name:</strong> {showViewModal.first_name} {showViewModal.last_name}</p>
-              <p><strong>Email:</strong> {showViewModal.email}</p>
-              <p><strong>Reg. Number:</strong> {showViewModal.registration_number}</p>
-              <p><strong>Class:</strong> {showViewModal.class_level}</p>
-              <p><strong>Status:</strong> {showViewModal.status}</p>
-              {/* Subjects intentionally omitted */}
+            <div className="p-4 space-y-4 text-sm max-h-[70vh] overflow-y-auto">
+              {viewLoading ? (
+                <p className="text-gray-500">Loading full profile...</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <p><strong>Name:</strong> {viewStudentDetails?.first_name} {viewStudentDetails?.last_name} {viewStudentDetails?.other_names || ''}</p>
+                    <p><strong>Reg. Number:</strong> {viewStudentDetails?.registration_number}</p>
+                    <p><strong>Email:</strong> {viewStudentDetails?.email || '-'}</p>
+                    <p><strong>Class:</strong> {viewStudentDetails?.school_class?.name || viewStudentDetails?.class_level || '-'}</p>
+                    <p><strong>Department:</strong> {viewStudentDetails?.department?.name || '-'}</p>
+                    <p><strong>Status:</strong> {viewStudentDetails?.status}</p>
+                    <p><strong>Date of Birth:</strong> {viewStudentDetails?.date_of_birth || '-'}</p>
+                    <p><strong>Gender:</strong> {viewStudentDetails?.gender || '-'}</p>
+                    <p><strong>Phone:</strong> {viewStudentDetails?.phone_number || '-'}</p>
+                    <p><strong>Address:</strong> {viewStudentDetails?.address || '-'}</p>
+                    <p><strong>Registration Completion:</strong> {viewStudentDetails?.registration_completed ? 'Completed' : 'Pending completion'}</p>
+                    <p><strong>Created via Admin:</strong> {viewStudentDetails?.created_via_admin ? 'Yes' : 'No'}</p>
+                  </div>
+
+                  <div className="rounded-md border border-slate-200 p-3">
+                    <h4 className="font-semibold text-slate-800 mb-2">Guardian Details</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <p><strong>First Name:</strong> {viewStudentDetails?.guardian_first_name || '-'}</p>
+                      <p><strong>Last Name:</strong> {viewStudentDetails?.guardian_last_name || '-'}</p>
+                      <p><strong>Relationship:</strong> {viewStudentDetails?.guardian_relationship || '-'}</p>
+                      <p><strong>Phone:</strong> {viewStudentDetails?.guardian_phone || '-'}</p>
+                      <p><strong>Gender:</strong> {viewStudentDetails?.guardian_gender || '-'}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-slate-200 p-3">
+                    <h4 className="font-semibold text-slate-800 mb-2">Subject Assignments</h4>
+                    {(viewStudentDetails?.subjects || []).length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {(viewStudentDetails?.subjects || []).map((subject) => (
+                          <span key={subject.id} className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-800 border border-blue-100">
+                            {subject.name}{subject.code ? ` (${subject.code})` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500">No subject assignments yet.</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
-          <div className="border-t px-4 py-3 flex justify-end">
-            <button className="px-4 py-2 border rounded" onClick={() => setShowViewModal(null)}>Close</button>
+          <div className="border-t px-4 py-3 flex justify-end gap-2">
+            <button
+              className="px-4 py-2 border rounded text-blue-700 border-blue-300 hover:bg-blue-50"
+              onClick={() => viewStudentDetails && exportStudentProfilePdf(viewStudentDetails)}
+              disabled={!viewStudentDetails || viewLoading}
+            >
+              Export PDF
+            </button>
+            <button className="px-4 py-2 border rounded" onClick={closeStudentDetails}>Close</button>
           </div>
         </div>
       </div>

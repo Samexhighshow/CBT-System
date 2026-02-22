@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 class StudentController extends Controller
@@ -61,6 +62,10 @@ class StudentController extends Controller
             'class_name' => $student->schoolClass?->name,
             'completed_attempts' => $completedAttempts,
             'average_score' => round($averageScore, 2),
+            'registration_completed' => (bool) $student->registration_completed,
+            'must_change_password' => (bool) ($user->must_change_password ?? false),
+            'created_via_admin' => (bool) $student->created_via_admin,
+            'missing_fields' => $this->resolveMissingRegistrationFields($student),
         ]);
     }
 
@@ -117,7 +122,7 @@ class StudentController extends Controller
      */
     public function show($id)
     {
-        $student = Student::with(['department', 'exams', 'examAttempts.exam'])->findOrFail($id);
+        $student = Student::with(['department', 'schoolClass', 'subjects', 'exams', 'examAttempts.exam'])->findOrFail($id);
         
         return response()->json($student);
     }
@@ -181,6 +186,17 @@ class StudentController extends Controller
             $validated['class_level'] = strtoupper((string) ($validated['class_level'] ?? 'JSS1'));
         }
 
+        $normalizedLevel = strtoupper((string) ($validated['class_level'] ?? ''));
+        $isSssClass = str_starts_with($normalizedLevel, 'SS');
+        if ($isSssClass && empty($validated['department_id'])) {
+            return response()->json([
+                'message' => 'Department is required for SSS classes.',
+                'errors' => [
+                    'department_id' => ['Department is required for SSS classes.'],
+                ],
+            ], 422);
+        }
+
         // Auto-generate registration number if not provided
         if (empty($validated['registration_number'])) {
             $autoGenerate = SystemSetting::get('registration_number_auto_generate', 'true');
@@ -200,21 +216,21 @@ class StudentController extends Controller
         }
 
         if ($quickRegister) {
-            $validated['date_of_birth'] = $validated['date_of_birth'] ?? now()->subYears(14)->toDateString();
-            $validated['gender'] = $validated['gender'] ?? 'male';
-            $validated['guardian_first_name'] = $validated['guardian_first_name'] ?? $validated['first_name'];
-            $validated['guardian_last_name'] = $validated['guardian_last_name'] ?? $validated['last_name'];
-            $validated['guardian_relationship'] = $validated['guardian_relationship'] ?? 'Parent';
-            $validated['guardian_phone'] = $validated['guardian_phone'] ?? 'N/A';
-            $validated['guardian_gender'] = $validated['guardian_gender'] ?? 'male';
-            $validated['address'] = $validated['address'] ?? 'To be updated by student';
+            $validated['date_of_birth'] = $validated['date_of_birth'] ?? null;
+            $validated['gender'] = $validated['gender'] ?? null;
+            $validated['guardian_first_name'] = $validated['guardian_first_name'] ?? null;
+            $validated['guardian_last_name'] = $validated['guardian_last_name'] ?? null;
+            $validated['guardian_relationship'] = $validated['guardian_relationship'] ?? null;
+            $validated['guardian_phone'] = $validated['guardian_phone'] ?? null;
+            $validated['guardian_gender'] = $validated['guardian_gender'] ?? null;
+            $validated['address'] = $validated['address'] ?? null;
         }
 
         $validated['student_id'] = $this->generateStudentId($validated['registration_number'] ?? null);
         $hashedPassword = Hash::make($validated['password']);
         $validated['password'] = $hashedPassword;
 
-        $student = DB::transaction(function () use ($validated, $hashedPassword) {
+        $student = DB::transaction(function () use ($validated, $hashedPassword, $quickRegister) {
             $fullName = trim(
                 ($validated['first_name'] ?? '') . ' ' .
                 ($validated['last_name'] ?? '') . ' ' .
@@ -226,6 +242,8 @@ class StudentController extends Controller
                 'email' => $validated['email'],
                 'password' => $hashedPassword,
                 'phone_number' => $validated['phone_number'] ?? null,
+                'must_change_password' => $quickRegister,
+                'onboarding_source' => $quickRegister ? 'admin_quick_register' : 'self_registration',
             ]);
 
             $studentRole = Role::firstOrCreate([
@@ -235,6 +253,9 @@ class StudentController extends Controller
             $user->assignRole($studentRole);
             $user->markEmailAsVerified();
 
+            $validated['registration_completed'] = !$quickRegister;
+            $validated['created_via_admin'] = $quickRegister;
+
             return Student::create($validated);
         });
 
@@ -242,8 +263,13 @@ class StudentController extends Controller
             try {
                 $frontendBase = rtrim((string) env('FRONTEND_URL', 'http://localhost:3000'), '/');
                 $link = $frontendBase . '/register?email=' . urlencode((string) $student->email) . '&reg=' . urlencode((string) $student->registration_number);
-                Mail::to((string) $student->email)->queue(new StudentOnboardingMail(
-                    trim((string) ($student->first_name . ' ' . $student->last_name)),
+                $displayName = trim((string) (
+                    ($student->first_name ?? '') . ' ' .
+                    ($student->other_names ?? '') . ' ' .
+                    ($student->last_name ?? '')
+                ));
+                Mail::to((string) $student->email)->send(new StudentOnboardingMail(
+                    $displayName !== '' ? $displayName : (string) $student->email,
                     (string) $student->registration_number,
                     $generatedPassword,
                     $link
@@ -254,15 +280,22 @@ class StudentController extends Controller
                     'email' => $student->email,
                     'error' => $mailError->getMessage(),
                 ]);
+                return response()->json([
+                    'message' => 'Student created, but onboarding email failed. Check mail configuration.',
+                    'registration_number' => $student->registration_number,
+                    'student' => $student->load(['department', 'schoolClass']),
+                    'email_sent' => false,
+                ], 201);
             }
         }
 
         return response()->json([
             'message' => $quickRegister
-                ? 'Student created. Registration number generated and onboarding email queued.'
+                ? 'Student created. Registration number generated and onboarding email sent.'
                 : 'Student registered successfully',
             'registration_number' => $student->registration_number,
-            'student' => $student->load(['department', 'schoolClass'])
+            'student' => $student->load(['department', 'schoolClass']),
+            'email_sent' => $quickRegister ? true : null,
         ], 201);
     }
 
@@ -364,6 +397,87 @@ class StudentController extends Controller
         return response()->json([
             'message' => 'Student updated successfully',
             'student' => $student->load('department')
+        ]);
+    }
+
+    /**
+     * Complete onboarding for admin-created student accounts by filling only missing profile fields.
+     */
+    public function completeRegistration(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Authentication required.'], 401);
+        }
+
+        $student = Student::where('email', $user->email)->first();
+        if (!$student) {
+            return response()->json(['message' => 'Student profile not found for this account.'], 404);
+        }
+
+        $validated = $request->validate([
+            'other_names' => 'nullable|string|max:255',
+            'phone_number' => 'nullable|string|max:20',
+            'date_of_birth' => 'nullable|date',
+            'gender' => 'nullable|in:male,female',
+            'address' => 'nullable|string',
+            'guardian_first_name' => 'nullable|string|max:255',
+            'guardian_last_name' => 'nullable|string|max:255',
+            'guardian_relationship' => 'nullable|string|max:255',
+            'guardian_phone' => 'nullable|string|max:20',
+            'guardian_gender' => 'nullable|in:male,female',
+            'new_password' => 'nullable|string|min:8|confirmed',
+        ]);
+
+        $student->fill(array_filter([
+            'other_names' => $validated['other_names'] ?? null,
+            'phone_number' => $validated['phone_number'] ?? null,
+            'date_of_birth' => $validated['date_of_birth'] ?? null,
+            'gender' => $validated['gender'] ?? null,
+            'address' => $validated['address'] ?? null,
+            'guardian_first_name' => $validated['guardian_first_name'] ?? null,
+            'guardian_last_name' => $validated['guardian_last_name'] ?? null,
+            'guardian_relationship' => $validated['guardian_relationship'] ?? null,
+            'guardian_phone' => $validated['guardian_phone'] ?? null,
+            'guardian_gender' => $validated['guardian_gender'] ?? null,
+        ], fn ($value) => $value !== null && $value !== ''));
+
+        $missingAfterFill = $this->resolveMissingRegistrationFields($student);
+
+        if (($user->must_change_password ?? false) && empty($validated['new_password'])) {
+            throw ValidationException::withMessages([
+                'new_password' => ['Please set a new password to continue.'],
+            ]);
+        }
+
+        if (!empty($validated['new_password'])) {
+            $newHash = Hash::make((string) $validated['new_password']);
+            $user->password = $newHash;
+            $student->password = $newHash;
+            $user->must_change_password = false;
+        }
+
+        if (count($missingAfterFill) > 0) {
+            $student->registration_completed = false;
+            $student->save();
+            $user->save();
+
+            return response()->json([
+                'message' => 'Please complete all required fields.',
+                'registration_completed' => false,
+                'missing_fields' => $missingAfterFill,
+            ], 422);
+        }
+
+        $student->registration_completed = true;
+        $student->save();
+        $user->save();
+
+        return response()->json([
+            'message' => 'Registration completed successfully.',
+            'registration_completed' => true,
+            'must_change_password' => (bool) ($user->must_change_password ?? false),
+            'missing_fields' => [],
         ]);
     }
 
@@ -611,5 +725,33 @@ class StudentController extends Controller
     private function gradingService(): GradingService
     {
         return app(GradingService::class);
+    }
+
+    private function resolveMissingRegistrationFields(Student $student): array
+    {
+        $requiredMap = [
+            'date_of_birth' => $student->date_of_birth,
+            'gender' => $student->gender,
+            'address' => $student->address,
+            'guardian_first_name' => $student->guardian_first_name,
+            'guardian_last_name' => $student->guardian_last_name,
+            'guardian_relationship' => $student->guardian_relationship,
+            'guardian_phone' => $student->guardian_phone,
+            'guardian_gender' => $student->guardian_gender,
+        ];
+
+        return collect($requiredMap)
+            ->filter(function ($value) {
+                if ($value === null) {
+                    return true;
+                }
+                if (is_string($value) && trim($value) === '') {
+                    return true;
+                }
+                return false;
+            })
+            ->keys()
+            ->values()
+            ->all();
     }
 }

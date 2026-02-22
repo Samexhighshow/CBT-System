@@ -12,6 +12,10 @@ export interface CurrentStudentProfile {
   class_name?: string | null;
   completed_attempts?: number;
   average_score?: number;
+  registration_completed?: boolean;
+  must_change_password?: boolean;
+  created_via_admin?: boolean;
+  missing_fields?: string[];
 }
 
 const matchStudentByEmail = (rows: any[], email?: string): CurrentStudentProfile | null => {

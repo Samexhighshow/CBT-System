@@ -101,7 +101,8 @@ class ProfileController extends Controller
         }
 
         $user->update([
-            'password' => Hash::make($validated['new_password'])
+            'password' => Hash::make($validated['new_password']),
+            'must_change_password' => false,
         ]);
 
         return response()->json(['message' => 'Password changed successfully']);

@@ -30,6 +30,8 @@ class Student extends Model
         'trade_subjects',
         'is_active',
         'status',
+        'registration_completed',
+        'created_via_admin',
         'guardian_first_name',
         'guardian_last_name',
         'guardian_relationship',
@@ -40,6 +42,8 @@ class Student extends Model
     protected $casts = [
         'trade_subjects' => 'array',
         'is_active' => 'boolean',
+        'registration_completed' => 'boolean',
+        'created_via_admin' => 'boolean',
         'date_of_birth' => 'date',
     ];
 

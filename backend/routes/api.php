@@ -37,7 +37,6 @@ use App\Http\Controllers\Api\BankQuestionController;
 use App\Http\Controllers\Api\ExamQuestionController;
 use App\Http\Controllers\Api\ExamAccessController;
 use App\Http\Controllers\Api\AnnouncementController;
-use App\Http\Controllers\Api\CbtInterfaceController;
 use App\Http\Controllers\Api\MarkingController;
 use App\Http\Controllers\Api\CbtOfflineController;
 
@@ -49,18 +48,18 @@ Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv'])
 
 // Dedicated CBT runtime endpoints (public, session-token protected per request)
 Route::prefix('cbt')->middleware('throttle:120,1')->group(function () {
-    Route::get('/config', [CbtInterfaceController::class, 'config']);
-    Route::get('/exams', [CbtInterfaceController::class, 'exams']);
+    Route::get('/config', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'config']);
+    Route::get('/exams', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'exams']);
     Route::get('/offline-students', [CbtOfflineController::class, 'offlineStudents']);
     Route::get('/offline-exams', [CbtOfflineController::class, 'offlineExams']);
-    Route::post('/exams/{examId}/verify', [CbtInterfaceController::class, 'verify'])->middleware('throttle:30,1');
-    Route::post('/attempts/{attemptId}/start', [CbtInterfaceController::class, 'start'])->middleware('throttle:30,1');
-    Route::get('/attempts/{attemptId}/state', [CbtInterfaceController::class, 'state']);
-    Route::get('/attempts/{attemptId}/questions', [CbtInterfaceController::class, 'questions']);
-    Route::post('/attempts/{attemptId}/answer', [CbtInterfaceController::class, 'answer'])->middleware('throttle:120,1');
-    Route::post('/attempts/{attemptId}/event', [CbtInterfaceController::class, 'event'])->middleware('throttle:240,1');
-    Route::post('/attempts/{attemptId}/submit', [CbtInterfaceController::class, 'submit']);
-    Route::post('/attempts/{attemptId}/ping', [CbtInterfaceController::class, 'ping'])->middleware('throttle:240,1');
+    Route::post('/exams/{examId}/verify', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'verify'])->middleware('throttle:30,1');
+    Route::post('/attempts/{attemptId}/start', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'start'])->middleware('throttle:30,1');
+    Route::get('/attempts/{attemptId}/state', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'state']);
+    Route::get('/attempts/{attemptId}/questions', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'questions']);
+    Route::post('/attempts/{attemptId}/answer', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'answer'])->middleware('throttle:120,1');
+    Route::post('/attempts/{attemptId}/event', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'event'])->middleware('throttle:240,1');
+    Route::post('/attempts/{attemptId}/submit', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'submit']);
+    Route::post('/attempts/{attemptId}/ping', [\App\Http\Controllers\Api\CbtInterfaceController::class, 'ping'])->middleware('throttle:240,1');
 });
 
 // Auth & Verification
@@ -82,6 +81,7 @@ Route::post('/exam-access/verify', [ExamAccessController::class, 'verify'])->mid
 
 // Current student profile (auth required)
 Route::middleware('auth:sanctum')->get('/student/me', [StudentController::class, 'getCurrentProfile']);
+Route::middleware('auth:sanctum')->post('/student/complete-registration', [StudentController::class, 'completeRegistration']);
 
 // Students
 Route::prefix('students')->group(function () {

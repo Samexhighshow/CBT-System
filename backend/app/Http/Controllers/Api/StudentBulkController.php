@@ -87,6 +87,8 @@ class StudentBulkController extends Controller
                     'email' => $rowData['email'],
                     'password' => Hash::make($temporaryPassword),
                     'phone_number' => $rowData['phone'] ?? null,
+                    'must_change_password' => true,
+                    'onboarding_source' => 'admin_bulk_upload',
                 ]);
                 $user->assignRole($studentRole);
                 $user->markEmailAsVerified();
@@ -103,16 +105,18 @@ class StudentBulkController extends Controller
                     'class_level' => $rowData['class_level'],
                     'class_id' => $classId,
                     'department_id' => $rowData['department_id'],
-                    'date_of_birth' => now()->subYears(14)->toDateString(),
-                    'gender' => 'male',
-                    'address' => 'To be updated by student',
-                    'guardian_first_name' => $rowData['first_name'],
-                    'guardian_last_name' => $rowData['last_name'],
-                    'guardian_relationship' => 'Parent',
-                    'guardian_phone' => $rowData['guardian_phone'] ?: 'N/A',
-                    'guardian_gender' => 'male',
+                    'date_of_birth' => null,
+                    'gender' => null,
+                    'address' => null,
+                    'guardian_first_name' => null,
+                    'guardian_last_name' => null,
+                    'guardian_relationship' => null,
+                    'guardian_phone' => $rowData['guardian_phone'] ?: null,
+                    'guardian_gender' => null,
                     'status' => 'active',
                     'is_active' => true,
+                    'registration_completed' => false,
+                    'created_via_admin' => true,
                 ]);
 
                 if ($sendCredentials && !empty($student->email)) {

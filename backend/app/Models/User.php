@@ -17,6 +17,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'name',
         'email',
         'password',
+        'must_change_password',
+        'onboarding_source',
         'offline_login_enabled',
         'offline_pin_hash',
         'profile_picture',
@@ -38,5 +40,6 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $casts = [
         'email_verified_at' => 'datetime',
         'offline_login_enabled' => 'boolean',
+        'must_change_password' => 'boolean',
     ];
 }

@@ -1093,6 +1093,14 @@ code {
   max-height: 620px;
 }
 
+.max-h-\[65vh\] {
+  max-height: 65vh;
+}
+
+.max-h-\[70vh\] {
+  max-height: 70vh;
+}
+
 .max-h-\[720px\] {
   max-height: 720px;
 }
@@ -1289,8 +1297,16 @@ code {
   min-width: 520px;
 }
 
+.min-w-\[760px\] {
+  min-width: 760px;
+}
+
 .min-w-\[80px\] {
   min-width: 80px;
+}
+
+.min-w-\[860px\] {
+  min-width: 860px;
 }
 
 .min-w-\[900px\] {
@@ -1327,6 +1343,10 @@ code {
 
 .max-w-\[1200px\] {
   max-width: 1200px;
+}
+
+.max-w-\[1400px\] {
+  max-width: 1400px;
 }
 
 .max-w-\[1800px\] {
@@ -1904,6 +1924,10 @@ code {
   border-color: rgb(167 243 208 / var(--tw-border-opacity, 1));
 }
 
+.border-emerald-200\/80 {
+  border-color: rgb(167 243 208 / 0.8);
+}
+
 .border-emerald-400 {
   --tw-border-opacity: 1;
   border-color: rgb(52 211 153 / var(--tw-border-opacity, 1));
@@ -2355,14 +2379,14 @@ code {
   background-color: rgb(220 38 38 / var(--tw-bg-opacity, 1));
 }
 
-.bg-rose-100 {
-  --tw-bg-opacity: 1;
-  background-color: rgb(255 228 230 / var(--tw-bg-opacity, 1));
-}
-
 .bg-rose-50 {
   --tw-bg-opacity: 1;
   background-color: rgb(255 241 242 / var(--tw-bg-opacity, 1));
+}
+
+.bg-rose-600 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(225 29 72 / var(--tw-bg-opacity, 1));
 }
 
 .bg-slate-100 {
@@ -2407,16 +2431,12 @@ code {
   background-color: rgb(15 23 42 / var(--tw-bg-opacity, 1));
 }
 
-.bg-slate-900\/25 {
-  background-color: rgb(15 23 42 / 0.25);
-}
-
-.bg-slate-900\/30 {
-  background-color: rgb(15 23 42 / 0.3);
-}
-
 .bg-slate-900\/40 {
   background-color: rgb(15 23 42 / 0.4);
+}
+
+.bg-slate-950\/40 {
+  background-color: rgb(2 6 23 / 0.4);
 }
 
 .bg-transparent {
@@ -2527,6 +2547,12 @@ code {
 .from-cyan-600 {
   --tw-gradient-from: #0891b2 var(--tw-gradient-from-position);
   --tw-gradient-to: rgb(8 145 178 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.from-emerald-50 {
+  --tw-gradient-from: #ecfdf5 var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(236 253 245 / 0) var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
 
@@ -3365,6 +3391,11 @@ code {
 .text-emerald-800 {
   --tw-text-opacity: 1;
   color: rgb(6 95 70 / var(--tw-text-opacity, 1));
+}
+
+.text-emerald-900 {
+  --tw-text-opacity: 1;
+  color: rgb(6 78 59 / var(--tw-text-opacity, 1));
 }
 
 .text-gray-300 {
@@ -4323,6 +4354,11 @@ svg {
 .hover\:bg-red-700:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(185 28 28 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-rose-700:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(190 18 60 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-slate-100:hover {
