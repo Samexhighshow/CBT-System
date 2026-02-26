@@ -175,7 +175,7 @@ export const TeacherSubjectSelection: React.FC<TeacherSubjectSelectionProps> = (
             displayRows.map((row) => (
               <Card key={`${row.subject_id}-${row.class_id}`} className="p-3 mx-2 my-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium text-gray-900">{row.subject_name} · {row.class_name}</div>
+                  <div className="text-sm font-medium text-gray-900">{row.subject_name} ï¿½ {row.class_name}</div>
                   <button
                     type="button"
                     onClick={() => setScopeRows((prev) => prev.filter((x) => rowKey(x) !== rowKey(row)))}
