@@ -20,6 +20,7 @@ interface ExamRow {
   id: number;
   title: string;
   status: ExamStatus;
+  effective_status?: ExamStatus;
   duration_minutes: number;
   assessment_type?: AssessmentType;
   assessment_weight?: number;
@@ -40,6 +41,8 @@ const formatDate = (value?: string) => {
   if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleString();
 };
+
+const getDisplayStatus = (exam: ExamRow): ExamStatus => exam.effective_status || exam.status;
 
 const ExamManagement: React.FC = () => {
   const navigate = useNavigate();
@@ -381,7 +384,8 @@ const ExamManagement: React.FC = () => {
       (exam.subject?.name || '').toLowerCase().includes(term) ||
       (exam.school_class?.name || '').toLowerCase().includes(term)
     );
-    const isInactive = exam.status === 'completed' || exam.status === 'cancelled';
+    const displayStatus = getDisplayStatus(exam);
+    const isInactive = displayStatus === 'completed' || displayStatus === 'cancelled';
     const matchesClassLevel = classLevelFilter ? exam.school_class?.name === classLevelFilter : true;
     return matchesSearch && (showInactive ? true : !isInactive) && matchesClassLevel;
   });
@@ -517,17 +521,18 @@ const ExamManagement: React.FC = () => {
   };
 
   const renderStatus = (exam: ExamRow) => {
+    const status = getDisplayStatus(exam);
     const color = {
       draft: 'text-gray-600 bg-gray-100',
       scheduled: 'text-blue-700 bg-blue-100',
       active: 'text-green-700 bg-green-100',
       completed: 'text-purple-700 bg-purple-100',
       cancelled: 'text-red-700 bg-red-100',
-    }[exam.status] || 'text-gray-600 bg-gray-100';
+    }[status] || 'text-gray-600 bg-gray-100';
 
     return (
       <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${color}`}>
-        {exam.status}
+        {status}
       </span>
     );
   };

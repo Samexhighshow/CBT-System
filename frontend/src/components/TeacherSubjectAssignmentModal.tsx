@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
 import { showSuccess, showError } from '../utils/alerts';
 import Card from './Card';
@@ -7,8 +7,13 @@ import Alert from './Alert';
 
 interface Subject {
   id: number;
-  subject_name: string;
-  class_level: string;
+  name: string;
+  code?: string;
+}
+
+interface SchoolClass {
+  id: number;
+  name: string;
 }
 
 interface TeacherSubjectAssignmentModalProps {
@@ -23,66 +28,90 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
   onComplete
 }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [scopeRows, setScopeRows] = useState<Array<{ subject_id: number; class_id: number }>>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<number | ''>('');
+  const [selectedClassId, setSelectedClassId] = useState<number | ''>('');
   const [loadingSubjects, setLoadingSubjects] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [pendingInfo, setPendingInfo] = useState<{ pending_count?: number; rejected_count?: number; latest_rejection_reason?: string } | null>(null);
 
   useEffect(() => {
-    // Only load subjects when modal is actually open
     if (isOpen) {
-      loadSubjects();
+      loadOptions();
     } else {
-      // Reset state when modal closes
       setSubjects([]);
-      setSelectedSubjects([]);
+      setClasses([]);
+      setScopeRows([]);
+      setSelectedSubjectId('');
+      setSelectedClassId('');
       setError('');
+      setPendingInfo(null);
     }
   }, [isOpen]);
 
-  const loadSubjects = async () => {
+  const loadOptions = async () => {
     setLoadingSubjects(true);
     setError('');
     try {
-      const res = await api.get('/cbt/subjects');
-      console.log('Subjects API response:', res.data);
-      
-      // The API returns { status: 'ok', subjects: [...] }
-      const subjectsData = res.data?.subjects || res.data?.data || res.data;
-      console.log('Subjects data:', subjectsData);
-      
-      // Ensure we always set an array
-      if (Array.isArray(subjectsData)) {
-        setSubjects(subjectsData);
-      } else if (subjectsData && typeof subjectsData === 'object') {
-        // If it's an object with data property
-        setSubjects(Array.isArray(subjectsData.data) ? subjectsData.data : []);
-      } else {
-        setSubjects([]);
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        setError('Session not ready. Please wait a moment and retry.');
+        return;
       }
+
+      const [optionsRes, statusRes] = await Promise.all([
+        api.get('/preferences/options', { skipGlobalLoading: true } as any),
+        api.get('/preferences/teacher/scope-status', { skipGlobalLoading: true } as any),
+      ]);
+
+      const options = optionsRes?.data || {};
+      const subjectRows = Array.isArray(options?.subjects) ? options.subjects : [];
+      const classRows = Array.isArray(options?.classes) ? options.classes : [];
+      setSubjects(
+        subjectRows
+          .map((row: any) => ({ id: Number(row.id), name: String(row.name || '') }))
+          .filter((row: Subject) => row.id > 0 && row.name)
+      );
+      setClasses(
+        classRows
+          .map((row: any) => ({ id: Number(row.id), name: String(row.name || '') }))
+          .filter((row: SchoolClass) => row.id > 0 && row.name)
+      );
+
+      setPendingInfo(statusRes?.data || null);
     } catch (err: any) {
-      console.error('Failed to load subjects:', err);
-      const errorMsg = err?.response?.data?.message || 'Failed to load subjects. Please try again.';
+      const errorMsg = err?.response?.data?.message || 'Failed to load subjects and classes. Please try again.';
       setError(errorMsg);
       setSubjects([]);
+      setClasses([]);
     } finally {
       setLoadingSubjects(false);
     }
   };
 
-  const handleToggleSubject = (subjectId: number) => {
-    setSelectedSubjects(prev => {
-      if (prev.includes(subjectId)) {
-        return prev.filter(id => id !== subjectId);
-      } else {
-        return [...prev, subjectId];
-      }
-    });
+  const rowKey = (row: { subject_id: number; class_id: number }) => `${row.subject_id}:${row.class_id}`;
+
+  const handleAddPair = () => {
+    if (!selectedSubjectId || !selectedClassId) {
+      setError('Select both subject and class.');
+      return;
+    }
+
+    const newRow = { subject_id: Number(selectedSubjectId), class_id: Number(selectedClassId) };
+    if (scopeRows.some((r) => rowKey(r) === rowKey(newRow))) {
+      setError('This subject + class pair is already added.');
+      return;
+    }
+
+    setError('');
+    setScopeRows((prev) => [...prev, newRow]);
   };
 
   const handleSubmit = async () => {
-    if (selectedSubjects.length === 0) {
-      setError('Please select at least one subject to teach');
+    if (scopeRows.length === 0) {
+      setError('Please add at least one Subject + Class assignment');
       return;
     }
 
@@ -90,21 +119,31 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
     setError('');
 
     try {
-      await api.post('/cbt/teachers/self-assign', {
-        subject_ids: selectedSubjects
+      await api.post('/preferences/teacher/subjects', {
+        subjects: scopeRows,
       });
-      
-      showSuccess('Subjects assigned successfully!');
+
+      showSuccess('Scope request submitted for approval');
       onComplete();
       onClose();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Failed to assign subjects';
+      const msg = err?.response?.data?.message || 'Failed to submit scope request';
       showError(msg);
       setError(msg);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const displayRows = useMemo(
+    () =>
+      scopeRows.map((row) => ({
+        ...row,
+        subject_name: subjects.find((s) => s.id === row.subject_id)?.name || `Subject #${row.subject_id}`,
+        class_name: classes.find((c) => c.id === row.class_id)?.name || `Class #${row.class_id}`,
+      })),
+    [scopeRows, subjects, classes]
+  );
 
   if (!isOpen) return null;
 
@@ -113,75 +152,111 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Welcome, Teacher! ðŸ‘‹
-            </h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome, Teacher</h2>
             <p className="text-gray-600">
-              Please select the subjects and classes you'll be teaching. You can update this later in your profile.
+              Select Subject + Class pairs and submit for admin approval before module access is enabled.
             </p>
           </div>
 
           {error && (
-            <Alert type="error" message={error} onClose={() => setError('')} />
+            <div className="space-y-2">
+              <Alert type="error" message={error} onClose={() => setError('')} />
+              <button
+                type="button"
+                onClick={loadOptions}
+                className="text-xs font-medium text-blue-700 underline"
+              >
+                Retry loading options
+              </button>
+            </div>
           )}
 
           <Card>
-            <h3 className="text-lg font-semibold mb-4">Available Subjects</h3>
-            
+            <h3 className="text-lg font-semibold mb-4">Request Teaching Scope</h3>
+            {pendingInfo && (
+              <div className="mb-3 text-xs text-gray-600">
+                Pending: {pendingInfo.pending_count || 0} · Rejected: {pendingInfo.rejected_count || 0}
+                {pendingInfo.latest_rejection_reason ? ` · Last rejection: ${pendingInfo.latest_rejection_reason}` : ''}
+              </div>
+            )}
+
             {loadingSubjects ? (
               <div className="text-center py-8">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600"></div>
-                <p className="mt-2 text-gray-600">Loading subjects...</p>
+                <p className="mt-2 text-gray-600">Loading options...</p>
               </div>
-            ) : !Array.isArray(subjects) || subjects.length === 0 ? (
+            ) : !Array.isArray(subjects) || subjects.length === 0 || classes.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No subjects available. Please contact an administrator.
+                No subjects/classes available. Please contact an administrator.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {subjects.map(subject => (
-                  <label
-                    key={subject.id}
-                    className={`flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition ${
-                      selectedSubjects.includes(subject.id)
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <select
+                    value={selectedSubjectId}
+                    onChange={(e) => setSelectedSubjectId(e.target.value ? Number(e.target.value) : '')}
+                    className="border rounded px-3 py-2 text-sm"
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedSubjects.includes(subject.id)}
-                      onChange={() => handleToggleSubject(subject.id)}
-                      className="w-5 h-5 text-blue-600"
-                    />
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">
-                        {subject.subject_name}
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {subject.class_level}
-                      </div>
+                    <option value="">Select subject</option>
+                    {subjects.map((subject) => (
+                      <option key={subject.id} value={subject.id}>
+                        {subject.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedClassId}
+                    onChange={(e) => setSelectedClassId(e.target.value ? Number(e.target.value) : '')}
+                    className="border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="">Select class</option>
+                    {classes.map((schoolClass) => (
+                      <option key={schoolClass.id} value={schoolClass.id}>
+                        {schoolClass.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddPair}
+                    className="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                  >
+                    Add Pair
+                  </button>
+                </div>
+
+                <div className="border border-gray-200 rounded">
+                  {displayRows.length === 0 ? (
+                    <div className="p-3 text-sm text-gray-500">No scope pairs selected yet.</div>
+                  ) : (
+                    <div className="divide-y divide-gray-200">
+                      {displayRows.map((row) => (
+                        <div key={`${row.subject_id}-${row.class_id}`} className="p-3 flex items-center justify-between">
+                          <div className="text-sm text-gray-800">
+                            {row.subject_name} · {row.class_name}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setScopeRows((prev) => prev.filter((x) => rowKey(x) !== rowKey(row)))}
+                            className="text-xs px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  </label>
-                ))}
+                  )}
+                </div>
               </div>
             )}
           </Card>
 
           <div className="mt-6 flex justify-end gap-3">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={submitting}
-            >
+            <Button variant="outline" onClick={onClose} disabled={submitting}>
               Skip for Now
             </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={selectedSubjects.length === 0 || submitting}
-              loading={submitting}
-            >
-              Confirm Subjects ({selectedSubjects.length})
+            <Button onClick={handleSubmit} disabled={scopeRows.length === 0 || submitting} loading={submitting}>
+              Submit for Approval ({scopeRows.length})
             </Button>
           </div>
         </div>

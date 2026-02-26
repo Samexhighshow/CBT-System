@@ -76,6 +76,11 @@ const CbtAccessPortal: React.FC = () => {
   }, [connectivity.status]);
 
   useEffect(() => {
+    if (connectivity.status === 'CHECKING') {
+      setLoadingExams(true);
+      return;
+    }
+
     const loadExams = async () => {
       try {
         setLoadingExams(true);
@@ -83,7 +88,7 @@ const CbtAccessPortal: React.FC = () => {
         await refreshCachedPackages();
 
         const baseUrl = getReachableBaseUrl({
-          status: connectivity.status,
+          status: connectivity.status === 'CHECKING' ? 'OFFLINE' : connectivity.status,
           canReachCloud: connectivity.canReachCloud,
           canReachLocal: connectivity.canReachLocal,
         });
@@ -218,8 +223,44 @@ const CbtAccessPortal: React.FC = () => {
       </header>
 
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col px-5 py-4 md:py-5">
+        <section className="mb-4 overflow-hidden rounded-2xl border bg-white" style={{ borderColor: '#DCE4F2' }}>
+          <div
+            className="px-5 py-5 md:px-6"
+            style={{
+              background:
+                'radial-gradient(circle at 12% 10%, rgba(37,99,235,0.08) 0%, rgba(37,99,235,0) 40%), radial-gradient(circle at 85% 12%, rgba(59,130,246,0.12) 0%, rgba(59,130,246,0) 36%), linear-gradient(180deg, #FFFFFF 0%, #F8FBFF 100%)',
+            }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#1D4ED8' }}>
+                  Computer Based Test
+                </p>
+                <h1 className="mt-1 text-[23px] font-semibold tracking-[-0.015em] md:text-[28px]" style={{ color: cbtTheme.title }}>
+                  Select Your {assessmentLabels.assessmentNoun}
+                </h1>
+                <p className="mt-1.5 text-sm" style={{ color: cbtTheme.muted }}>
+                  Choose from published {assessmentLabels.assessmentNounPlural.toLowerCase()} and continue with your access code.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                <span className="rounded-full border px-3 py-1" style={{ borderColor: '#BBF7D0', backgroundColor: '#ECFDF5', color: '#047857' }}>
+                  Secure Login
+                </span>
+                <span className="rounded-full border px-3 py-1" style={{ borderColor: '#DBEAFE', backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>
+                  Auto Save
+                </span>
+                <span className="rounded-full border px-3 py-1" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB', color: '#92400E' }}>
+                  Offline Ready
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-1 pb-3" style={{ borderColor: '#D7DEE9' }}>
+          <div className="rounded-t-2xl border border-b-0 bg-white px-4 py-3 sm:px-5" style={{ borderColor: '#D7DEE9' }}>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3" style={{ borderColor: '#D7DEE9' }}>
             <h2 className="text-sm font-semibold uppercase tracking-[0.09em]" style={{ color: cbtTheme.body }}>
               Available {assessmentLabels.assessmentNounPlural}
             </h2>
@@ -227,25 +268,36 @@ const CbtAccessPortal: React.FC = () => {
               <p className="text-xs font-semibold" style={{ color: '#1D4ED8' }}>{exams.length} Listed</p>
               <p className="text-[11px]" style={{ color: cbtTheme.muted }}>Ready for selection</p>
             </div>
+            </div>
           </div>
 
           {loadingExams ? (
-            <div className="flex min-h-[170px] items-center justify-center px-4 text-sm" style={{ color: cbtTheme.muted }}>
+            <div className="flex min-h-[190px] items-center justify-center rounded-b-2xl border border-t-0 bg-white px-4 text-sm" style={{ borderColor: '#D7DEE9', color: cbtTheme.muted }}>
               Loading exams...
             </div>
           ) : error ? (
             <div
-              className="m-4 rounded-xl border px-4 py-3 text-sm"
+              className="rounded-b-2xl border border-t-0 px-4 py-3 text-sm"
               style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', color: cbtTheme.danger }}
             >
               {error}
             </div>
           ) : exams.length === 0 ? (
-            <div className="flex min-h-[170px] items-center justify-center px-4 text-sm" style={{ color: cbtTheme.muted }}>
-              No published {assessmentLabels.assessmentNounPlural.toLowerCase()} are open right now.
+            <div className="rounded-b-2xl border border-t-0 bg-white px-4 py-8" style={{ borderColor: '#D7DEE9' }}>
+              <div className="mx-auto flex max-w-[640px] flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center" style={{ borderColor: '#CBD7EA', backgroundColor: '#F8FBFF' }}>
+                <div className="mb-3 rounded-2xl border p-3" style={{ borderColor: '#DBEAFE', backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>
+                  <i className="bx bx-calendar-x text-2xl" />
+                </div>
+                <p className="text-base font-semibold" style={{ color: cbtTheme.title }}>
+                  No Open {assessmentLabels.assessmentNounPlural}
+                </p>
+                <p className="mt-1.5 text-sm" style={{ color: cbtTheme.muted }}>
+                  No published {assessmentLabels.assessmentNounPlural.toLowerCase()} are open right now.
+                </p>
+              </div>
             </div>
           ) : (
-            <div className="pt-3">
+            <div className="rounded-b-2xl border border-t-0 bg-white px-4 pb-4 pt-3 sm:px-5" style={{ borderColor: '#D7DEE9' }}>
               <div className="space-y-2.5">
                 {exams.map((exam) => {
                   const examTitle = `${exam.subject || exam.title} - ${exam.class_level || 'All Classes'}`;
@@ -257,7 +309,7 @@ const CbtAccessPortal: React.FC = () => {
                   return (
                     <article
                       key={exam.id}
-                      className="rounded-2xl border bg-white px-4 py-2.5 sm:px-5"
+                      className="rounded-xl border bg-white px-4 py-3 transition hover:-translate-y-[1px] hover:shadow-[0_12px_24px_-18px_rgba(29,78,216,0.45)] sm:px-5"
                       style={{ borderColor: '#D9E1EE' }}
                     >
                       <div className="grid items-center gap-2 md:grid-cols-[minmax(0,1.8fr)_110px_210px_130px]">
@@ -315,7 +367,7 @@ const CbtAccessPortal: React.FC = () => {
                             type="button"
                             onClick={() => navigate(`/cbt/login/${exam.id}`)}
                             disabled={!exam.can_access}
-                            className="h-9 min-w-[118px] rounded-xl px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                            className="h-9 min-w-[122px] rounded-lg px-4 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                             style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)' }}
                           >
                             {exam.can_access ? 'Continue' : 'Locked'}

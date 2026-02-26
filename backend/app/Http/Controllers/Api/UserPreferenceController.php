@@ -10,9 +10,9 @@ use App\Models\User;
 use App\Models\Student;
 use App\Models\TeacherSubject;
 use App\Models\CbtSubject;
+use App\Models\RoleScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
 
 class UserPreferenceController extends Controller
 {
@@ -58,8 +58,10 @@ class UserPreferenceController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'subjects' => 'required|array',
-            'subjects.*.subject_id' => 'required|integer|exists:cbt_subjects,id',
-            'subjects.*.class_category' => 'required|string|in:JSS,SSS,Both',
+            'subjects.*.subject_id' => 'required|integer|exists:subjects,id',
+            'subjects.*.class_id' => 'required|integer|exists:school_classes,id',
+            'academic_session' => 'nullable|string|max:64',
+            'term' => 'nullable|in:First Term,Second Term,Third Term',
         ]);
 
         if ($validator->fails()) {
@@ -71,26 +73,36 @@ class UserPreferenceController extends Controller
 
         try {
             $user = $request->user();
-            
-            // Delete existing teacher subjects
-            TeacherSubject::where('teacher_id', $user->id)->delete();
+            // Clean only previous pending/rejected requests before resubmission.
+            RoleScope::where('user_id', $user->id)
+                ->where('role_name', 'teacher')
+                ->whereIn('status', ['pending', 'rejected'])
+                ->delete();
 
-            // Insert new selections
-            $teacherSubjects = [];
             foreach ($request->subjects as $subjectData) {
-                $teacherSubjects[] = [
-                    'teacher_id' => $user->id,
-                    'cbt_subject_id' => $subjectData['subject_id'],
-                    'class_category' => $subjectData['class_category'],
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
+                RoleScope::updateOrCreate(
+                    [
+                        'user_id' => $user->id,
+                        'role_name' => 'teacher',
+                        'subject_id' => (int) $subjectData['subject_id'],
+                        'class_id' => (int) $subjectData['class_id'],
+                        'academic_session' => $request->input('academic_session'),
+                        'term' => $request->input('term'),
+                    ],
+                    [
+                        'exam_id' => null,
+                        'is_active' => false,
+                        'status' => 'pending',
+                        'requested_by' => $user->id,
+                        'approved_by' => null,
+                        'approved_at' => null,
+                        'rejected_reason' => null,
+                    ]
+                );
             }
 
-            TeacherSubject::insert($teacherSubjects);
-
             return response()->json([
-                'message' => 'Teacher subjects updated successfully',
+                'message' => 'Your subject/class selection has been submitted for approval.',
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -107,26 +119,102 @@ class UserPreferenceController extends Controller
     {
         try {
             $user = $request->user();
-            
-            $teacherSubjects = TeacherSubject::where('teacher_id', $user->id)
-                ->with('subject:id,name,code')
-                ->get()
-                ->map(function ($ts) {
+
+            // Return all teacher scopes for onboarding status display.
+            $scopes = RoleScope::query()
+                ->where('user_id', $user->id)
+                ->where('role_name', 'teacher')
+                ->orderByDesc('id')
+                ->with(['subject:id,name', 'schoolClass:id,name'])
+                ->get();
+
+            $teacherSubjects = $scopes
+                ->filter(fn ($scope) => !empty($scope->subject?->name))
+                ->map(function ($first) {
+                    $subjectName = (string) ($first->subject?->name ?? 'Unknown');
+                    $category = 'junior';
+                    $className = strtoupper(trim((string) ($first->schoolClass?->name ?? '')));
+                    if (str_starts_with($className, 'SSS')) {
+                        $category = 'senior';
+                    }
+
+                    $cbtSubject = CbtSubject::query()
+                        ->whereRaw('LOWER(subject_name) = ?', [strtolower($subjectName)])
+                        ->first();
+
                     return [
-                        'id' => $ts->id,
-                        'subject_id' => $ts->cbt_subject_id,
-                        'subject_name' => $ts->subject->name ?? 'Unknown',
-                        'subject_code' => $ts->subject->code ?? '',
-                        'class_category' => $ts->class_category,
+                        'id' => $first->id,
+                        'subject_id' => (int) ($first->subject_id ?? 0),
+                        'subject_name' => $subjectName,
+                        'subject_code' => (string) ($cbtSubject?->code ?? ''),
+                        'class_id' => (int) ($first->class_id ?? 0),
+                        'class_name' => (string) ($first->schoolClass?->name ?? ''),
+                        'class_category' => $category,
+                        'status' => (string) ($first->status ?? 'pending'),
+                        'is_active' => (bool) $first->is_active,
+                        'rejected_reason' => (string) ($first->rejected_reason ?? ''),
                     ];
-                });
+                })
+                ->filter(fn ($row) => (int) ($row['subject_id'] ?? 0) > 0 && (int) ($row['class_id'] ?? 0) > 0)
+                ->sortByDesc('id')
+                ->values();
+
+            // Backward fallback when role scopes are empty but legacy teacher_subjects exist.
+            if ($teacherSubjects->isEmpty()) {
+                $teacherSubjects = TeacherSubject::where('teacher_id', $user->id)
+                    ->with('subject:id,name,code')
+                    ->get()
+                    ->map(function ($ts) {
+                        return [
+                            'id' => $ts->id,
+                            'subject_id' => $ts->cbt_subject_id,
+                            'subject_name' => $ts->subject->name ?? 'Unknown',
+                            'subject_code' => $ts->subject->code ?? '',
+                            'class_category' => $ts->class_category,
+                        ];
+                    });
+            }
 
             return response()->json([
                 'teacher_subjects' => $teacherSubjects,
+                'scope_summary' => [
+                    'approved_count' => $scopes->where('status', 'approved')->where('is_active', true)->count(),
+                    'pending_count' => $scopes->where('status', 'pending')->count(),
+                    'rejected_count' => $scopes->where('status', 'rejected')->count(),
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to fetch teacher subjects',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getTeacherScopeStatus(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            $scopes = RoleScope::query()
+                ->where('user_id', $user->id)
+                ->where('role_name', 'teacher')
+                ->get(['status', 'is_active', 'rejected_reason', 'subject_id', 'class_id', 'created_at']);
+
+            $approved = $scopes->where('status', 'approved')->where('is_active', true)->count();
+            $pending = $scopes->where('status', 'pending')->count();
+            $rejected = $scopes->where('status', 'rejected')->count();
+
+            return response()->json([
+                'has_approved_scope' => $approved > 0,
+                'approved_count' => $approved,
+                'pending_count' => $pending,
+                'rejected_count' => $rejected,
+                'latest_rejection_reason' => (string) ($scopes->where('status', 'rejected')->sortByDesc('created_at')->first()?->rejected_reason ?? ''),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to load teacher scope status',
                 'error' => $e->getMessage(),
             ], 500);
         }

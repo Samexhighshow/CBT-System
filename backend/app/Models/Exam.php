@@ -15,6 +15,10 @@ class Exam extends Model
     use HasFactory;
 
     protected $table = 'exams';
+
+    protected $appends = [
+        'effective_status',
+    ];
     
     protected $fillable = [
         'title', 
@@ -451,6 +455,54 @@ class Exam extends Model
     public function isOpenForEditing(): bool
     {
         return !$this->isClosed() && in_array($this->status, ['draft', 'scheduled']);
+    }
+
+    /**
+     * Get date-aware effective status for UI/API consumers.
+     *
+     * Rules:
+     * - cancelled is always cancelled
+     * - completed/closed remains completed
+     * - unpublished exams are treated as draft
+     * - published exams derive status from schedule window
+     */
+    public function getEffectiveStatusAttribute(): string
+    {
+        $status = strtolower((string) ($this->status ?? ''));
+
+        if ($status === 'cancelled') {
+            return 'cancelled';
+        }
+
+        if (in_array($status, ['completed', 'closed'], true)) {
+            return 'completed';
+        }
+
+        if (!$this->published) {
+            return 'draft';
+        }
+
+        $now = Carbon::now();
+        $start = $this->start_datetime ?? $this->start_time;
+        $end = $this->end_datetime ?? $this->end_time;
+
+        if ($start && $now->lt($start)) {
+            return 'scheduled';
+        }
+
+        if ($end && $now->gt($end)) {
+            return 'completed';
+        }
+
+        if ($start && $now->gte($start)) {
+            return 'active';
+        }
+
+        if (!$start && $end && $now->lte($end)) {
+            return 'active';
+        }
+
+        return 'scheduled';
     }
 
     /**

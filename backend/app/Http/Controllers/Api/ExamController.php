@@ -12,6 +12,7 @@ use App\Models\Student;
 use App\Models\SystemSetting;
 use App\Models\Subject;
 use App\Models\SchoolClass;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -21,12 +22,21 @@ use Carbon\Carbon;
 
 class ExamController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
     /**
      * Return questions for a given exam
      */
     public function getQuestions($id)
     {
         $exam = Exam::with(['questions.options'])->findOrFail($id);
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $questionsQuery = $exam->questions()->with('options');
         // Use a safe default order since some databases may not have order_index
         $questions = $questionsQuery->orderBy('id')->get();
@@ -43,6 +53,7 @@ class ExamController extends Controller
     public function index(Request $request)
     {
         $query = Exam::with(['subject', 'schoolClass']);
+        $this->roleScopeService->applyExamScope($query, $request->user());
 
         // Filter by class
         if ($request->has('class_id')) {
@@ -172,6 +183,29 @@ class ExamController extends Controller
             ], 422);
         }
 
+        if (
+            !$this->roleScopeService->canAccessSubjectClass(
+                $request->user(),
+                (int) $subject->id,
+                (string) $class->name,
+                (int) $class->id,
+                (int) $exam->id
+            )
+        ) {
+            return response()->json(['message' => 'Forbidden: class/subject outside role scope.'], 403);
+        }
+
+        if (
+            !$this->roleScopeService->canAccessSubjectClass(
+                $request->user(),
+                (int) $subject->id,
+                (string) $class->name,
+                (int) $class->id
+            )
+        ) {
+            return response()->json(['message' => 'Forbidden: class/subject outside role scope.'], 403);
+        }
+
         // Enforce publish-time requirements
         $isPublishing = ($request->boolean('published')) || in_array($request->input('status'), ['scheduled', 'active', 'completed']);
         $start = $request->input('start_datetime') ?? $request->input('start_time');
@@ -243,6 +277,14 @@ class ExamController extends Controller
             return response()->json(['message' => 'Exam not found'], 404);
         }
 
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         // Attach live question_count metadata
         $count = DB::table('exam_questions')->where('exam_id', $exam->id)->count();
         $exam->metadata = array_merge((array)($exam->metadata ?? []), [
@@ -261,6 +303,10 @@ class ExamController extends Controller
 
         if (!$exam) {
             return response()->json(['message' => 'Exam not found'], 404);
+        }
+
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
         // PHASE 8: Allow editing of all exams, including closed/completed
@@ -448,6 +494,10 @@ class ExamController extends Controller
 
         if (!$exam) {
             return response()->json(['message' => 'Exam not found'], 404);
+        }
+
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
         // PHASE 8: Verify deletion by requiring exact title match
@@ -909,6 +959,12 @@ class ExamController extends Controller
                 ], 422);
             }
 
+            if ($newStatus && !$this->canReleaseResults($exam)) {
+                return response()->json([
+                    'message' => 'Cannot release results. Marking incomplete.',
+                ], 422);
+            }
+
             // Update visibility flag (no result computation)
             $exam->results_released = $newStatus;
             $exam->save();
@@ -941,6 +997,10 @@ class ExamController extends Controller
     public function lockExam(Request $request, $id)
     {
         $exam = Exam::findOrFail($id);
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $exam->status = 'closed';
         $exam->published = false;
         $exam->save();
@@ -961,6 +1021,10 @@ class ExamController extends Controller
     public function unlockExam(Request $request, $id)
     {
         $exam = Exam::findOrFail($id);
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         if ($exam->status === 'closed') {
             $exam->status = 'scheduled';
         }
@@ -978,6 +1042,86 @@ class ExamController extends Controller
             'message' => 'Exam unlocked successfully.',
             'exam' => $exam,
         ]);
+    }
+
+    private function canReleaseResults(Exam $exam): bool
+    {
+        $attempts = ExamAttempt::query()
+            ->where('exam_id', $exam->id)
+            ->whereNotIn('status', ['voided'])
+            ->get(['id', 'status']);
+
+        if ($attempts->isEmpty()) {
+            return true;
+        }
+
+        $allowedStatuses = ['submitted', 'completed'];
+        $hasUnsubmitted = $attempts->contains(function ($attempt) use ($allowedStatuses) {
+            return !in_array(strtolower((string) $attempt->status), $allowedStatuses, true);
+        });
+
+        if ($hasUnsubmitted) {
+            return false;
+        }
+
+        $attemptIds = $attempts->pluck('id');
+        $manualAnswers = ExamAnswer::query()
+            ->with('question:id,question_type')
+            ->whereIn('attempt_id', $attemptIds)
+            ->whereNull('marks_awarded')
+            ->get();
+
+        foreach ($manualAnswers as $answer) {
+            if (!$answer->question) {
+                continue;
+            }
+            if ($this->isObjectiveQuestionTypeForRelease((string) $answer->question->question_type)) {
+                continue;
+            }
+            if (!$this->hasCandidateResponseForRelease($answer)) {
+                continue;
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    private function isObjectiveQuestionTypeForRelease(string $type): bool
+    {
+        $normalized = strtolower(trim($type));
+
+        return in_array($normalized, [
+            'multiple_choice',
+            'multiple_choice_single',
+            'multiple_select',
+            'multiple_choice_multiple',
+            'true_false',
+            'mcq',
+        ], true);
+    }
+
+    private function hasCandidateResponseForRelease(ExamAnswer $answer): bool
+    {
+        if (!is_null($answer->option_id) && (int) $answer->option_id > 0) {
+            return true;
+        }
+
+        $text = trim((string) ($answer->answer_text ?? ''));
+        if ($text === '') {
+            return false;
+        }
+
+        $decoded = json_decode($text, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $answerText = trim((string) ($decoded['answer_text'] ?? ''));
+            $optionIds = $decoded['option_ids'] ?? $decoded['selected_option_ids'] ?? [];
+            if ($answerText === '' && (!is_array($optionIds) || count($optionIds) === 0)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function normalizeTerm(mixed $value): string

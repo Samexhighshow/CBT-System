@@ -5,13 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Subject;
 use App\Models\SchoolClass;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 
 class SubjectController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
     public function index(Request $request)
     {
         $query = Subject::query();
+        $this->roleScopeService->applySubjectScope($query, $request->user());
 
         // Search filter
         if ($request->has('search')) {
@@ -63,6 +70,10 @@ class SubjectController extends Controller
     public function show($id)
     {
         $subject = Subject::findOrFail($id);
+        if (!$this->roleScopeService->canManageSubject(request()->user(), $subject)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         return response()->json($subject);
     }
 
@@ -100,6 +111,19 @@ class SubjectController extends Controller
             ], 422);
         }
 
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $allowed = $this->roleScopeService->canAccessSubjectClass(
+                $request->user(),
+                null,
+                (string) $validated['class_level'],
+                null
+            );
+
+            if (!$allowed) {
+                return response()->json(['message' => 'Forbidden: class not in your role scope.'], 403);
+            }
+        }
+
         $subject = Subject::create([
             'name' => $validated['name'],
             'code' => $validated['code'],
@@ -121,6 +145,9 @@ class SubjectController extends Controller
     public function update(Request $request, $id)
     {
         $subject = Subject::findOrFail($id);
+        if (!$this->roleScopeService->canManageSubject($request->user(), $subject)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
@@ -157,6 +184,10 @@ class SubjectController extends Controller
     public function destroy($id)
     {
         $subject = Subject::findOrFail($id);
+        if (!$this->roleScopeService->canManageSubject(request()->user(), $subject)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $subject->delete();
 
         return response()->json([

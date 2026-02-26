@@ -17,6 +17,8 @@ const rateLimitCooldownUntil: Record<string, number> = {};
 const REQUEST_CACHE_TTL_MS = 2 * 60 * 1000;
 const USER_PAGES_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const normalizePermissionName = (value: string): string => String(value || '').trim().toLowerCase();
+
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms);
@@ -111,6 +113,11 @@ export const useRoleBasedNav = () => {
   const user = useAuthStore((state) => state.user);
   const [userPages, setUserPages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [permissionsVersion, setPermissionsVersion] = useState<number>(() => {
+    const raw = localStorage.getItem('rbac_nav_version');
+    const parsed = Number.parseInt(String(raw || '0'), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
   const userId = user?.id || null;
   const roleSignature = useMemo(() => {
     const names = (user?.roles || [])
@@ -119,9 +126,36 @@ export const useRoleBasedNav = () => {
       .sort();
     return names.join('|');
   }, [user?.roles]);
+  const isMainAdmin = useMemo(() => {
+    return (user?.roles || []).some(
+      (role: any) => String(role?.name || role || '').trim().toLowerCase() === 'main admin'
+    );
+  }, [user?.roles]);
+
+  useEffect(() => {
+    const handlePermissionsUpdated = () => {
+      const raw = localStorage.getItem('rbac_nav_version');
+      const parsed = Number.parseInt(String(raw || '0'), 10);
+      setPermissionsVersion(Number.isFinite(parsed) ? parsed : 0);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'rbac_nav_version') {
+        handlePermissionsUpdated();
+      }
+    };
+
+    window.addEventListener('rbac-permissions-updated', handlePermissionsUpdated as EventListener);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('rbac-permissions-updated', handlePermissionsUpdated as EventListener);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
+    let fallbackTimer: number | null = null;
 
     const loadUserPages = async () => {
       if (!userId) {
@@ -132,8 +166,7 @@ export const useRoleBasedNav = () => {
         return;
       }
 
-      const roleNames = roleSignature ? roleSignature.split('|') : [];
-      const userPagesCacheKey = `userPages:${userId}:${roleSignature || 'no-roles'}`;
+      const userPagesCacheKey = `userPages:${userId}:${roleSignature || 'no-roles'}:v${permissionsVersion}`;
       const cachedUserPages = getCachedData<string[]>(userPagesCacheKey);
       if (cachedUserPages) {
         if (isMounted) {
@@ -145,32 +178,19 @@ export const useRoleBasedNav = () => {
 
       if (isMounted) {
         setLoading(true);
+        // Prevent indefinite loading if any permission endpoint hangs.
+        fallbackTimer = window.setTimeout(() => {
+          if (!isMounted) return;
+          setLoading(false);
+          setUserPages([]);
+        }, 12000);
       }
 
       try {
-        const [pagesResponse, roleMapData, allRoles] = await Promise.all([
-          fetchWithRetry('/admin/pages'),
-          fetchWithRetry('/admin/pages/role-map'),
-          fetchWithRetry('/admin/roles'),
-        ]);
-
-        const pages = pagesResponse?.pages || [];
-        const roleMap: Record<number, number[]> = {};
-        (roleMapData || []).forEach((item: { role_id: number; page_ids: number[] }) => {
-          roleMap[item.role_id] = item.page_ids;
-        });
-
-        const accessiblePageIds = new Set<number>();
-        roleNames.forEach((roleName) => {
-          const role = (allRoles || []).find((entry: any) => entry.name === roleName);
-          if (role?.id && roleMap[role.id]) {
-            roleMap[role.id].forEach((pageId) => accessiblePageIds.add(pageId));
-          }
-        });
-
-        const accessiblePages = pages
-          .filter((page: any) => accessiblePageIds.has(page.id))
-          .map((page: any) => page.name);
+        const myPagesResponse = await fetchWithRetry('/admin/me/pages');
+        const accessiblePages = (myPagesResponse?.pages || [])
+          .map((page: any) => String(page?.name || '').trim())
+          .filter(Boolean);
 
         setCachedData(userPagesCacheKey, accessiblePages, USER_PAGES_CACHE_TTL_MS);
         if (isMounted) {
@@ -179,10 +199,14 @@ export const useRoleBasedNav = () => {
       } catch (err) {
         console.error('Failed to load user pages:', err);
         if (isMounted) {
-          // Keep fail-open behavior if permissions endpoint is unavailable.
+          // Fail closed for non-main-admin when permissions cannot be loaded.
           setUserPages([]);
         }
       } finally {
+        if (fallbackTimer) {
+          window.clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
         if (isMounted) {
           setLoading(false);
         }
@@ -192,14 +216,21 @@ export const useRoleBasedNav = () => {
     loadUserPages();
 
     return () => {
+      if (fallbackTimer) {
+        window.clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
       isMounted = false;
     };
-  }, [userId, roleSignature]);
+  }, [userId, roleSignature, permissionsVersion]);
 
   // Filter navigation links based on user permissions
   const filterNavLinks = useCallback((navLinks: NavLinkConfig[]): NavLinkConfig[] => {
-    if (userPages.length === 0) return navLinks;
-    const canAccess = (link: NavLinkConfig) => userPages.includes(link.permissionName || link.name);
+    if (isMainAdmin) return navLinks;
+    if (userPages.length === 0) return [];
+    const grantedPages = new Set(userPages.map((name) => normalizePermissionName(name)));
+    const canAccess = (link: NavLinkConfig) =>
+      grantedPages.has(normalizePermissionName(link.permissionName || link.name));
 
     return navLinks
       .map((link) => {
@@ -213,7 +244,13 @@ export const useRoleBasedNav = () => {
         return { ...link, subItems };
       })
       .filter((link): link is NavLinkConfig => Boolean(link));
-  }, [userPages]);
+  }, [isMainAdmin, userPages]);
 
-  return { userPages, loading, filterNavLinks };
+  const canAccessPage = useCallback((permissionName: string) => {
+    if (isMainAdmin) return true;
+    const grantedPages = new Set(userPages.map((name) => normalizePermissionName(name)));
+    return grantedPages.has(normalizePermissionName(permissionName));
+  }, [isMainAdmin, userPages]);
+
+  return { userPages, loading, filterNavLinks, canAccessPage, isMainAdmin };
 };

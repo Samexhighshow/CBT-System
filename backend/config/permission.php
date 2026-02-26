@@ -5,6 +5,7 @@ return [
     'models' => [
         'permission' => Spatie\Permission\Models\Permission::class,
         'role' => Spatie\Permission\Models\Role::class,
+        'user' => App\Models\User::class,
     ],
 
     'table_names' => [

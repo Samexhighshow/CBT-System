@@ -16,6 +16,8 @@ interface MarkingAttemptRow {
   id: number;
   status: string;
   score?: number | null;
+  total_marks?: number | null;
+  grade?: string | null;
   submitted_at?: string | null;
   completed_at?: string | null;
   pending_manual_count: number;
@@ -114,6 +116,40 @@ const formatEventDate = (value?: string | null) => {
   return date.toLocaleString();
 };
 
+const hasCandidateResponse = (question: AttemptQuestion) => {
+  const hasOption = typeof question.answer.option_id === 'number' && question.answer.option_id > 0;
+  const hasMultiOption = Array.isArray(question.answer.option_ids) && question.answer.option_ids.length > 0;
+  const text = normalizeStudentText(question.answer.answer_text);
+  return hasOption || hasMultiOption || !!text;
+};
+
+const riskLevel = (summary?: SecuritySummary) => {
+  const tabWarnings = Number(summary?.tab_warning_count ?? 0);
+  const blockedActions = Number(summary?.blocked_action_count ?? 0);
+  const sessionSwitches = Number(summary?.session_replace_count ?? 0);
+  const score = tabWarnings + blockedActions + sessionSwitches;
+
+  if (score <= 0) {
+    return { label: 'Low', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+  }
+  if (score <= 3) {
+    return { label: 'Moderate', className: 'bg-amber-100 text-amber-800 border-amber-200' };
+  }
+  return { label: 'High', className: 'bg-red-100 text-red-800 border-red-200' };
+};
+
+const gradeBand = (percentage: number) => {
+  if (percentage >= 75) return 'A1';
+  if (percentage >= 70) return 'B2';
+  if (percentage >= 65) return 'B3';
+  if (percentage >= 60) return 'C4';
+  if (percentage >= 55) return 'C5';
+  if (percentage >= 50) return 'C6';
+  if (percentage >= 45) return 'D7';
+  if (percentage >= 40) return 'E8';
+  return 'F9';
+};
+
 const extractFirstNonEmptyString = (value: unknown): string | null => {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -185,7 +221,11 @@ const MarkingWorkbench: React.FC = () => {
   const [loadingAttemptDetail, setLoadingAttemptDetail] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [clearingAttempt, setClearingAttempt] = useState(false);
+  const [forcingSubmit, setForcingSubmit] = useState(false);
+  const [extendingTime, setExtendingTime] = useState(false);
   const [scoreForms, setScoreForms] = useState<Record<number, ScoreFormState>>({});
+  const [clearReason, setClearReason] = useState('');
+  const [adminOverrideClear, setAdminOverrideClear] = useState(false);
 
   const selectedExam = useMemo(() => exams.find((exam) => exam.id === selectedExamId) || null, [exams, selectedExamId]);
 
@@ -308,6 +348,19 @@ const MarkingWorkbench: React.FC = () => {
   const finalizeAttempt = async () => {
     if (!attemptDetail) return;
 
+    if (attemptDetail.attempt.pending_manual_count > 0) {
+      showError('Cannot finalize while manual marking is pending.');
+      return;
+    }
+
+    if (String(attemptDetail.attempt.status).toLowerCase() === 'completed') {
+      showError('Attempt is already finalized.');
+      return;
+    }
+
+    const shouldProceed = window.confirm('Are you sure? This will finalize and lock this attempt for marking.');
+    if (!shouldProceed) return;
+
     try {
       setFinalizing(true);
       await api.post(`/marking/attempts/${attemptDetail.attempt.id}/finalize`);
@@ -321,18 +374,104 @@ const MarkingWorkbench: React.FC = () => {
     }
   };
 
+  const forceSubmitAttempt = async () => {
+    if (!attemptDetail || !selectedExamId) return;
+
+    const reason = window.prompt('Enter reason for force submit:');
+    if (!reason || !reason.trim()) {
+      showError('Reason is required to force submit.');
+      return;
+    }
+
+    const shouldProceed = window.confirm(
+      `Force submit attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}?`
+    );
+    if (!shouldProceed) return;
+
+    try {
+      setForcingSubmit(true);
+      await api.post(`/marking/attempts/${attemptDetail.attempt.id}/force-submit`, {
+        reason: reason.trim(),
+      });
+      showSuccess('Attempt force-submitted successfully.');
+      await loadAttemptDetail(attemptDetail.attempt.id);
+      await loadAttempts(selectedExamId);
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to force submit attempt');
+    } finally {
+      setForcingSubmit(false);
+    }
+  };
+
+  const extendAttemptTime = async () => {
+    if (!attemptDetail || !selectedExamId) return;
+
+    const minutesRaw = window.prompt('Enter extra time in minutes (1-180):', '5');
+    if (!minutesRaw) return;
+
+    const minutes = Number(minutesRaw);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) {
+      showError('Minutes must be a whole number between 1 and 180.');
+      return;
+    }
+
+    const reason = window.prompt('Enter reason for time extension:');
+    if (!reason || !reason.trim()) {
+      showError('Reason is required to extend time.');
+      return;
+    }
+
+    const shouldProceed = window.confirm(
+      `Extend attempt #${attemptDetail.attempt.id} by ${minutes} minute(s)?`
+    );
+    if (!shouldProceed) return;
+
+    try {
+      setExtendingTime(true);
+      await api.post(`/marking/attempts/${attemptDetail.attempt.id}/extend-time`, {
+        minutes,
+        reason: reason.trim(),
+      });
+      showSuccess(`Extended attempt by ${minutes} minute(s).`);
+      await loadAttemptDetail(attemptDetail.attempt.id);
+      await loadAttempts(selectedExamId);
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to extend time');
+    } finally {
+      setExtendingTime(false);
+    }
+  };
+
   const clearAttempt = async () => {
     if (!attemptDetail || !selectedExamId) return;
 
+    const isFinalized = String(attemptDetail.attempt.status).toLowerCase() === 'completed';
+    if (isFinalized && !adminOverrideClear) {
+      showError('Finalized attempts require Admin Override to clear.');
+      return;
+    }
+
+    if (!clearReason.trim()) {
+      showError('Provide a reason before clearing this attempt.');
+      return;
+    }
+
     const shouldProceed = window.confirm(
-      `Clear attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}? This will remove answers and allow a fresh restart.`
+      `Clear attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}? Reason: ${clearReason.trim()}. This will remove answers and allow a fresh restart.`
     );
     if (!shouldProceed) return;
 
     try {
       setClearingAttempt(true);
-      await api.delete(`/marking/attempts/${attemptDetail.attempt.id}`);
+      await api.delete(`/marking/attempts/${attemptDetail.attempt.id}`, {
+        data: {
+          reason: clearReason.trim(),
+          admin_override: adminOverrideClear,
+        },
+      });
       showSuccess('Attempt cleared. Student can restart the exam.');
+      setClearReason('');
+      setAdminOverrideClear(false);
       setSelectedAttemptId(null);
       setAttemptDetail(null);
       await loadAttempts(selectedExamId);
@@ -342,6 +481,55 @@ const MarkingWorkbench: React.FC = () => {
       setClearingAttempt(false);
     }
   };
+
+  const selectedAttempt = useMemo(
+    () => attempts.find((attempt) => attempt.id === selectedAttemptId) || null,
+    [attempts, selectedAttemptId]
+  );
+
+  const scoreSummary = useMemo(() => {
+    if (!attemptDetail) {
+      return {
+        objectiveScore: 0,
+        objectiveTotal: 0,
+        manualScore: 0,
+        manualTotal: 0,
+        totalScore: 0,
+        totalMarks: 0,
+        percentage: 0,
+        grade: 'F9',
+        manualMarked: 0,
+        manualTotalQuestions: 0,
+        manualPending: 0,
+      };
+    }
+
+    const objectiveQuestions = attemptDetail.questions.filter((q) => !q.requires_manual_marking);
+    const manualQuestions = attemptDetail.questions.filter((q) => q.requires_manual_marking);
+    const objectiveScore = objectiveQuestions.reduce((sum, q) => sum + Number(q.answer.marks_awarded ?? 0), 0);
+    const objectiveTotal = objectiveQuestions.reduce((sum, q) => sum + Number(q.marks ?? 0), 0);
+    const manualScore = manualQuestions.reduce((sum, q) => sum + Number(q.answer.marks_awarded ?? 0), 0);
+    const manualTotal = manualQuestions.reduce((sum, q) => sum + Number(q.marks ?? 0), 0);
+    const totalScore = objectiveScore + manualScore;
+    const totalMarks = objectiveTotal + manualTotal;
+    const percentage = totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
+    const manualMarked = manualQuestions.filter((q) => q.answer.marks_awarded !== null && q.answer.marks_awarded !== undefined).length;
+    const manualPending = manualQuestions.filter((q) => hasCandidateResponse(q) && (q.answer.marks_awarded === null || q.answer.marks_awarded === undefined)).length;
+
+    return {
+      objectiveScore,
+      objectiveTotal,
+      manualScore,
+      manualTotal,
+      totalScore,
+      totalMarks,
+      percentage,
+      grade: gradeBand(percentage),
+      manualMarked,
+      manualTotalQuestions: manualQuestions.length,
+      manualPending,
+    };
+  }, [attemptDetail]);
 
   return (
     <div className="app-shell py-6 space-y-4">
@@ -395,6 +583,9 @@ const MarkingWorkbench: React.FC = () => {
                       <div>
                         <p className="text-sm font-semibold text-gray-900">{attempt.student.name}</p>
                         <p className="text-xs text-gray-600 mt-0.5">{attempt.student.registration_number || 'No Reg'} • Pending {attempt.pending_manual_count}</p>
+                        <p className="text-[11px] text-gray-600 mt-1">
+                          Score {Number(attempt.score ?? 0).toFixed(1)}/{Number(attempt.total_marks ?? 0).toFixed(1)}
+                        </p>
                         <p className="text-[11px] text-gray-500 mt-1">
                           Tab warnings {attempt.security_summary?.tab_warning_count ?? 0} • Session switches {attempt.security_summary?.session_replace_count ?? 0}
                         </p>
@@ -421,26 +612,58 @@ const MarkingWorkbench: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-600">Attempt #{attemptDetail.attempt.id}</p>
                   <h2 className="text-lg font-bold text-gray-900">{attemptDetail.attempt.student.name}</h2>
-                  <p className="text-xs text-gray-600">{attemptDetail.attempt.student.registration_number || 'No Reg'} • Pending manual: {attemptDetail.attempt.pending_manual_count}</p>
+                  <p className="text-xs text-gray-600">
+                    {attemptDetail.attempt.student.registration_number || 'No Reg'} • Manual marked: {scoreSummary.manualMarked}/{scoreSummary.manualTotalQuestions} • Pending manual: {scoreSummary.manualPending}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-3 py-1.5 rounded-full font-semibold ${statusBadge(attemptDetail.attempt.status)}`}>
                     {attemptDetail.attempt.status}
                   </span>
                   <button
-                    onClick={clearAttempt}
-                    disabled={clearingAttempt}
+                    onClick={forceSubmitAttempt}
+                    disabled={forcingSubmit || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
                     className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
                   >
-                    {clearingAttempt ? 'Clearing...' : 'Clear Attempt'}
+                    {forcingSubmit ? 'Submitting...' : 'Force Submit'}
+                  </button>
+                  <button
+                    onClick={extendAttemptTime}
+                    disabled={extendingTime}
+                    className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {extendingTime ? 'Extending...' : 'Extend Time'}
                   </button>
                   <button
                     onClick={finalizeAttempt}
-                    disabled={finalizing}
+                    disabled={finalizing || scoreSummary.manualPending > 0 || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
                     className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60"
                   >
                     {finalizing ? 'Finalizing...' : 'Finalize Marking'}
                   </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-5">
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="text-[11px] text-emerald-700 uppercase font-semibold">Objective Score</p>
+                  <p className="text-lg font-bold text-emerald-800">{scoreSummary.objectiveScore.toFixed(1)}/{scoreSummary.objectiveTotal.toFixed(1)}</p>
+                </div>
+                <div className="rounded-md border border-sky-200 bg-sky-50 p-3">
+                  <p className="text-[11px] text-sky-700 uppercase font-semibold">Manual Score</p>
+                  <p className="text-lg font-bold text-sky-800">{scoreSummary.manualScore.toFixed(1)}/{scoreSummary.manualTotal.toFixed(1)}</p>
+                </div>
+                <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3">
+                  <p className="text-[11px] text-indigo-700 uppercase font-semibold">Total Score</p>
+                  <p className="text-lg font-bold text-indigo-800">{scoreSummary.totalScore.toFixed(1)}/{scoreSummary.totalMarks.toFixed(1)}</p>
+                </div>
+                <div className="rounded-md border border-violet-200 bg-violet-50 p-3">
+                  <p className="text-[11px] text-violet-700 uppercase font-semibold">Percentage</p>
+                  <p className="text-lg font-bold text-violet-800">{scoreSummary.percentage.toFixed(1)}%</p>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-white p-3">
+                  <p className="text-[11px] text-gray-600 uppercase font-semibold">Grade</p>
+                  <p className="text-lg font-bold text-gray-900">{selectedAttempt?.status === 'completed' ? selectedAttempt?.grade || scoreSummary.grade : scoreSummary.grade}</p>
                 </div>
               </div>
 
@@ -467,6 +690,43 @@ const MarkingWorkbench: React.FC = () => {
                     {formatEventDate(attemptDetail.attempt.security_summary?.last_violation_at)}
                   </p>
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-white p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] uppercase text-gray-500 font-semibold">Security Risk Level</p>
+                  <p className="text-xs text-gray-600 mt-1">Derived from tab warnings, blocked actions, and session switches.</p>
+                </div>
+                <span className={`px-3 py-1.5 rounded-full border text-xs font-semibold ${riskLevel(attemptDetail.attempt.security_summary).className}`}>
+                  {riskLevel(attemptDetail.attempt.security_summary).label}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-red-800">Danger Zone: Clear Attempt</h3>
+                  <label className="text-xs text-red-700 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={adminOverrideClear}
+                      onChange={(e) => setAdminOverrideClear(e.target.checked)}
+                    />
+                    Admin Override
+                  </label>
+                </div>
+                <input
+                  value={clearReason}
+                  onChange={(e) => setClearReason(e.target.value)}
+                  placeholder="Reason for clearing this attempt"
+                  className="w-full border border-red-300 rounded-md px-3 py-2 text-sm bg-white"
+                />
+                <button
+                  onClick={clearAttempt}
+                  disabled={clearingAttempt || (String(attemptDetail.attempt.status).toLowerCase() === 'completed' && !adminOverrideClear)}
+                  className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
+                >
+                  {clearingAttempt ? 'Clearing...' : 'Clear Attempt'}
+                </button>
               </div>
 
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -532,17 +792,19 @@ const MarkingWorkbench: React.FC = () => {
                             value={form.marks}
                             onChange={(e) => updateForm(question.question_id, { marks: e.target.value })}
                             placeholder={`0 - ${question.marks}`}
+                            disabled={String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
                             className="border border-gray-300 rounded-md px-3 py-2 text-sm"
                           />
                           <input
                             value={form.feedback}
                             onChange={(e) => updateForm(question.question_id, { feedback: e.target.value })}
                             placeholder="Feedback (optional)"
+                            disabled={String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
                             className="border border-gray-300 rounded-md px-3 py-2 text-sm"
                           />
                           <button
                             onClick={() => saveScore(question)}
-                            disabled={form.saving}
+                            disabled={form.saving || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
                             className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
                           >
                             {form.saving ? 'Saving...' : 'Save'}

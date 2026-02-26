@@ -7,13 +7,23 @@ use App\Models\Exam;
 use App\Models\ExamQuestion;
 use App\Models\BankQuestion;
 use App\Models\BankQuestionVersion;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ExamQuestionController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
     public function index(Exam $exam)
     {
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $items = ExamQuestion::with(['bankQuestion.subject'])
             ->where('exam_id', $exam->id)
             ->orderBy('order_index')
@@ -24,6 +34,10 @@ class ExamQuestionController extends Controller
 
     public function store(Request $request, Exam $exam)
     {
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $data = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.bank_question_id' => 'required|exists:bank_questions,id',
@@ -41,6 +55,13 @@ class ExamQuestionController extends Controller
             ?? optional($exam->classLevel)->name;
         foreach ($data['items'] as $item) {
             $bankQ = BankQuestion::findOrFail($item['bank_question_id']);
+            if (!$this->roleScopeService->canManageBankQuestion($request->user(), $bankQ)) {
+                return response()->json([
+                    'message' => 'Forbidden: question is outside your role scope.',
+                    'question_id' => $bankQ->id,
+                ], 403);
+            }
+
             // Subject alignment: require question.subject_id to equal exam.subject_id
             if ((int)($bankQ->subject_id ?? 0) !== (int)$exam->subject_id) {
                 $subjectMismatch[] = $bankQ->id;
@@ -123,6 +144,10 @@ class ExamQuestionController extends Controller
 
     public function update(Request $request, Exam $exam, ExamQuestion $question)
     {
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         abort_unless($question->exam_id === $exam->id, 404);
 
         $payload = $request->validate([
@@ -136,6 +161,10 @@ class ExamQuestionController extends Controller
 
     public function reorder(Request $request, Exam $exam)
     {
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $data = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|exists:exam_questions,id',
@@ -154,6 +183,10 @@ class ExamQuestionController extends Controller
 
     public function destroy(Exam $exam, ExamQuestion $question)
     {
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         abort_unless($question->exam_id === $exam->id, 404);
         $question->delete();
         return response()->json(['message' => 'Removed']);

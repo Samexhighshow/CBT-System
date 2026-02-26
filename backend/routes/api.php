@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\RoleManagementController;
 use App\Http\Controllers\Api\PagePermissionController;
+use App\Http\Controllers\Api\RoleScopeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\SystemSettingController;
 use App\Http\Controllers\Api\ProfileController;
@@ -41,7 +42,21 @@ use App\Http\Controllers\Api\MarkingController;
 use App\Http\Controllers\Api\CbtOfflineController;
 
 // Public routes - Health check (lenient throttle for reachability checks)
-Route::get('/health', fn() => response()->json(['status' => 'ok']))->middleware('throttle:120,1');
+Route::get('/health', function () {
+    $dbOk = true;
+    try {
+        \DB::connection()->getPdo();
+    } catch (\Throwable $e) {
+        $dbOk = false;
+    }
+
+    return response()->json([
+        'status' => $dbOk ? 'ok' : 'degraded',
+        'api' => true,
+        'db' => $dbOk,
+        'time' => time(),
+    ]);
+})->middleware('throttle:120,1');
 
 // Sample CSV for question import (public for easy access)
 Route::get('/cbt/sample-csv', [CbtQuestionImportController::class, 'sampleCsv']);
@@ -76,8 +91,8 @@ Route::post('/auth/password/otp/verify', [AuthController::class, 'resetPasswordW
 // Student exam access verification (public endpoint for login)
 Route::post('/exam-access/verify', [ExamAccessController::class, 'verify'])->middleware('throttle:30,1');
 
-// Admin signup applicant (public) - DISABLED: Users should only be created via registration portal or manual setup
-// Route::post('/admin/signup', [UserController::class, 'store']);
+// Admin signup applicant (public) - creates applicant account for Main Admin approval/role assignment
+Route::post('/admin/signup', [UserController::class, 'store'])->middleware('throttle:10,1');
 
 // Current student profile (auth required)
 Route::middleware('auth:sanctum')->get('/student/me', [StudentController::class, 'getCurrentProfile']);
@@ -85,56 +100,66 @@ Route::middleware('auth:sanctum')->post('/student/complete-registration', [Stude
 
 // Students
 Route::prefix('students')->group(function () {
-    Route::get('/', [StudentController::class, 'index']);
-    Route::get('/by-reg-number', [StudentController::class, 'getByRegistrationNumber']);
-    Route::get('/by-reg-number/{regNumber}', [StudentController::class, 'getByRegistrationNumber']);
-    Route::get('/{id}', [StudentController::class, 'show']);
-    Route::post('/', [StudentController::class, 'store'])->middleware('throttle:30,1');
-    Route::put('/{id}', [StudentController::class, 'update']);
-    Route::delete('/{id}', [StudentController::class, 'destroy']);
-    Route::get('/{id}/exams', [StudentController::class, 'getExams']);
-    Route::get('/{id}/results', [StudentController::class, 'getResults']);
-    Route::get('/{id}/statistics', [StudentController::class, 'getStatistics']);
+    Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
+        Route::get('/', [StudentController::class, 'index']);
+        Route::get('/by-reg-number', [StudentController::class, 'getByRegistrationNumber']);
+        Route::get('/by-reg-number/{regNumber}', [StudentController::class, 'getByRegistrationNumber']);
+        Route::get('/{id}', [StudentController::class, 'show']);
+        Route::put('/{id}', [StudentController::class, 'update']);
+        Route::delete('/{id}', [StudentController::class, 'destroy']);
+        Route::get('/{id}/exams', [StudentController::class, 'getExams']);
+        Route::get('/{id}/results', [StudentController::class, 'getResults']);
+        Route::get('/{id}/statistics', [StudentController::class, 'getStatistics']);
 
-    // Bulk operations
-    Route::post('/import', [StudentBulkController::class, 'importCsv'])->middleware('throttle:10,1');
-    Route::get('/export', [StudentBulkController::class, 'exportCsv']);
-    Route::get('/import/template', [StudentBulkController::class, 'downloadTemplate']);
+        // Bulk operations
+        Route::post('/import', [StudentBulkController::class, 'importCsv'])->middleware('throttle:10,1');
+        Route::get('/export', [StudentBulkController::class, 'exportCsv']);
+        Route::get('/import/template', [StudentBulkController::class, 'downloadTemplate']);
+    });
+
+    // Public student registration endpoint
+    Route::post('/', [StudentController::class, 'store'])->middleware('throttle:30,1');
 });
 
 // Exams
 Route::prefix('exams')->group(function () {
-    Route::get('/', [ExamController::class, 'index']);
-    Route::get('/{id}', [ExamController::class, 'show']);
-    Route::post('/', [ExamController::class, 'store']);
-    Route::put('/{id}', [ExamController::class, 'update']);
-    Route::delete('/{id}', [ExamController::class, 'destroy']);
+    Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
+        Route::get('/', [ExamController::class, 'index']);
+        Route::get('/{id}', [ExamController::class, 'show']);
+        Route::post('/', [ExamController::class, 'store']);
+        Route::put('/{id}', [ExamController::class, 'update']);
+        Route::delete('/{id}', [ExamController::class, 'destroy']);
 
-    // PHASE 1: Access control check
-    Route::get('/{id}/check-access', [ExamController::class, 'checkAccess']);
+        // PHASE 1: Access control check
+        Route::get('/{id}/check-access', [ExamController::class, 'checkAccess']);
 
     // PHASE 8: Results visibility control
-    Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility']);
+    Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility'])
+        ->middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher']);
 
-    Route::post('/{id}/start', [ExamController::class, 'startExam']);
-    Route::post('/{id}/submit', [ExamController::class, 'submitExam']);
-    Route::get('/{id}/questions', [ExamController::class, 'getQuestions']);
-    Route::get('/{id}/statistics', [ExamController::class, 'getStatistics']);
+        Route::get('/{id}/questions', [ExamController::class, 'getQuestions']);
+        Route::get('/{id}/statistics', [ExamController::class, 'getStatistics']);
 
-    // Duplicate exam
-    Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
+        // Duplicate exam
+        Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
 
     // Question randomization and selection
-    Route::put('/{id}/randomization', [ExamQuestionRandomizationController::class, 'updateRandomizationSettings']);
-    Route::get('/{id}/randomization/preview', [ExamQuestionRandomizationController::class, 'previewSelection']);
-    Route::post('/{id}/randomization/lock', [ExamQuestionRandomizationController::class, 'lockQuestions']);
-    Route::post('/{id}/randomization/unlock', [ExamQuestionRandomizationController::class, 'unlockQuestions']);
-    Route::get('/{id}/randomization/stats', [ExamQuestionRandomizationController::class, 'getRandomizationStats']);
-    Route::get('/{id}/randomization/selection', [ExamQuestionRandomizationController::class, 'getStudentSelection']);
+        Route::put('/{id}/randomization', [ExamQuestionRandomizationController::class, 'updateRandomizationSettings']);
+        Route::get('/{id}/randomization/preview', [ExamQuestionRandomizationController::class, 'previewSelection']);
+        Route::post('/{id}/randomization/lock', [ExamQuestionRandomizationController::class, 'lockQuestions']);
+        Route::post('/{id}/randomization/unlock', [ExamQuestionRandomizationController::class, 'unlockQuestions']);
+        Route::get('/{id}/randomization/stats', [ExamQuestionRandomizationController::class, 'getRandomizationStats']);
+        Route::get('/{id}/randomization/selection', [ExamQuestionRandomizationController::class, 'getStudentSelection']);
 
-    // Offline exam support
-    Route::get('/{id}/download', [OfflineExamController::class, 'downloadExam']);
-    Route::get('/{id}/package', [OfflineExamController::class, 'package']);
+        // Offline exam support
+        Route::get('/{id}/download', [OfflineExamController::class, 'downloadExam']);
+        Route::get('/{id}/package', [OfflineExamController::class, 'package']);
+    });
+
+    Route::middleware(['auth:sanctum', 'role:Student|Admin|Main Admin|Teacher'])->group(function () {
+        Route::post('/{id}/start', [ExamController::class, 'startExam']);
+        Route::post('/{id}/submit', [ExamController::class, 'submitExam']);
+    });
 });
 
 // Offline sync endpoints (cloud and LAN)
@@ -145,30 +170,32 @@ Route::post('/sync/code-usage', [CbtOfflineController::class, 'syncCodeUsage'])-
 
 // Questions
 Route::prefix('questions')->group(function () {
-    Route::get('/', [QuestionController::class, 'index']);
-    Route::get('/{id}', [QuestionController::class, 'show']);
-    Route::post('/', [QuestionController::class, 'store']);
-    Route::put('/{id}', [QuestionController::class, 'update']);
-    Route::delete('/{id}', [QuestionController::class, 'destroy']);
+    Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
+        Route::get('/', [QuestionController::class, 'index']);
+        Route::get('/{id}', [QuestionController::class, 'show']);
+        Route::post('/', [QuestionController::class, 'store']);
+        Route::put('/{id}', [QuestionController::class, 'update']);
+        Route::delete('/{id}', [QuestionController::class, 'destroy']);
 
     // PHASE 3: Bulk operations
-    Route::post('/bulk-delete', [QuestionController::class, 'bulkDestroy']);
-    Route::post('/bulk-status', [QuestionController::class, 'bulkUpdateStatus']);
-    Route::get('/types/all', [QuestionController::class, 'getQuestionTypes']);
+        Route::post('/bulk-delete', [QuestionController::class, 'bulkDestroy']);
+        Route::post('/bulk-status', [QuestionController::class, 'bulkUpdateStatus']);
+        Route::get('/types/all', [QuestionController::class, 'getQuestionTypes']);
 
     // PHASE 3: CSV operations with support for all 14 types
-    Route::post('/bulk', [QuestionController::class, 'bulkCreate']);
-    Route::post('/import', [QuestionController::class, 'importQuestions']);
-    Route::get('/template/download', [QuestionController::class, 'downloadTemplate']);
-    Route::get('/export/csv', [QuestionController::class, 'exportQuestions']);
+        Route::post('/bulk', [QuestionController::class, 'bulkCreate']);
+        Route::post('/import', [QuestionController::class, 'importQuestions']);
+        Route::get('/template/download', [QuestionController::class, 'downloadTemplate']);
+        Route::get('/export/csv', [QuestionController::class, 'exportQuestions']);
 
     // PHASE 5: Admin Actions
-    Route::post('/{id}/duplicate', [QuestionController::class, 'duplicate']);
-    Route::patch('/{id}/toggle-status', [QuestionController::class, 'toggleStatus']);
-    Route::get('/{id}/preview', [QuestionController::class, 'preview']);
-    Route::post('/reorder', [QuestionController::class, 'reorderQuestions']);
-    Route::get('/statistics/exam/{examId}', [QuestionController::class, 'getExamStatistics']);
-    Route::post('/group/by/{examId}', [QuestionController::class, 'groupQuestions']);
+        Route::post('/{id}/duplicate', [QuestionController::class, 'duplicate']);
+        Route::patch('/{id}/toggle-status', [QuestionController::class, 'toggleStatus']);
+        Route::get('/{id}/preview', [QuestionController::class, 'preview']);
+        Route::post('/reorder', [QuestionController::class, 'reorderQuestions']);
+        Route::get('/statistics/exam/{examId}', [QuestionController::class, 'getExamStatistics']);
+        Route::post('/group/by/{examId}', [QuestionController::class, 'groupQuestions']);
+    });
 });
 
 // PHASE 7: Question Tags
@@ -199,26 +226,32 @@ Route::prefix('exams/{examId}/pools')->group(function () {
 
 // Subjects
 Route::prefix('subjects')->group(function () {
-    Route::get('/', [SubjectController::class, 'index']);
-    Route::get('/{id}', [SubjectController::class, 'show']);
-    Route::post('/', [SubjectController::class, 'store']);
-    Route::put('/{id}', [SubjectController::class, 'update']);
-    Route::delete('/{id}', [SubjectController::class, 'destroy']);
-    Route::post('/bulk-delete', [SubjectController::class, 'bulkDelete']);
-    Route::post('/bulk-upload', [SubjectController::class, 'bulkUpload']);
-    Route::post('/for-student', [SubjectController::class, 'getSubjectsForStudent']);
-    Route::post('/student/save', [SubjectController::class, 'saveStudentSubjects']);
+    Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
+        Route::get('/', [SubjectController::class, 'index']);
+        Route::get('/{id}', [SubjectController::class, 'show']);
+        Route::post('/', [SubjectController::class, 'store']);
+        Route::put('/{id}', [SubjectController::class, 'update']);
+        Route::delete('/{id}', [SubjectController::class, 'destroy']);
+        Route::post('/bulk-delete', [SubjectController::class, 'bulkDelete']);
+        Route::post('/bulk-upload', [SubjectController::class, 'bulkUpload']);
+    });
+    Route::middleware(['auth:sanctum', 'role:Student|Admin|Main Admin|Teacher'])->group(function () {
+        Route::post('/for-student', [SubjectController::class, 'getSubjectsForStudent']);
+        Route::post('/student/save', [SubjectController::class, 'saveStudentSubjects']);
+    });
 });
 
 // Departments
 Route::prefix('departments')->group(function () {
-    Route::get('/', [DepartmentController::class, 'index']);
-    Route::get('/{id}', [DepartmentController::class, 'show']);
-    Route::post('/', [DepartmentController::class, 'store']);
-    Route::put('/{id}', [DepartmentController::class, 'update']);
-    Route::delete('/{id}', [DepartmentController::class, 'destroy']);
-    Route::post('/bulk-delete', [DepartmentController::class, 'bulkDelete']);
-    Route::post('/bulk-upload', [DepartmentController::class, 'bulkUpload']);
+    Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
+        Route::get('/', [DepartmentController::class, 'index']);
+        Route::get('/{id}', [DepartmentController::class, 'show']);
+        Route::post('/', [DepartmentController::class, 'store']);
+        Route::put('/{id}', [DepartmentController::class, 'update']);
+        Route::delete('/{id}', [DepartmentController::class, 'destroy']);
+        Route::post('/bulk-delete', [DepartmentController::class, 'bulkDelete']);
+        Route::post('/bulk-upload', [DepartmentController::class, 'bulkUpload']);
+    });
 });
 
 // Classes - Public endpoints for student registration
@@ -240,28 +273,47 @@ Route::prefix('classes')->group(function () {
 Route::middleware('auth:sanctum')->get('/teachers', [\App\Http\Controllers\Api\UserController::class, 'getTeachers']);
 
 // Results
-Route::prefix('results')->group(function () {
+Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->prefix('results')->group(function () {
     Route::get('/student/{studentId}', [ResultController::class, 'getStudentResults']);
     Route::get('/exam/{examId}', [ResultController::class, 'getExamResults']);
     Route::get('/analytics', [ResultController::class, 'getAnalytics']);
+});
+
+Route::middleware(['auth:sanctum', 'role:Student'])->prefix('results')->group(function () {
+    Route::get('/me', [ResultController::class, 'getMyResults']);
+});
+
+Route::middleware(['auth:sanctum', 'role:Student|Admin|Main Admin|Teacher'])->prefix('results')->group(function () {
     Route::get('/attempt/{attemptId}', [ResultController::class, 'getAttemptDetails']);
 });
 
 // Analytics
 Route::prefix('analytics')->group(function () {
-    Route::get('/admin/dashboard', [AnalyticsController::class, 'getAdminDashboardStats']);
-    Route::get('/student/{studentId}/dashboard', [AnalyticsController::class, 'getStudentDashboardStats']);
-    Route::get('/performance', [AnalyticsController::class, 'getPerformanceMetrics']);
-    Route::post('/exam/comparison', [AnalyticsController::class, 'getExamComparison']);
-    Route::get('/department/performance', [AnalyticsController::class, 'getDepartmentPerformance']);
+    Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
+        Route::get('/admin/dashboard', [AnalyticsController::class, 'getAdminDashboardStats']);
+        Route::get('/performance', [AnalyticsController::class, 'getPerformanceMetrics']);
+        Route::post('/exam/comparison', [AnalyticsController::class, 'getExamComparison']);
+        Route::get('/department/performance', [AnalyticsController::class, 'getDepartmentPerformance']);
+    });
+    Route::middleware(['auth:sanctum', 'role:Student|Admin|Main Admin|Teacher'])->group(function () {
+        Route::get('/student/{studentId}/dashboard', [AnalyticsController::class, 'getStudentDashboardStats']);
+    });
 });
 
 // Reports
-Route::prefix('reports')->group(function () {
+Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->prefix('reports')->group(function () {
     Route::get('/exam/{examId}/pdf', [ReportController::class, 'downloadExamReportPdf']);
     Route::get('/exam/{examId}/excel', [ReportController::class, 'downloadExamReportExcel']);
     Route::get('/student/{studentId}/pdf', [ReportController::class, 'downloadStudentResultsPdf']);
     Route::get('/student/{studentId}/excel', [ReportController::class, 'downloadStudentResultsExcel']);
+});
+
+Route::middleware(['auth:sanctum', 'role:Student'])->prefix('reports')->group(function () {
+    Route::get('/me/pdf', [ReportController::class, 'downloadMyResultsPdf']);
+    Route::get('/me/excel', [ReportController::class, 'downloadMyResultsExcel']);
+});
+
+Route::middleware(['auth:sanctum', 'role:Student|Admin|Main Admin|Teacher'])->prefix('reports')->group(function () {
     Route::get('/attempt/{attemptId}/pdf', [ReportController::class, 'downloadAttemptReportPdf']);
 });
 
@@ -302,6 +354,7 @@ Route::middleware('auth:sanctum')->prefix('preferences')->group(function () {
     // Teacher preferences
     Route::get('/teacher/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getTeacherSubjects']);
     Route::post('/teacher/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'saveTeacherSubjects']);
+    Route::get('/teacher/scope-status', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getTeacherScopeStatus']);
     
     // Student preferences
     Route::get('/student/subjects', [\App\Http\Controllers\Api\UserPreferenceController::class, 'getStudentSubjects']);
@@ -318,11 +371,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/student/me', [StudentController::class, 'getCurrentProfile']);
 
     // Supervisor offline login sync source (requires authenticated admin/teacher session)
-    Route::middleware('role:Admin|Main Admin|Teacher')->get('/cbt/offline-users', [CbtOfflineController::class, 'offlineUsers']);
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->get('/cbt/offline-users', [CbtOfflineController::class, 'offlineUsers']);
+    Route::middleware(['role:Admin|Main Admin|Teacher'])->get('/admin/me/pages', [PagePermissionController::class, 'myPages']);
 
     // User management (Main Admin only - enforced by middleware in controller)
     Route::middleware('role:Admin|Main Admin')->group(function () {
         Route::get('/users', [UserController::class, 'index']);
+        Route::delete('/users/{id}', [UserController::class, 'destroy']);
         Route::get('/roles', [RoleController::class, 'listRoles']);
         Route::post('/roles/assign/{userId}', [RoleController::class, 'assignRole']);
     });
@@ -334,6 +389,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/users/{userId}/roles', [RoleManagementController::class, 'assignRole']);
         Route::get('/admin/pages', [PagePermissionController::class, 'index']);
         Route::get('/admin/pages/role-map', [PagePermissionController::class, 'rolePageMap']);
+        Route::get('/admin/roles/modules-matrix', [PagePermissionController::class, 'roleModulesMatrix']);
         Route::post('/admin/pages/sync', [PagePermissionController::class, 'syncPages']);
         Route::post('/admin/roles/{roleId}/pages', [PagePermissionController::class, 'assignToRole']);
         Route::post('/admin/roles/modules', [PagePermissionController::class, 'updateRoleModules']);
@@ -343,37 +399,44 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/admin/roles/{roleId}', [RoleManagementController::class, 'updateRole']);
             Route::delete('/admin/roles/{roleId}', [RoleManagementController::class, 'deleteRole']);
             Route::post('/admin/roles/sync-defaults', [RoleManagementController::class, 'syncDefaults']);
+            Route::get('/admin/role-scopes', [RoleScopeController::class, 'index']);
+            Route::post('/admin/role-scopes', [RoleScopeController::class, 'store']);
+            Route::put('/admin/role-scopes/{id}', [RoleScopeController::class, 'update']);
+            Route::delete('/admin/role-scopes/{id}', [RoleScopeController::class, 'destroy']);
+            Route::post('/admin/role-scopes/{id}/approve', [RoleScopeController::class, 'approve']);
+            Route::post('/admin/role-scopes/{id}/reject', [RoleScopeController::class, 'reject']);
         });
     });
     // Import questions to a subject
-    Route::post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->post('/cbt/subjects/{subject}/questions/import', [CbtQuestionImportController::class, 'upload']);
 
     // Start exam for a subject
-    Route::post('/cbt/subjects/{subject}/exam/start', [CbtExamController::class, 'start']);
+    Route::middleware(['role:Student|Admin|Main Admin|Teacher'])->post('/cbt/subjects/{subject}/exam/start', [CbtExamController::class, 'start']);
 
     // Save an answer (auto-save)
-    Route::post('/cbt/exams/{exam}/questions/{question}/answer', [CbtExamController::class, 'saveAnswer']);
+    Route::middleware(['role:Student|Admin|Main Admin|Teacher'])->post('/cbt/exams/{exam}/questions/{question}/answer', [CbtExamController::class, 'saveAnswer']);
 
     // Submit exam
-    Route::post('/cbt/exams/{exam}/submit', [CbtExamController::class, 'submit']);
+    Route::middleware(['role:Student|Admin|Main Admin|Teacher'])->post('/cbt/exams/{exam}/submit', [CbtExamController::class, 'submit']);
     // Manual grade long-answer
-    Route::post('/cbt/exams/{exam}/questions/{question}/grade', [CbtExamController::class, 'manualGrade']);
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->post('/cbt/exams/{exam}/questions/{question}/grade', [CbtExamController::class, 'manualGrade']);
     // Result breakdown
-    Route::get('/cbt/exams/{exam}/results', [CbtExamController::class, 'resultBreakdown']);
-    // Subject summary
-    Route::get('/cbt/results/subject/{subject}', [CbtResultsController::class, 'subjectSummary']);
-    // All results with filters
-    Route::get('/cbt/results', [CbtResultsController::class, 'allResults']);
-    // Results analytics and report cards
-    Route::get('/results/analytics', [CbtResultsController::class, 'analytics']);
-    Route::get('/results/report-cards', [CbtResultsController::class, 'reportCards']);
-    Route::post('/results/email/{student}', [CbtResultsController::class, 'emailStudentReport']);
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->get('/cbt/exams/{exam}/results', [CbtExamController::class, 'resultBreakdown']);
+    // Subject summary / results management (staff only)
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
+        Route::get('/cbt/results/subject/{subject}', [CbtResultsController::class, 'subjectSummary']);
+        Route::get('/cbt/results', [CbtResultsController::class, 'allResults']);
+        // CBT Results analytics and report cards (avoid overlap with Api\ResultController /results/analytics)
+        Route::get('/cbt/results/analytics', [CbtResultsController::class, 'analytics']);
+        Route::get('/results/report-cards', [CbtResultsController::class, 'reportCards']);
+        Route::post('/results/email/{student}', [CbtResultsController::class, 'emailStudentReport']);
+    });
     // CBT Subjects management
-    Route::get('/cbt/subjects', [CbtSubjectController::class, 'index']);
-    Route::post('/cbt/subjects', [CbtSubjectController::class, 'store']);
-    Route::post('/cbt/subjects/assign-teacher', [CbtSubjectController::class, 'assignTeacher']);
-    Route::get('/cbt/teachers/{teacher}/subjects', [CbtSubjectController::class, 'teacherSubjects']);
-    Route::post('/cbt/teachers/self-assign', [CbtSubjectController::class, 'selfAssignSubjects']);
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->get('/cbt/subjects', [CbtSubjectController::class, 'index']);
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->post('/cbt/subjects', [CbtSubjectController::class, 'store']);
+    Route::middleware(['role:Admin|Main Admin', 'teacher.scope.approved'])->post('/cbt/subjects/assign-teacher', [CbtSubjectController::class, 'assignTeacher']);
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->get('/cbt/teachers/{teacher}/subjects', [CbtSubjectController::class, 'teacherSubjects']);
+    Route::middleware(['role:Admin|Main Admin|Teacher'])->post('/cbt/teachers/self-assign', [CbtSubjectController::class, 'selfAssignSubjects']);
 
     // Activity Logs (Admin only)
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
@@ -471,8 +534,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/exam-access/{id}', [ExamAccessController::class, 'destroy']);
     });
 
-    // Admin marking workflow
-    Route::middleware('role:Admin|Main Admin')->prefix('marking')->group(function () {
+    // Admin/Teacher marking workflow
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->prefix('marking')->group(function () {
         Route::get('/exams', [MarkingController::class, 'exams']);
         Route::get('/exams/{examId}/attempts', [MarkingController::class, 'attempts']);
         Route::get('/attempts/{attemptId}', [MarkingController::class, 'attempt']);

@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Auth;
 
 class UserController extends Controller
 {
@@ -108,5 +109,33 @@ class UserController extends Controller
         return response()->json([
             'data' => $teachers
         ]);
+    }
+
+    public function destroy(int $id)
+    {
+        $user = User::find($id);
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        $authId = Auth::id();
+        if ($authId && (int) $authId === (int) $user->id) {
+            return response()->json(['message' => 'You cannot delete your own account.'], 422);
+        }
+
+        $isMainAdmin = $user->roles()
+            ->whereRaw('LOWER(name) = ?', ['main admin'])
+            ->exists();
+
+        if ($isMainAdmin) {
+            return response()->json(['message' => 'Main Admin account cannot be deleted from this action.'], 422);
+        }
+
+        $user->roles()->detach();
+        $user->tokens()->delete();
+        $user->delete();
+
+        return response()->json(['message' => 'User deleted successfully.']);
     }
 }

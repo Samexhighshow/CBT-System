@@ -18,29 +18,43 @@ import ExamAccess from './admin/ExamAccess';
 import AdminAnnouncements from './admin/Announcements';
 import MarkingWorkbench from './admin/MarkingWorkbench';
 import SyncDashboard from './admin/SyncDashboard';
+import RequireRole from '../middleware/RequireRole';
+import RequirePagePermission from '../middleware/RequirePagePermission';
+
+const AdminForbidden: React.FC = () => (
+  <div className="app-shell section-shell">
+    <div className="mx-auto max-w-xl rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
+      <h2 className="text-xl font-semibold text-amber-800">Access Restricted</h2>
+      <p className="mt-2 text-sm text-amber-700">
+        Your current role does not have permission to view this module. Contact Main Admin to update access.
+      </p>
+    </div>
+  </div>
+);
 
 // Admin Dashboard with shared layout
 const AdminDashboard: React.FC = () => {
   return (
     <Routes>
       <Route element={<AdminLayout />}>
-        <Route index element={<AdminOverview />} />
-        <Route path="questions" element={<QuestionBank />} />
-        <Route path="exams" element={<ExamManagement />} />
-        <Route path="exam-access" element={<ExamAccess />} />
-        <Route path="announcements" element={<AdminAnnouncements />} />
-        <Route path="students" element={<StudentManagement />} />
-        <Route path="subjects" element={<SubjectManagement />} />
-        <Route path="halls" element={<HallManagement />} />
-        <Route path="allocations" element={<AllocationHistory />} />
-        <Route path="allocations/generate" element={<AllocationGenerator />} />
-        <Route path="allocations/:id" element={<AllocationViewer />} />
-        <Route path="teachers/assign" element={<TeacherAssignment />} />
-        <Route path="results" element={<ResultsAnalytics />} />
-        <Route path="marking" element={<MarkingWorkbench />} />
-        <Route path="sync" element={<SyncDashboard />} />
-        <Route path="users" element={<AdminUserManagement />} />
-        <Route path="activity-logs" element={<ActivityLogs />} />
+        <Route index element={<RequirePagePermission permissionName="Overview"><AdminOverview /></RequirePagePermission>} />
+        <Route path="questions" element={<RequirePagePermission permissionName="Questions"><QuestionBank /></RequirePagePermission>} />
+        <Route path="exams" element={<RequirePagePermission permissionName="Exams"><ExamManagement /></RequirePagePermission>} />
+        <Route path="exam-access" element={<RequirePagePermission permissionName="Exam Access"><ExamAccess /></RequirePagePermission>} />
+        <Route path="announcements" element={<RequirePagePermission permissionName="Announcements"><AdminAnnouncements /></RequirePagePermission>} />
+        <Route path="students" element={<RequirePagePermission permissionName="Students"><StudentManagement /></RequirePagePermission>} />
+        <Route path="subjects" element={<RequirePagePermission permissionName="Academic Management"><SubjectManagement /></RequirePagePermission>} />
+        <Route path="halls" element={<RequirePagePermission permissionName="Halls"><HallManagement /></RequirePagePermission>} />
+        <Route path="allocations" element={<RequirePagePermission permissionName="View Allocations"><AllocationHistory /></RequirePagePermission>} />
+        <Route path="allocations/generate" element={<RequirePagePermission permissionName="Generate Allocation"><AllocationGenerator /></RequirePagePermission>} />
+        <Route path="allocations/:id" element={<RequirePagePermission permissionName="View Allocations"><AllocationViewer /></RequirePagePermission>} />
+        <Route path="teachers/assign" element={<RequirePagePermission permissionName="Teacher Assignment"><TeacherAssignment /></RequirePagePermission>} />
+        <Route path="results" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />
+        <Route path="marking" element={<RequirePagePermission permissionName="Marking Workbench"><MarkingWorkbench /></RequirePagePermission>} />
+        <Route path="sync" element={<RequirePagePermission permissionName="Offline Sync"><SyncDashboard /></RequirePagePermission>} />
+        <Route path="users" element={<RequireRole roles={["Main Admin"]}><AdminUserManagement /></RequireRole>} />
+        <Route path="activity-logs" element={<RequireRole roles={["Main Admin"]}><ActivityLogs /></RequireRole>} />
+        <Route path="forbidden" element={<AdminForbidden />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>

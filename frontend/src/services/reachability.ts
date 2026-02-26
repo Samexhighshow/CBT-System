@@ -28,7 +28,10 @@ const buildHealthUrls = (baseUrl: string): string[] => {
   return Array.from(urls);
 };
 
-const fetchWithTimeout = async (url: string, timeoutMs: number): Promise<boolean> => {
+const fetchWithTimeout = async (
+  url: string,
+  timeoutMs: number
+): Promise<{ ok: boolean; reason?: string }> => {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -39,11 +42,13 @@ const fetchWithTimeout = async (url: string, timeoutMs: number): Promise<boolean
       credentials: 'omit',
       signal: controller.signal,
     });
-    // Any HTTP response means the backend is reachable.
-    // Non-2xx (e.g. 401/403/404/429/500) should not be treated as offline.
-    return response.status > 0;
-  } catch {
-    return false;
+    // Any HTTP response means backend is reachable.
+    return { ok: response.status > 0 };
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      return { ok: false, reason: `timeout:${url}` };
+    }
+    return { ok: false, reason: `unreachable:${url}` };
   } finally {
     window.clearTimeout(timeout);
   }
@@ -53,20 +58,26 @@ export interface ReachabilityResult {
   status: ConnectivityStatus;
   canReachLocal: boolean;
   canReachCloud: boolean;
+  reason?: string;
 }
 
 const runReachabilityCheck = async (): Promise<ReachabilityResult> => {
   const localHealthUrls = buildHealthUrls(localBaseUrl);
   const cloudHealthUrls = buildHealthUrls(cloudBaseUrl);
 
-  const checkAny = async (urls: string[], timeoutMs: number): Promise<boolean> => {
+  const checkAny = async (
+    urls: string[],
+    timeoutMs: number
+  ): Promise<{ ok: boolean; reason?: string }> => {
+    let lastReason = '';
     for (const url of urls) {
-      const ok = await fetchWithTimeout(url, timeoutMs);
-      if (ok) {
-        return true;
+      const result = await fetchWithTimeout(url, timeoutMs);
+      if (result.ok) {
+        return { ok: true };
       }
+      lastReason = result.reason || lastReason;
     }
-    return false;
+    return { ok: false, reason: lastReason || 'unreachable' };
   };
 
   const sameEndpoint =
@@ -75,16 +86,21 @@ const runReachabilityCheck = async (): Promise<ReachabilityResult> => {
 
   let localOk = false;
   let cloudOk = false;
+  let reason = '';
 
   if (sameEndpoint) {
-    const ok = await checkAny(cloudHealthUrls, Math.max(CHECK_TIMEOUT_LOCAL_MS, CHECK_TIMEOUT_CLOUD_MS));
-    localOk = ok;
-    cloudOk = ok;
+    const result = await checkAny(cloudHealthUrls, Math.max(CHECK_TIMEOUT_LOCAL_MS, CHECK_TIMEOUT_CLOUD_MS));
+    localOk = result.ok;
+    cloudOk = result.ok;
+    reason = result.reason || '';
   } else {
-    [localOk, cloudOk] = await Promise.all([
+    const [localResult, cloudResult] = await Promise.all([
       checkAny(localHealthUrls, CHECK_TIMEOUT_LOCAL_MS),
       checkAny(cloudHealthUrls, CHECK_TIMEOUT_CLOUD_MS),
     ]);
+    localOk = localResult.ok;
+    cloudOk = cloudResult.ok;
+    reason = cloudResult.reason || localResult.reason || '';
   }
 
   let status: ConnectivityStatus = 'OFFLINE';
@@ -105,6 +121,9 @@ const runReachabilityCheck = async (): Promise<ReachabilityResult> => {
     status,
     canReachLocal: localOk,
     canReachCloud: cloudOk,
+    reason: status === 'OFFLINE'
+      ? (!navigator.onLine ? 'browser_offline' : (reason || 'health_check_failed'))
+      : undefined,
   };
 };
 

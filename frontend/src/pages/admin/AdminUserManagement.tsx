@@ -11,9 +11,41 @@ interface Role {
   permissions_count?: number;
 }
 interface User { id: number; name: string; email: string; email_verified_at?: string | null; roles: Role[]; }
+interface ScopeOption { id: number; name: string; }
+interface RoleScopeRecord {
+  id: number;
+  user_id: number;
+  role_name?: string | null;
+  subject_id?: number | null;
+  class_id?: number | null;
+  exam_id?: number | null;
+  academic_session?: string | null;
+  term?: string | null;
+  is_active: boolean;
+  user?: { id: number; name: string; email: string };
+  subject?: { id: number; name: string; code?: string };
+  school_class?: { id: number; name: string };
+  exam?: { id: number; title: string };
+}
+
+const hasStudentRole = (user: User): boolean =>
+  (user.roles || []).some((role) => String(role?.name || '').toLowerCase() === 'student');
+
+const CORE_ADMIN_ROLE_NAMES = ['Main Admin', 'Admin', 'Teacher'];
+const PROTECTED_ROLE_NAMES = ['Main Admin', 'Student'];
+
+const normalizeList = <T,>(payload: any, keys: string[] = []): T[] => {
+  if (Array.isArray(payload)) return payload as T[];
+  if (payload && Array.isArray(payload.data)) return payload.data as T[];
+  for (const key of keys) {
+    if (payload && Array.isArray(payload[key])) return payload[key] as T[];
+  }
+  return [];
+};
 
 const AdminUserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [scopeUsers, setScopeUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [onlyApplicants, setOnlyApplicants] = useState(true);
@@ -21,12 +53,39 @@ const AdminUserManagement: React.FC = () => {
   const [syncingPages, setSyncingPages] = useState(false);
   const [syncingRoleDefaults, setSyncingRoleDefaults] = useState(false);
   const [roleModulesState, setRoleModulesState] = useState<Record<string, string[]>>({});
+  const [permissionPages, setPermissionPages] = useState<Array<{ id: number; name: string; path: string; category?: string }>>([]);
+  const [rolePermissionsLoaded, setRolePermissionsLoaded] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
   const [editingRoleId, setEditingRoleId] = useState<number | null>(null);
   const [editingRoleName, setEditingRoleName] = useState('');
   const [creatingRole, setCreatingRole] = useState(false);
   const [updatingRole, setUpdatingRole] = useState(false);
   const [deletingRoleId, setDeletingRoleId] = useState<number | null>(null);
+  const [roleScopes, setRoleScopes] = useState<RoleScopeRecord[]>([]);
+  const [roleScopesLoading, setRoleScopesLoading] = useState(false);
+  const [roleScopeSaving, setRoleScopeSaving] = useState(false);
+  const [deletingScopeId, setDeletingScopeId] = useState<number | null>(null);
+  const [updatingScopeId, setUpdatingScopeId] = useState<number | null>(null);
+  const [scopeStatusFilter, setScopeStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [scopeSubjects, setScopeSubjects] = useState<ScopeOption[]>([]);
+  const [scopeClasses, setScopeClasses] = useState<ScopeOption[]>([]);
+  const [scopeExams, setScopeExams] = useState<ScopeOption[]>([]);
+  const [scopeForm, setScopeForm] = useState({
+    user_id: '',
+    role_name: 'teacher',
+    subject_id: '',
+    class_id: '',
+    exam_id: '',
+    academic_session: '',
+    term: '',
+    is_active: true,
+  });
+  const bumpNavPermissionVersion = useCallback(() => {
+    const current = Number.parseInt(String(localStorage.getItem('rbac_nav_version') || '0'), 10);
+    const next = (Number.isFinite(current) ? current : 0) + 1;
+    localStorage.setItem('rbac_nav_version', String(next));
+    window.dispatchEvent(new Event('rbac-permissions-updated'));
+  }, []);
   
   // Get current logged-in user info
   const currentUser = (() => {
@@ -45,22 +104,12 @@ const AdminUserManagement: React.FC = () => {
   // Use shared api client which injects `auth_token` automatically
   const [editMode, setEditMode] = useState(false);
   
-  // Extract available modules from actual navigation
-  const availableModules = useMemo(() => {
-    const modules: string[] = [];
-    adminNavLinks.forEach((nav) => {
-      modules.push(nav.name);
-      if (nav.subItems) {
-        nav.subItems.forEach((sub) => modules.push(sub.name));
-      }
-    });
-    return modules;
-  }, []);
-
   const flatNavPages = useMemo(() => {
     const items: { name: string; path: string; category?: string }[] = [];
     adminNavLinks.forEach((nav) => {
-      items.push({ name: nav.name, path: nav.path, category: nav.subItems ? nav.name : undefined });
+      if (!nav.subItems) {
+        items.push({ name: nav.name, path: nav.path, category: undefined });
+      }
       if (nav.subItems) {
         nav.subItems.forEach((sub) => items.push({ name: sub.name, path: sub.path, category: nav.name }));
       }
@@ -71,36 +120,141 @@ const AdminUserManagement: React.FC = () => {
     return items;
   }, []);
 
+  const fallbackModules = useMemo(() => {
+    return Array.from(
+      new Set(
+        flatNavPages
+          .map((item) => String(item.name || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [flatNavPages]);
+
+  // Extract available modules from canonical synced permission pages (fallback to nav-derived modules)
+  const availableModules = useMemo(() => {
+    const fromPermissions = permissionPages
+      .map((page) => String(page.name || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+
+    return fromPermissions.length > 0 ? fromPermissions : fallbackModules;
+  }, [permissionPages, fallbackModules]);
+
   const loadRolePermissions = useCallback(async () => {
     try {
-      const [pagesRes, roleMapRes] = await Promise.all([
-        api.get('/admin/pages'),
-        api.get('/admin/pages/role-map')
-      ]);
-      
-      const pages = pagesRes.data?.pages || [];
-      const roleMap: Record<number, number[]> = {};
-      (roleMapRes.data || []).forEach((item: { role_id: number; page_ids: number[] }) => {
-        roleMap[item.role_id] = item.page_ids;
+      setRolePermissionsLoaded(false);
+
+      const matrixRes = await api.get('/admin/roles/modules-matrix');
+      const matrix = matrixRes?.data || {};
+
+      const rolesData = normalizeList<{ id: number; name: string }>(matrix.roles, ['roles']);
+      const pages = normalizeList<any>(matrix.pages, ['pages']);
+      const roleModules = (matrix.role_modules || {}) as Record<string, string[]>;
+
+      if (rolesData.length > 0) {
+        setRoles(rolesData);
+      }
+
+      setPermissionPages(
+        pages.map((page: any) => ({
+          id: Number(page.id),
+          name: String(page.name || ''),
+          path: String(page.path || ''),
+          category: page.category || undefined,
+        }))
+      );
+
+      const newRoleModules: Record<string, string[]> = {};
+      rolesData.forEach((role) => {
+        const roleName = String(role.name || '').trim();
+        if (!roleName) return;
+        newRoleModules[roleName] = Array.isArray(roleModules[roleName]) ? roleModules[roleName] : [];
       });
 
-      // Get roles
-      const rolesRes = await api.get('/admin/roles');
-      const rolesData = rolesRes.data || [];
-      
-      // Build role modules state from database
-      const newRoleModules: Record<string, string[]> = {};
-      rolesData.forEach((role: { id: number; name: string }) => {
-        const pageIds = roleMap[role.id] || [];
-        const rolePages = pages.filter((p: any) => pageIds.includes(p.id));
-        newRoleModules[role.name] = rolePages.map((p: any) => p.name);
-      });
-      
-      console.log('Loaded role permissions from database:', newRoleModules);
       setRoleModulesState(newRoleModules);
+      setRolePermissionsLoaded(true);
+      return;
+    } catch (matrixErr: any) {
+      console.warn('Primary role modules matrix load failed, falling back:', matrixErr);
+    }
+
+    try {
+      const [pagesResult, roleMapResult, rolesResult] = await Promise.allSettled([
+        api.get('/admin/pages'),
+        api.get('/admin/pages/role-map'),
+        api.get('/admin/roles')
+      ]);
+
+      const pages =
+        pagesResult.status === 'fulfilled'
+          ? normalizeList<any>(pagesResult.value.data, ['pages'])
+          : [];
+
+      setPermissionPages(
+        pages.map((page: any) => ({
+          id: Number(page.id),
+          name: String(page.name || ''),
+          path: String(page.path || ''),
+          category: page.category || undefined,
+        }))
+      );
+
+      const roleMap: Record<number, number[]> = {};
+      if (roleMapResult.status === 'fulfilled') {
+        normalizeList<{ role_id: number; page_ids: number[] }>(roleMapResult.value.data).forEach((item) => {
+          const roleId = Number(item.role_id);
+          roleMap[roleId] = (item.page_ids || []).map((id: any) => Number(id)).filter((id) => Number.isFinite(id));
+        });
+      }
+
+      const rolesData = rolesResult.status === 'fulfilled'
+        ? normalizeList<{ id: number; name: string }>(rolesResult.value.data, ['roles'])
+        : [];
+
+      if (rolesResult.status === 'fulfilled' && rolesData.length > 0) {
+        setRoles(rolesData);
+      }
+
+      // Check if we have at least pages or roles - don't require both to succeed
+      const hasPages = pagesResult.status === 'fulfilled' && pages.length > 0;
+      const hasRoles = rolesData.length > 0;
+      
+      if (!hasPages && !hasRoles) {
+        // Only show error if we truly have NO data from ANY source
+        const err: any = (pagesResult as PromiseRejectedResult)?.reason
+          || (roleMapResult as PromiseRejectedResult)?.reason
+          || (rolesResult as PromiseRejectedResult)?.reason;
+        console.error('Failed to load role permissions:', err);
+        // Suppress error popup but mark as loaded with empty state
+        setRolePermissionsLoaded(true);
+        return;
+      }
+
+      // Build role modules state from database, preserving protected role expectations.
+      const newRoleModules: Record<string, string[]> = {};
+      rolesData.forEach((role) => {
+        const roleName = String(role.name || '').trim();
+        if (!roleName) return;
+
+        if (roleName.toLowerCase() === 'main admin') {
+          newRoleModules[roleName] = pages.map((p: any) => String(p.name || '')).filter(Boolean);
+          return;
+        }
+
+        const pageIds = roleMap[Number(role.id)] || [];
+        const rolePages = pages.filter((p: any) => pageIds.includes(Number(p.id)));
+        newRoleModules[roleName] = rolePages.map((p: any) => p.name);
+      });
+
+      setRoleModulesState(newRoleModules);
+      setRolePermissionsLoaded(true);
+
     } catch (err: any) {
       console.error('Failed to load role permissions:', err);
-      // If loading fails, keep the current state
+      // Still mark as loaded so page can render
+      setRolePermissionsLoaded(true);
+    } finally {
+      setRolePermissionsLoaded(true);
     }
   }, []);
 
@@ -109,6 +263,7 @@ const AdminUserManagement: React.FC = () => {
       setSyncingPages(true);
       await api.post('/admin/pages/sync', { pages: flatNavPages });
       await loadRolePermissions(); // Reload permissions after sync
+      bumpNavPermissionVersion();
       showSuccess('Navigation synced successfully! Role permissions updated.');
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to sync navigation');
@@ -129,22 +284,139 @@ const AdminUserManagement: React.FC = () => {
     }
   }, [onlyApplicants]);
 
+  const fetchScopeUsers = useCallback(async () => {
+    if (!isMainAdmin) return;
+    try {
+      const res = await api.get('/users');
+      const data = (res.data as any).data || res.data || [];
+      setScopeUsers(Array.isArray(data) ? data : []);
+    } catch {
+      setScopeUsers([]);
+    }
+  }, [isMainAdmin]);
+
+  const loadRoleScopes = useCallback(async () => {
+    if (!isMainAdmin) return;
+    setRoleScopesLoading(true);
+    try {
+      const res = await api.get('/admin/role-scopes', { params: { per_page: 200, status: scopeStatusFilter } });
+      const rows = normalizeList<RoleScopeRecord>(res.data, ['data']);
+      setRoleScopes(rows);
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to load role scopes');
+      setRoleScopes([]);
+    } finally {
+      setRoleScopesLoading(false);
+    }
+  }, [isMainAdmin, scopeStatusFilter]);
+
+  const loadScopeOptions = useCallback(async () => {
+    if (!isMainAdmin) return;
+    try {
+      const [preferencesRes, examsRes] = await Promise.all([
+        api.get('/preferences/options'),
+        api.get('/exams', { params: { per_page: 100 } }),
+      ]);
+
+      const prefData = preferencesRes?.data || {};
+      const subjects = normalizeList<any>(prefData.subjects, ['subjects'])
+        .map((row: any) => ({ id: Number(row.id), name: String(row.name || row.subject_name || '') }))
+        .filter((row: ScopeOption) => Number.isFinite(row.id) && row.name);
+      const classes = normalizeList<any>(prefData.classes, ['classes'])
+        .map((row: any) => ({ id: Number(row.id), name: String(row.name || '') }))
+        .filter((row: ScopeOption) => Number.isFinite(row.id) && row.name);
+      const examsPayload = examsRes?.data || {};
+      const exams = normalizeList<any>(examsPayload, ['data'])
+        .map((row: any) => ({ id: Number(row.id), name: String(row.title || `Exam #${row.id}`) }))
+        .filter((row: ScopeOption) => Number.isFinite(row.id) && row.name);
+
+      setScopeSubjects(subjects);
+      setScopeClasses(classes);
+      setScopeExams(exams);
+    } catch {
+      // silent fallback; form remains usable with free-text role and ids not mandatory
+      setScopeSubjects([]);
+      setScopeClasses([]);
+      setScopeExams([]);
+    }
+  }, [isMainAdmin]);
+
   const loadRoles = useCallback(async () => {
     try {
       const res = await api.get(`/admin/roles`);
-      setRoles((res.data || []) as Role[]);
-    } catch {
+      const loaded = normalizeList<Role>(res.data, ['roles']);
+      setRoles(loaded);
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to load roles');
       setRoles([]);
     }
   }, []);
+
+  const roleOptions = useMemo(() => {
+    const options = new Set<string>();
+
+    roles.forEach((role) => {
+      const name = String(role.name || '').trim();
+      if (!name) return;
+      const normalized = name.toLowerCase();
+      if (normalized === 'student') return;
+      if (!isMainAdmin && normalized === 'main admin') return;
+      options.add(name);
+    });
+
+    CORE_ADMIN_ROLE_NAMES.forEach((roleName) => {
+      const normalized = roleName.toLowerCase();
+      if (normalized === 'student') return;
+      if (!isMainAdmin && normalized === 'main admin') return;
+      options.add(roleName);
+    });
+
+    return Array.from(options);
+  }, [roles, isMainAdmin]);
+
+  const displayRoleModules = useMemo<Record<string, string[]>>(() => {
+    const merged: Record<string, string[]> = {};
+
+    // 1) Start with roles from API
+    roles.forEach((role) => {
+      const roleName = String(role.name || '').trim();
+      if (!roleName) return;
+      merged[roleName] = roleName.toLowerCase() === 'main admin' ? [...availableModules] : [];
+    });
+
+    // 2) Guarantee core admin roles
+    CORE_ADMIN_ROLE_NAMES.forEach((roleName) => {
+      if (!merged[roleName]) {
+        merged[roleName] = roleName.toLowerCase() === 'main admin' ? [...availableModules] : [];
+      }
+    });
+
+    // 3) Overlay current editable state (preserves all existing rows)
+    Object.entries(roleModulesState).forEach(([roleName, modules]) => {
+      merged[roleName] = Array.isArray(modules) ? modules : [];
+    });
+
+    return merged;
+  }, [roleModulesState, roles, availableModules]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => {
     loadRoles();
     loadRolePermissions(); // Load initial permissions from database
   }, [loadRolePermissions, loadRoles]);
+  useEffect(() => {
+    loadRoleScopes();
+    loadScopeOptions();
+    fetchScopeUsers();
+  }, [loadRoleScopes, loadScopeOptions, fetchScopeUsers]);
 
   const assignRole = async (userId: number, roleName: string) => {
+    const targetUser = users.find((u) => u.id === userId);
+    if (targetUser && hasStudentRole(targetUser)) {
+      showError('Student accounts cannot be assigned admin roles from this page.');
+      return;
+    }
+
     // Prevent assigning role to current user
     if (userId === currentUserId) {
       showError('You cannot modify your own roles');
@@ -170,15 +442,25 @@ const AdminUserManagement: React.FC = () => {
       return;
     }
 
+    const exists = roles.some((role) => String(role.name || '').toLowerCase() === name.toLowerCase());
+    if (exists) {
+      showError(`Role "${name}" already exists.`);
+      return;
+    }
+
     try {
       setCreatingRole(true);
       await api.post('/admin/roles', { name });
       setNewRoleName('');
       await loadRoles();
       await loadRolePermissions();
+      bumpNavPermissionVersion();
       showSuccess('Role created successfully');
     } catch (err: any) {
-      showError(err?.response?.data?.message || 'Failed to create role');
+      const errors = err?.response?.data?.errors;
+      const firstError = errors ? Object.values(errors)[0] as string[] : null;
+      const detail = Array.isArray(firstError) ? firstError[0] : null;
+      showError(detail || err?.response?.data?.message || 'Failed to create role');
     } finally {
       setCreatingRole(false);
     }
@@ -186,6 +468,10 @@ const AdminUserManagement: React.FC = () => {
 
   const startEditRole = (role: Role) => {
     if (!role.id) return;
+    if (PROTECTED_ROLE_NAMES.includes(String(role.name || '').trim())) {
+      showError('This role is protected and cannot be renamed.');
+      return;
+    }
     setEditingRoleId(role.id);
     setEditingRoleName(role.name);
   };
@@ -210,6 +496,7 @@ const AdminUserManagement: React.FC = () => {
       cancelEditRole();
       await loadRoles();
       await loadRolePermissions();
+      bumpNavPermissionVersion();
       showSuccess('Role updated successfully');
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to update role');
@@ -220,6 +507,10 @@ const AdminUserManagement: React.FC = () => {
 
   const removeRole = async (role: Role) => {
     if (!role.id) return;
+    if (PROTECTED_ROLE_NAMES.includes(String(role.name || '').trim())) {
+      showError('This role is protected and cannot be deleted.');
+      return;
+    }
 
     const ok = await showConfirm(`Delete role "${role.name}"?`);
     if (!ok) return;
@@ -229,6 +520,7 @@ const AdminUserManagement: React.FC = () => {
       await api.delete(`/admin/roles/${role.id}`);
       await loadRoles();
       await loadRolePermissions();
+      bumpNavPermissionVersion();
       showSuccess('Role deleted successfully');
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to delete role');
@@ -242,6 +534,7 @@ const AdminUserManagement: React.FC = () => {
       setSyncingRoleDefaults(true);
       await api.post('/admin/roles/sync-defaults');
       await loadRolePermissions();
+      bumpNavPermissionVersion();
       showSuccess('Role defaults synced from navigation permissions');
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to sync role defaults');
@@ -266,6 +559,105 @@ const AdminUserManagement: React.FC = () => {
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to delete user';
       showError(msg);
+    }
+  };
+
+  const saveRoleScope = async () => {
+    if (!isMainAdmin) {
+      showError('Only Main Admin can manage role scopes');
+      return;
+    }
+
+    const payload = {
+      user_id: Number(scopeForm.user_id),
+      role_name: scopeForm.role_name?.trim() || null,
+      subject_id: scopeForm.subject_id ? Number(scopeForm.subject_id) : null,
+      class_id: scopeForm.class_id ? Number(scopeForm.class_id) : null,
+      exam_id: scopeForm.exam_id ? Number(scopeForm.exam_id) : null,
+      academic_session: scopeForm.academic_session?.trim() || null,
+      term: scopeForm.term || null,
+      is_active: scopeForm.is_active,
+    };
+
+    if (!Number.isFinite(payload.user_id) || payload.user_id <= 0) {
+      showError('Select a user for scope assignment');
+      return;
+    }
+    if (!payload.subject_id && !payload.class_id && !payload.exam_id) {
+      showError('Select at least one scope target (Subject, Class, or Exam)');
+      return;
+    }
+
+    try {
+      setRoleScopeSaving(true);
+      await api.post('/admin/role-scopes', payload);
+      await loadRoleScopes();
+      setScopeForm((prev) => ({
+        ...prev,
+        subject_id: '',
+        class_id: '',
+        exam_id: '',
+        academic_session: '',
+        term: '',
+      }));
+      showSuccess('Role scope saved successfully');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to save role scope');
+    } finally {
+      setRoleScopeSaving(false);
+    }
+  };
+
+  const approveRoleScope = async (scopeId: number) => {
+    if (!isMainAdmin) return;
+    try {
+      setUpdatingScopeId(scopeId);
+      await api.post(`/admin/role-scopes/${scopeId}/approve`);
+      await loadRoleScopes();
+      showSuccess('Scope request approved');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to approve scope request');
+    } finally {
+      setUpdatingScopeId(null);
+    }
+  };
+
+  const rejectRoleScope = async (scopeId: number) => {
+    if (!isMainAdmin) return;
+    const reason = window.prompt('Enter rejection reason:')?.trim() || '';
+    if (!reason) {
+      showError('Rejection reason is required');
+      return;
+    }
+    try {
+      setUpdatingScopeId(scopeId);
+      await api.post(`/admin/role-scopes/${scopeId}/reject`, { reason });
+      await loadRoleScopes();
+      showSuccess('Scope request rejected');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to reject scope request');
+    } finally {
+      setUpdatingScopeId(null);
+    }
+  };
+
+  const deleteRoleScope = async (scopeId: number) => {
+    if (!isMainAdmin) {
+      showError('Only Main Admin can manage role scopes');
+      return;
+    }
+    const ok = await showConfirm('Delete this role scope?');
+    if (!ok) return;
+
+    try {
+      setDeletingScopeId(scopeId);
+      await api.delete(`/admin/role-scopes/${scopeId}`);
+      await loadRoleScopes();
+      showSuccess('Role scope deleted successfully');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to delete role scope');
+    } finally {
+      setDeletingScopeId(null);
     }
   };
 
@@ -340,6 +732,10 @@ const AdminUserManagement: React.FC = () => {
             <div className="mt-3 space-y-2">
               {roles.map((role) => (
                 <div key={role.id || role.name} className="flex flex-col md:flex-row md:items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2">
+                  {(() => {
+                    const isProtected = PROTECTED_ROLE_NAMES.includes(String(role.name || '').trim());
+                    return (
+                  <>
                   {editingRoleId === role.id ? (
                     <>
                       <input
@@ -350,7 +746,7 @@ const AdminUserManagement: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={saveEditRole}
-                          disabled={updatingRole || !isMainAdmin}
+                          disabled={updatingRole || !isMainAdmin || isProtected}
                           className="px-2.5 py-1.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700 disabled:opacity-60"
                         >
                           {updatingRole ? 'Saving...' : 'Save'}
@@ -374,14 +770,14 @@ const AdminUserManagement: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => startEditRole(role)}
-                          disabled={!isMainAdmin}
+                          disabled={!isMainAdmin || isProtected}
                           className="px-2.5 py-1.5 border border-gray-300 rounded text-xs hover:bg-gray-100 disabled:opacity-60"
                         >
                           Rename
                         </button>
                         <button
                           onClick={() => removeRole(role)}
-                          disabled={deletingRoleId === role.id || !isMainAdmin}
+                          disabled={deletingRoleId === role.id || !isMainAdmin || isProtected}
                           className="px-2.5 py-1.5 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:opacity-60"
                         >
                           {deletingRoleId === role.id ? 'Deleting...' : 'Delete'}
@@ -389,6 +785,9 @@ const AdminUserManagement: React.FC = () => {
                       </div>
                     </>
                   )}
+                  </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -398,6 +797,232 @@ const AdminUserManagement: React.FC = () => {
               </p>
             )}
           </div>
+
+          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Role Scope Assignment</p>
+              <div className="flex items-center gap-2">
+                <select
+                  value={scopeStatusFilter}
+                  onChange={(e) => setScopeStatusFilter(e.target.value as 'pending' | 'approved' | 'rejected')}
+                  className="px-2 py-1.5 text-xs border border-gray-300 rounded"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={loadRoleScopes}
+                  className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  Refresh Scopes
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+              <select
+                value={scopeForm.user_id}
+                onChange={(e) => setScopeForm((prev) => ({ ...prev, user_id: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm"
+                disabled={!isMainAdmin}
+              >
+                <option value="">Select user</option>
+                {scopeUsers
+                  .filter((u) => !hasStudentRole(u))
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.email})
+                    </option>
+                  ))}
+              </select>
+
+              <select
+                value={scopeForm.role_name}
+                onChange={(e) => setScopeForm((prev) => ({ ...prev, role_name: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm"
+                disabled={!isMainAdmin}
+              >
+                <option value="">Role (optional)</option>
+                {roleOptions.map((name) => (
+                  <option key={name} value={name.toLowerCase()}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={scopeForm.term}
+                onChange={(e) => setScopeForm((prev) => ({ ...prev, term: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm"
+                disabled={!isMainAdmin}
+              >
+                <option value="">Term (optional)</option>
+                <option value="First Term">First Term</option>
+                <option value="Second Term">Second Term</option>
+                <option value="Third Term">Third Term</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
+              <select
+                value={scopeForm.subject_id}
+                onChange={(e) => setScopeForm((prev) => ({ ...prev, subject_id: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm"
+                disabled={!isMainAdmin}
+              >
+                <option value="">Subject scope (optional)</option>
+                {scopeSubjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={scopeForm.class_id}
+                onChange={(e) => setScopeForm((prev) => ({ ...prev, class_id: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm"
+                disabled={!isMainAdmin}
+              >
+                <option value="">Class scope (optional)</option>
+                {scopeClasses.map((schoolClass) => (
+                  <option key={schoolClass.id} value={schoolClass.id}>
+                    {schoolClass.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={scopeForm.exam_id}
+                onChange={(e) => setScopeForm((prev) => ({ ...prev, exam_id: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm"
+                disabled={!isMainAdmin}
+              >
+                <option value="">Exam scope (optional)</option>
+                {scopeExams.map((exam) => (
+                  <option key={exam.id} value={exam.id}>
+                    {exam.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="text"
+                value={scopeForm.academic_session}
+                onChange={(e) => setScopeForm((prev) => ({ ...prev, academic_session: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder="Academic session (optional)"
+                disabled={!isMainAdmin}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={scopeForm.is_active}
+                  onChange={(e) => setScopeForm((prev) => ({ ...prev, is_active: e.target.checked }))}
+                  disabled={!isMainAdmin}
+                />
+                Active scope
+              </label>
+              <button
+                type="button"
+                onClick={saveRoleScope}
+                disabled={!isMainAdmin || roleScopeSaving}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs md:text-sm hover:bg-blue-700 disabled:opacity-60"
+              >
+                {roleScopeSaving ? 'Saving...' : 'Add Scope'}
+              </button>
+            </div>
+
+            <div className="mt-3 overflow-x-auto border border-gray-200 rounded">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="p-2 border-b text-left font-semibold">User</th>
+                    <th className="p-2 border-b text-left font-semibold">Role</th>
+                    <th className="p-2 border-b text-left font-semibold">Subject</th>
+                    <th className="p-2 border-b text-left font-semibold">Class</th>
+                    <th className="p-2 border-b text-left font-semibold">Exam</th>
+                    <th className="p-2 border-b text-left font-semibold">Session/Term</th>
+                    <th className="p-2 border-b text-left font-semibold">Status</th>
+                    <th className="p-2 border-b text-left font-semibold">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roleScopesLoading ? (
+                    <tr>
+                      <td colSpan={8} className="p-3 text-center text-gray-500">Loading role scopes...</td>
+                    </tr>
+                  ) : roleScopes.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-3 text-center text-gray-500">No role scopes assigned yet.</td>
+                    </tr>
+                  ) : (
+                    roleScopes.map((scope) => (
+                      <tr key={scope.id} className="hover:bg-gray-50">
+                        <td className="p-2 border-b">
+                          <div className="font-medium text-gray-800">{scope.user?.name || `User #${scope.user_id}`}</div>
+                          <div className="text-gray-500">{scope.user?.email || '-'}</div>
+                        </td>
+                        <td className="p-2 border-b">{scope.role_name || '-'}</td>
+                        <td className="p-2 border-b">{scope.subject?.name || '-'}</td>
+                        <td className="p-2 border-b">{scope.school_class?.name || '-'}</td>
+                        <td className="p-2 border-b">{scope.exam?.title || '-'}</td>
+                        <td className="p-2 border-b">
+                          <div>{(scope.academic_session || '-')}{' / '}{(scope.term || '-')}</div>
+                          {scope.status === 'rejected' && scope.rejected_reason ? (
+                            <div className="text-red-600">{scope.rejected_reason}</div>
+                          ) : null}
+                        </td>
+                        <td className="p-2 border-b">
+                          <span className={`px-2 py-0.5 rounded ${scope.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'}`}>
+                            {scope.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="p-2 border-b">
+                          <div className="flex items-center gap-1">
+                            {scope.status === 'pending' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => approveRoleScope(scope.id)}
+                                  disabled={!isMainAdmin || updatingScopeId === scope.id}
+                                  className="px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60"
+                                >
+                                  {updatingScopeId === scope.id ? '...' : 'Approve'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => rejectRoleScope(scope.id)}
+                                  disabled={!isMainAdmin || updatingScopeId === scope.id}
+                                  className="px-2 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-60"
+                                >
+                                  {updatingScopeId === scope.id ? '...' : 'Reject'}
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => deleteRoleScope(scope.id)}
+                              disabled={!isMainAdmin || deletingScopeId === scope.id}
+                              className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
+                            >
+                              {deletingScopeId === scope.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="min-w-full border border-gray-200 text-sm">
               <thead>
@@ -407,7 +1032,7 @@ const AdminUserManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(roleModulesState).map(([role, modules]) => (
+                {Object.entries(displayRoleModules).map(([role, modules]) => (
                   <tr key={role} className="hover:bg-gray-50">
                     <td className="p-2 border-b">
                       <span className="font-medium text-blue-600 text-xs md:text-sm">{role}</span>
@@ -428,11 +1053,13 @@ const AdminUserManagement: React.FC = () => {
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
                           {availableModules.map(m => {
                             const checked = modules.includes(m);
+                            const isProtected = PROTECTED_ROLE_NAMES.includes(role);
                             return (
                               <label key={m} className="flex items-center gap-1 text-xs border rounded px-1.5 py-1">
                                 <input
                                   type="checkbox"
                                   checked={checked}
+                                  disabled={isProtected}
                                   onChange={(e) => {
                                     setRoleModulesState(prev => {
                                       const next = { ...prev };
@@ -466,8 +1093,24 @@ const AdminUserManagement: React.FC = () => {
                 className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs md:text-sm"
                 onClick={async () => {
                   try {
-                    await api.post('/admin/roles/modules', { role_modules: roleModulesState });
+                    if (!rolePermissionsLoaded) {
+                      showError('Role permissions are still loading. Please wait and retry.');
+                      return;
+                    }
+
+                    const payload: Record<string, string[]> = {};
+                    Object.entries(displayRoleModules).forEach(([roleName, modules]) => {
+                      const normalized = roleName.toLowerCase();
+                      if (normalized === 'student' || normalized === 'main admin') {
+                        return;
+                      }
+
+                      payload[roleName] = Array.from(new Set((modules || []).filter((name) => availableModules.includes(name))));
+                    });
+
+                    await api.post('/admin/roles/modules', { role_modules: payload });
                     await loadRolePermissions(); // Reload to confirm changes
+                    bumpNavPermissionVersion();
                     showSuccess('Role permissions updated successfully');
                     setEditMode(false);
                   } catch (err: any) {
@@ -557,26 +1200,23 @@ const AdminUserManagement: React.FC = () => {
                       )}
                     </td>
                     <td className="p-3 border-b">
-                      <select
-                        aria-label="Assign role"
-                        className={`px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${u.id === currentUserId ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        onChange={(e) => e.target.value && assignRole(u.id, e.target.value)}
-                        defaultValue=""
-                        disabled={u.id === currentUserId}
-                        title={u.id === currentUserId ? 'You cannot modify your own roles' : 'Select role to assign'}
-                      >
-                        <option value="" disabled>Select role to assign</option>
-                        {roles
-                          .filter((r) => {
-                            const normalized = String(r.name || '').toLowerCase();
-                            if (normalized === 'student') return false;
-                            if (!isMainAdmin && normalized === 'main admin') return false;
-                            return true;
-                          })
-                          .map((r) => (
-                          <option key={r.id || r.name} value={r.name}>{r.name}</option>
-                        ))}
-                      </select>
+                      {hasStudentRole(u) ? (
+                        <span className="text-xs text-gray-500">Not applicable for student accounts</span>
+                      ) : (
+                        <select
+                          aria-label="Assign role"
+                          className={`px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${u.id === currentUserId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onChange={(e) => e.target.value && assignRole(u.id, e.target.value)}
+                          defaultValue=""
+                          disabled={u.id === currentUserId}
+                          title={u.id === currentUserId ? 'You cannot modify your own roles' : 'Select role to assign'}
+                        >
+                          <option value="" disabled>Select role to assign</option>
+                          {roleOptions.map((roleName) => (
+                            <option key={roleName} value={roleName}>{roleName}</option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td className="p-3 border-b">
                       <button

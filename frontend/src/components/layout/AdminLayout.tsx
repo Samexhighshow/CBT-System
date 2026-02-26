@@ -68,13 +68,14 @@ const AdminLayout: React.FC = () => {
       
       if (isTeacher) {
         // Check if teacher has subjects selected
-        const res = await api.get('/preferences/teacher/subjects');
-        if (!res.data?.teacher_subjects || res.data.teacher_subjects.length === 0) {
+        const res = await api.get('/preferences/teacher/subjects', { skipGlobalLoading: true } as any);
+        const approvedCount = Number(res?.data?.scope_summary?.approved_count || 0);
+        if (approvedCount <= 0) {
           setShowTeacherSubjects(true);
         }
       } else if (isStudent) {
         // Check if student has class/subjects selected
-        const res = await api.get('/preferences/student/subjects');
+        const res = await api.get('/preferences/student/subjects', { skipGlobalLoading: true } as any);
         if (!res.data?.class_id || !res.data?.student_subjects || res.data.student_subjects.length === 0) {
           setShowStudentSubjects(true);
         }

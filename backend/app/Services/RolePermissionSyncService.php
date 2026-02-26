@@ -8,6 +8,12 @@ use Spatie\Permission\Models\Role;
 
 class RolePermissionSyncService
 {
+    private const CORE_ADMIN_ROLES = [
+        'Main Admin',
+        'Admin',
+        'Teacher',
+    ];
+
     /**
      * Pages restricted to Main Admin only.
      */
@@ -56,8 +62,10 @@ class RolePermissionSyncService
 
     public function listAdminAssignableRoles(): Collection
     {
+        $this->ensureCoreAdminRolesExist();
+
         return Role::query()
-            ->whereIn('guard_name', ['web', 'api'])
+            ->where('guard_name', 'web')
             ->whereRaw('LOWER(name) != ?', ['student'])
             ->orderBy('name')
             ->get(['id', 'name']);
@@ -71,6 +79,8 @@ class RolePermissionSyncService
         ?Collection $pages = null,
         bool $includeCustomRolesWithoutPagePerms = false
     ): void {
+        $this->ensureCoreAdminRolesExist();
+
         $pages = $pages ?: Page::query()->where('is_active', true)->get();
         $pagesByName = $pages->keyBy('name');
         $allPagePermissions = $pages->pluck('permission_name')->filter()->values();
@@ -151,5 +161,14 @@ class RolePermissionSyncService
             ->map(fn (string $pageName) => $pagesByName->get($pageName)?->permission_name)
             ->filter()
             ->values();
+    }
+
+    private function ensureCoreAdminRolesExist(): void
+    {
+        foreach (self::CORE_ADMIN_ROLES as $roleName) {
+            Role::query()->firstOrCreate(
+                ['name' => $roleName, 'guard_name' => 'web']
+            );
+        }
     }
 }

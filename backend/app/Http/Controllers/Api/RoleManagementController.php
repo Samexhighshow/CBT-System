@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\RolePermissionSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
@@ -26,14 +27,30 @@ class RoleManagementController extends Controller
 
     public function listRoles(): JsonResponse
     {
+        $modelHasRolesTable = config('permission.table_names.model_has_roles', 'model_has_roles');
+        $roleHasPermissionsTable = config('permission.table_names.role_has_permissions', 'role_has_permissions');
+        $permissionsTable = config('permission.table_names.permissions', 'permissions');
+        $modelTypeCandidates = [User::class, 'App\\User'];
+
         $roles = $this->rolePermissionSyncService
             ->listAdminAssignableRoles()
-            ->map(function (Role $role) {
+            ->map(function (Role $role) use ($modelHasRolesTable, $roleHasPermissionsTable, $permissionsTable, $modelTypeCandidates) {
+                $usersCount = DB::table($modelHasRolesTable)
+                    ->where('role_id', $role->id)
+                    ->whereIn('model_type', $modelTypeCandidates)
+                    ->count();
+
+                $permissionsCount = DB::table($roleHasPermissionsTable)
+                    ->join($permissionsTable, "{$permissionsTable}.id", '=', "{$roleHasPermissionsTable}.permission_id")
+                    ->where("{$roleHasPermissionsTable}.role_id", $role->id)
+                    ->where("{$permissionsTable}.name", 'like', 'access:%')
+                    ->count();
+
                 return [
                     'id' => $role->id,
                     'name' => $role->name,
-                    'users_count' => $role->users()->count(),
-                    'permissions_count' => $role->permissions()->count(),
+                    'users_count' => $usersCount,
+                    'permissions_count' => $permissionsCount,
                 ];
             })
             ->values();
@@ -43,6 +60,26 @@ class RoleManagementController extends Controller
 
     public function createRole(Request $request): JsonResponse
     {
+        $name = trim((string) $request->input('name'));
+
+        if ($name === '') {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => ['name' => ['Role name is required.']],
+            ], 422);
+        }
+
+        $alreadyExists = Role::query()
+            ->whereRaw('LOWER(name) = ?', [strtolower($name)])
+            ->exists();
+
+        if ($alreadyExists) {
+            return response()->json([
+                'message' => 'Role already exists.',
+                'errors' => ['name' => ['A role with this name already exists.']],
+            ], 422);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => [
                 'required',
@@ -60,7 +97,6 @@ class RoleManagementController extends Controller
             ], 422);
         }
 
-        $name = trim((string) $request->input('name'));
         if ($this->isReservedRoleName($name)) {
             return response()->json([
                 'message' => 'This role name is reserved and cannot be created from admin management.',
@@ -153,7 +189,13 @@ class RoleManagementController extends Controller
             ], 403);
         }
 
-        if ($role->users()->exists()) {
+        $modelHasRolesTable = config('permission.table_names.model_has_roles', 'model_has_roles');
+        $hasAssignedUsers = DB::table($modelHasRolesTable)
+            ->where('role_id', $role->id)
+            ->whereIn('model_type', [User::class, 'App\\User'])
+            ->exists();
+
+        if ($hasAssignedUsers) {
             return response()->json([
                 'message' => 'Cannot delete role while users are still assigned to it.',
             ], 422);
@@ -211,7 +253,9 @@ class RoleManagementController extends Controller
         }
 
         $user = User::findOrFail($userId);
-        $role = Role::where('name', $roleName)->first();
+        $role = Role::where('name', $roleName)
+            ->where('guard_name', 'web')
+            ->first();
 
         if (!$role) {
             return response()->json(['message' => 'Role not found'], 404);

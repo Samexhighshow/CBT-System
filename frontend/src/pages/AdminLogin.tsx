@@ -278,6 +278,8 @@ const AdminLogin: React.FC = () => {
               <span className="h-2 w-2 rounded-full" style={{
                 backgroundColor: connectivity.status === 'OFFLINE'
                   ? '#F97316'
+                  : connectivity.status === 'CHECKING'
+                    ? '#94A3B8'
                   : connectivity.status === 'LAN_ONLY'
                     ? '#FACC15'
                     : '#22C55E'
@@ -289,12 +291,15 @@ const AdminLogin: React.FC = () => {
               style={{
                 color: connectivity.status === 'OFFLINE'
                   ? '#F97316'
+                  : connectivity.status === 'CHECKING'
+                    ? '#94A3B8'
                   : connectivity.status === 'LAN_ONLY'
                     ? '#EAB308'
                     : '#22C55E'
               }}
             >
               {connectivity.status === 'OFFLINE' && 'Offline: PIN login works if this account was cached on this device.'}
+              {connectivity.status === 'CHECKING' && 'Checking connection stability...'}
               {connectivity.status === 'LAN_ONLY' && 'LAN-only: server reachable on local network. Use normal password.'}
               {connectivity.status === 'ONLINE' && 'Online: use normal admin password.'}
             </p>

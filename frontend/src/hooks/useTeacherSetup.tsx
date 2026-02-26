@@ -1,13 +1,26 @@
 import { useState, useEffect } from 'react';
 import useAuthStore from '../store/authStore';
+import { api } from '../services/api';
 
-export const useTeacherSetup = () => {
-  const { user, hasCompletedTeacherSetup, completeTeacherSetup } = useAuthStore();
+export const useTeacherSetup = (enabled = true) => {
+  const { user, isAuthenticated, completeTeacherSetup } = useAuthStore();
   const [showModal, setShowModal] = useState(false);
+  const [scopeStatus, setScopeStatus] = useState<{
+    has_approved_scope: boolean;
+    approved_count: number;
+    pending_count: number;
+    rejected_count: number;
+    latest_rejection_reason: string;
+  } | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setShowModal(false);
+      return;
+    }
+
     // Always close modal if no user is logged in
-    if (!user) {
+    if (!user || !isAuthenticated) {
       setShowModal(false);
       return;
     }
@@ -19,21 +32,36 @@ export const useTeacherSetup = () => {
     }
 
     // Check if user is a teacher (case-insensitive to handle Teacher, teacher, TEACHER)
-    const isTeacher = user.roles?.some((role: any) => 
-      role.name?.toLowerCase() === 'teacher'
+    const isTeacher = user.roles?.some((role: any) =>
+      String(role?.name || role || '').toLowerCase() === 'teacher'
     );
     
-    // Show modal if:
-    // 1. User is a teacher
-    // 2. Haven't completed setup yet
-    if (isTeacher && !hasCompletedTeacherSetup) {
-      // Small delay to ensure smooth transition after login
-      setTimeout(() => setShowModal(true), 500);
-    } else {
-      // Not a teacher or already completed - don't show modal
+    if (!isTeacher) {
       setShowModal(false);
+      return;
     }
-  }, [user, hasCompletedTeacherSetup]);
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await api.get('/preferences/teacher/scope-status', { skipGlobalLoading: true } as any);
+        if (cancelled) return;
+        const status = res?.data || {};
+        setScopeStatus(status);
+        setShowModal(!Boolean(status?.has_approved_scope));
+      } catch {
+        if (!cancelled) {
+          setScopeStatus(null);
+          setShowModal(true);
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, user, isAuthenticated]);
 
   const handleComplete = () => {
     completeTeacherSetup();
@@ -49,5 +77,6 @@ export const useTeacherSetup = () => {
     showModal,
     handleComplete,
     handleSkip,
+    scopeStatus,
   };
 };

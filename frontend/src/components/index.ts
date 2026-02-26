@@ -18,6 +18,7 @@ export { default as GlobalLoadingOverlay } from './GlobalLoadingOverlay';
 export { default as BuildVersionWatcher } from './BuildVersionWatcher';
 export { default as SyncBootstrap } from './SyncBootstrap';
 export { default as AnnouncementsCarousel } from './AnnouncementsCarousel';
+export { default as WelcomeBanner } from './WelcomeBanner';
 export { SkeletonCard, SkeletonList } from './Skeleton';
 export { default as SkeletonTable } from './SkeletonTable';
 export { TeacherSubjectSelection } from './TeacherSubjectSelection';

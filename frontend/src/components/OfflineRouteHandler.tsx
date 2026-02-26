@@ -27,13 +27,22 @@ const ONLINE_ONLY_ROUTES = [
  */
 const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const connectivity = useConnectivity();
-  const isOnline = connectivity.status !== 'OFFLINE';
+  const isOnline = connectivity.status === 'ONLINE' || connectivity.status === 'LAN_ONLY';
   const showOfflineBanner = !isOnline && connectivity.initialized && !connectivity.checking;
   const navigate = useNavigate();
   const location = useLocation();
 
+  const reasonText =
+    connectivity.reason === 'browser_offline'
+      ? 'Internet is disconnected on this device.'
+      : connectivity.reason?.startsWith('timeout:')
+        ? 'Server health check timed out.'
+        : connectivity.reason?.startsWith('unreachable:')
+          ? 'Server is unreachable (network/CORS/API URL issue).'
+          : 'Backend health check failed.';
+
   useEffect(() => {
-    if (isOnline) return;
+    if (isOnline || !connectivity.initialized || connectivity.checking) return;
 
     const currentPath = location.pathname;
     const isOnlineOnlyRoute = ONLINE_ONLY_ROUTES.some((route) => currentPath.startsWith(route));
@@ -42,9 +51,9 @@ const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children
     const user = localStorage.getItem('user');
     const token = localStorage.getItem('auth_token');
     if (user && token) {
-      navigate('/student/exams', { replace: true });
+      navigate(getOfflineFallbackRoute(), { replace: true });
     }
-  }, [isOnline, navigate, location.pathname]);
+  }, [isOnline, connectivity.initialized, connectivity.checking, navigate, location.pathname]);
 
   return (
     <>
@@ -53,6 +62,7 @@ const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children
           <div className="flex items-center justify-center gap-2">
             <i className="bx bx-wifi-off" />
             <span className="font-medium">You are currently offline. Some features may be limited.</span>
+            <span className="hidden text-xs opacity-90 md:inline">({reasonText})</span>
             <button
               onClick={() => window.location.reload()}
               className="ml-4 rounded bg-white px-3 py-1 text-sm text-yellow-700 transition hover:bg-yellow-50"
@@ -90,6 +100,10 @@ export const getOfflineFallbackRoute = (): string => {
 
     if (roles.includes('student')) {
       return '/student/exams';
+    }
+
+    if (roles.some((role: string) => ['admin', 'main admin', 'teacher'].includes(role))) {
+      return '/cbt';
     }
 
     return '/cbt';

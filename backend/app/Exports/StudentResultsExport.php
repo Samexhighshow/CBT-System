@@ -10,19 +10,28 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 class StudentResultsExport implements FromCollection, WithHeadings, WithMapping
 {
     protected $studentId;
+    protected $releasedOnly;
 
-    public function __construct($studentId)
+    public function __construct($studentId, bool $releasedOnly = false)
     {
         $this->studentId = $studentId;
+        $this->releasedOnly = $releasedOnly;
     }
 
     public function collection()
     {
-        return ExamAttempt::with(['exam.subject'])
+        $query = ExamAttempt::with(['exam.subject'])
             ->where('student_id', $this->studentId)
-            ->where('status', 'completed')
-            ->orderBy('completed_at', 'desc')
-            ->get();
+            ->whereIn('status', ['completed', 'submitted'])
+            ->orderBy('completed_at', 'desc');
+
+        if ($this->releasedOnly) {
+            $query->whereHas('exam', function ($q) {
+                $q->where('results_released', true);
+            });
+        }
+
+        return $query->get();
     }
 
     public function headings(): array

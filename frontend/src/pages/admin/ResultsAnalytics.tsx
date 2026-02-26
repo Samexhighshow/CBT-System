@@ -27,7 +27,10 @@ interface AttemptSummary {
   grade?: string | null;
   position_grade?: string | null;
   rank_label?: string | null;
+  submitted_at?: string;
   completed_at?: string;
+  assessment_type?: string;
+  time_taken_minutes?: number | null;
 }
 
 interface ExamOption {
@@ -82,6 +85,9 @@ const ResultsAnalytics: React.FC = () => {
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [compiledRows, setCompiledRows] = useState<CompiledAdminRow[]>([]);
   const [loadingCompiledRows, setLoadingCompiledRows] = useState(false);
+  const [examResults, setExamResults] = useState<AttemptSummary[]>([]);
+  const [resultsPage, setResultsPage] = useState(1);
+  const resultsPerPage = 10;
 
   useEffect(() => {
     loadExams();
@@ -311,6 +317,12 @@ const ResultsAnalytics: React.FC = () => {
               const score = Number(row.score ?? 0);
               const totalMarks = Number(row.total_marks ?? 0);
               const percentage = totalMarks > 0 ? (score / totalMarks) * 100 : 0;
+              const submittedAt = row.submitted_at || null;
+              const completedAt = row.completed_at || submittedAt;
+              const startedAt = row.started_at || null;
+              const timeTakenMinutes = startedAt && completedAt
+                ? Math.max(0, Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 60000))
+                : null;
 
               return {
                 id: row.id,
@@ -329,10 +341,15 @@ const ResultsAnalytics: React.FC = () => {
                 grade: row.grade || null,
                 position_grade: row.position_grade || null,
                 rank_label: row.rank_label || null,
-                completed_at: row.completed_at || row.submitted_at,
+                submitted_at: submittedAt,
+                completed_at: completedAt,
+                assessment_type: row.assessment_type || 'Exam',
+                time_taken_minutes: Number.isFinite(timeTakenMinutes) ? timeTakenMinutes : null,
               };
             })
           : [];
+        setExamResults(mapped);
+        setResultsPage(1);
         await loadCompiledResults(mapped, examId);
 
         if (mapped.length > 0) {
@@ -353,6 +370,7 @@ const ResultsAnalytics: React.FC = () => {
         }
       } else {
         setCompiledRows([]);
+        setExamResults([]);
       }
     } catch (error: any) {
       console.error('Failed to fetch analytics:', error);
@@ -363,9 +381,46 @@ const ResultsAnalytics: React.FC = () => {
         total_attempts: 0,
       });
       setCompiledRows([]);
+      setExamResults([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const selectedExam = useMemo(
+    () => exams.find((exam) => String(exam.id) === examId) || null,
+    [exams, examId]
+  );
+
+  const filteredExamResults = useMemo(() => {
+    const term = studentName.trim().toLowerCase();
+    if (!term) return examResults;
+    return examResults.filter((row) => {
+      const reg = String(row.registration_number || '').toLowerCase();
+      const name = String(row.student_name || '').toLowerCase();
+      const className = String(row.class_level || '').toLowerCase();
+      return name.includes(term) || reg.includes(term) || className.includes(term);
+    });
+  }, [examResults, studentName]);
+
+  const totalResultPages = Math.max(1, Math.ceil(filteredExamResults.length / resultsPerPage));
+  const currentResultRows = useMemo(() => {
+    const start = (resultsPage - 1) * resultsPerPage;
+    return filteredExamResults.slice(start, start + resultsPerPage);
+  }, [filteredExamResults, resultsPage]);
+
+  const normalizeResultStatus = (row: AttemptSummary): 'Submitted' | 'Marked' | 'Finalized' | 'Released' => {
+    if (selectedExam?.results_released) return 'Released';
+    if ((row.status || '').toLowerCase() === 'completed') return 'Finalized';
+    if ((row.status || '').toLowerCase() === 'submitted') return 'Submitted';
+    return 'Marked';
+  };
+
+  const statusClass = (status: string) => {
+    if (status === 'Released') return 'bg-emerald-100 text-emerald-800';
+    if (status === 'Finalized') return 'bg-indigo-100 text-indigo-800';
+    if (status === 'Submitted') return 'bg-amber-100 text-amber-800';
+    return 'bg-slate-100 text-slate-700';
   };
 
   return (
@@ -554,6 +609,104 @@ const ResultsAnalytics: React.FC = () => {
         <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                {selectedExam ? `Exam Results – ${selectedExam.title}` : 'Result Summary'}
+              </h2>
+              <p className="text-xs text-slate-500">
+                Subject Position is ranked within this exam result list.
+              </p>
+            </div>
+            {!!examId && (
+              <span className="text-xs text-slate-500">
+                {filteredExamResults.length} row(s) • Page {Math.min(resultsPage, totalResultPages)} of {totalResultPages}
+              </span>
+            )}
+          </div>
+
+          {!examId ? (
+            <p className="text-sm text-slate-500">Select an exam to view exam results.</p>
+          ) : loading ? (
+            <SkeletonList items={4} />
+          ) : filteredExamResults.length === 0 ? (
+            <p className="text-sm text-slate-500">No exam results found for this filter.</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1180px] text-xs border-collapse bg-white">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-700 border-b">
+                      <th className="px-3 py-2 text-left font-semibold">Student</th>
+                      <th className="px-3 py-2 text-left font-semibold">Class</th>
+                      <th className="px-3 py-2 text-left font-semibold">Score (%)</th>
+                      <th className="px-3 py-2 text-left font-semibold">Grade</th>
+                      <th className="px-3 py-2 text-left font-semibold">Subject Position</th>
+                      <th className="px-3 py-2 text-left font-semibold">Status</th>
+                      <th className="px-3 py-2 text-left font-semibold">Total Questions</th>
+                      <th className="px-3 py-2 text-left font-semibold">Time Taken</th>
+                      <th className="px-3 py-2 text-left font-semibold">Attempt Date</th>
+                      <th className="px-3 py-2 text-left font-semibold">Assessment Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentResultRows.map((row) => {
+                      const normalizedStatus = normalizeResultStatus(row);
+                      return (
+                        <tr key={row.id} className="border-b border-gray-200 hover:bg-blue-50/40">
+                          <td className="px-3 py-2 text-sm text-slate-700">
+                            <div className="font-medium">{row.student_name}</div>
+                            <div className="text-[11px] text-slate-500">{row.registration_number || '-'}</div>
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700">{row.class_level || '-'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700">
+                            {Number(row.score ?? 0).toFixed(1)}/{Number(row.total_marks ?? 0).toFixed(1)} ({Number(row.percentage ?? 0).toFixed(1)}%)
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700">{row.grade || '-'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700">{row.rank_label || '-'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700">
+                            <span className={`px-2 py-1 rounded-full text-[11px] font-semibold ${statusClass(normalizedStatus)}`}>
+                              {normalizedStatus}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700">{row.question_count ?? 0}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700">
+                            {row.time_taken_minutes !== null && row.time_taken_minutes !== undefined
+                              ? `${row.time_taken_minutes} min`
+                              : '-'}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700">
+                            {row.completed_at ? new Date(row.completed_at).toLocaleString() : '-'}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-700">{row.assessment_type || 'Exam'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button
+                  className="btn-compact bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+                  disabled={resultsPage <= 1}
+                  onClick={() => setResultsPage((prev) => Math.max(1, prev - 1))}
+                >
+                  Previous
+                </button>
+                <button
+                  className="btn-compact bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+                  disabled={resultsPage >= totalResultPages}
+                  onClick={() => setResultsPage((prev) => Math.min(totalResultPages, prev + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          )}
+        </Card>
+
+        <Card className="panel-compact">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+            <div>
               <h2 className="text-lg font-semibold">Compiled Results (CA + Exam)</h2>
               <p className="text-xs text-slate-500">
                 {examId ? 'Primary merged scores for selected exam subject.' : 'Select an exam to load compiled results.'}
@@ -608,7 +761,8 @@ const ResultsAnalytics: React.FC = () => {
               </table>
             </div>
           )}
-        </Card>`n      </div>
+        </Card>
+      </div>
     </div>
   );
 };

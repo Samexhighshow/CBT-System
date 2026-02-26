@@ -71,6 +71,7 @@ class Kernel extends HttpKernel
         'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         'registration.open' => \App\Http\Middleware\EnsureRegistrationOpen::class,
         'main.admin' => \App\Http\Middleware\EnsureMainAdmin::class,
+        'teacher.scope.approved' => \App\Http\Middleware\EnsureTeacherScopeApproved::class,
         'throttle.strict' => \Illuminate\Routing\Middleware\ThrottleRequests::class.':10,1',
         'endpoint.settings' => \App\Http\Middleware\EnforceEndpointSettings::class,
     ];

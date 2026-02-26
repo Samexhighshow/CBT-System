@@ -1,9 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
-import { useTeacherSetup } from './hooks/useTeacherSetup';
 import { useTheme } from './hooks/useTheme';
-import TeacherSubjectAssignmentModal from './components/TeacherSubjectAssignmentModal';
 import { BuildVersionWatcher, ErrorBoundary, GlobalLoadingOverlay, KeyboardShortcutsHelp, OfflineRouteHandler, SyncBootstrap } from './components';
 
 // Pages
@@ -30,19 +28,11 @@ import RequireRole from './middleware/RequireRole';
 import CbtInterfaceApp from './cbt-interface/CbtInterfaceApp';
 
 const App: React.FC = () => {
-  const { showModal, handleComplete, handleSkip } = useTeacherSetup();
-  
   // Initialize theme
   useTheme();
 
   return (
     <>
-      <TeacherSubjectAssignmentModal
-        isOpen={showModal}
-        onClose={handleSkip}
-        onComplete={handleComplete}
-      />
-      
       <ErrorBoundary>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <BuildVersionWatcher />

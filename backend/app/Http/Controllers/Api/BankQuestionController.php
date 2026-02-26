@@ -9,12 +9,18 @@ use App\Models\BankQuestionTag;
 use App\Models\BankQuestionVersion;
 use App\Models\Subject;
 use App\Models\SchoolClass;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 
 class BankQuestionController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
     private array $types = ['multiple_choice','multiple_select','true_false','short_answer','long_answer','file_upload'];
     private array $difficulties = ['Easy','Medium','Hard'];
     private array $statuses = ['Draft','Pending Review','Active','Inactive','Archived'];
@@ -53,6 +59,26 @@ class BankQuestionController extends Controller
             ->orderBy($sortBy, $sortOrder)
             ->when($sortBy !== 'id', fn($q) => $q->orderBy('id', 'desc'));
 
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $user = $request->user();
+            $subjectIds = $this->roleScopeService->scopedSubjectIds($user);
+            $classLevels = $this->roleScopeService->scopedClassLevels($user);
+
+            if (empty($subjectIds) && empty($classLevels)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where(function ($q) use ($subjectIds, $classLevels) {
+                    if (!empty($subjectIds)) {
+                        $q->orWhereIn('subject_id', $subjectIds);
+                    }
+                    if (!empty($classLevels)) {
+                        $q->orWhereIn('class_level', $classLevels)
+                            ->orWhereIn('class_level', array_map('strtoupper', $classLevels));
+                    }
+                });
+            }
+        }
+
         $perPage = max(1, min(200, (int) ($request->get('per_page', 10))));
         $data = $query->paginate($perPage);
 
@@ -77,6 +103,10 @@ class BankQuestionController extends Controller
     public function show($id)
     {
         $question = BankQuestion::with(['subject', 'options','tags','versions'])->findOrFail($id);
+        if (!$this->roleScopeService->canManageBankQuestion(request()->user(), $question)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         return response()->json($question);
     }
 
@@ -105,6 +135,16 @@ class BankQuestionController extends Controller
                 'message' => 'Subject does not match the selected class level',
                 'errors' => ['class_level' => ["Subject '{$subject->name}' is not available for class '{$validated['class_level']}'."]],
             ], 422);
+        }
+
+        if (
+            !$this->roleScopeService->canAccessSubjectClass(
+                $request->user(),
+                (int) $validated['subject_id'],
+                (string) $validated['class_level']
+            )
+        ) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
         return DB::transaction(function () use ($validated, $request) {
@@ -158,6 +198,10 @@ class BankQuestionController extends Controller
     public function update(Request $request, $id)
     {
         $question = BankQuestion::findOrFail($id);
+
+        if (!$this->roleScopeService->canManageBankQuestion($request->user(), $question)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $validated = $request->validate([
             'question_text' => ['sometimes','string','max:2000'],
@@ -236,6 +280,10 @@ class BankQuestionController extends Controller
     public function destroy($id)
     {
         $q = BankQuestion::findOrFail($id);
+        if (!$this->roleScopeService->canManageBankQuestion(request()->user(), $q)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         // Hard guard: prevent deleting Active or Archived questions
         if (in_array($q->status, ['Active','Archived'])) {
             return response()->json([
@@ -252,6 +300,9 @@ class BankQuestionController extends Controller
     public function duplicate($id)
     {
         $original = BankQuestion::with(['options', 'tags'])->findOrFail($id);
+        if (!$this->roleScopeService->canManageBankQuestion(request()->user(), $original)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
         
         return DB::transaction(function () use ($original) {
             $copy = $original->replicate();
@@ -330,6 +381,13 @@ class BankQuestionController extends Controller
             'ids.*' => ['integer','exists:bank_questions,id'],
             'status' => ['required', Rule::in($this->statuses)],
         ]);
+        $target = BankQuestion::whereIn('id', $validated['ids'])->get();
+        foreach ($target as $question) {
+            if (!$this->roleScopeService->canManageBankQuestion($request->user(), $question)) {
+                return response()->json(['message' => 'Forbidden: one or more questions are outside your role scope.'], 403);
+            }
+        }
+
         BankQuestion::whereIn('id', $validated['ids'])->update(['status' => $validated['status']]);
         return response()->json(['updated' => count($validated['ids'])]);
     }
@@ -340,6 +398,13 @@ class BankQuestionController extends Controller
             'ids' => ['required','array','min:1'],
             'ids.*' => ['integer','exists:bank_questions,id'],
         ]);
+        $target = BankQuestion::whereIn('id', $validated['ids'])->get();
+        foreach ($target as $question) {
+            if (!$this->roleScopeService->canManageBankQuestion($request->user(), $question)) {
+                return response()->json(['message' => 'Forbidden: one or more questions are outside your role scope.'], 403);
+            }
+        }
+
         // Block deletion of Active/Archived
         $blocked = BankQuestion::whereIn('id', $validated['ids'])
             ->whereIn('status', ['Active','Archived'])

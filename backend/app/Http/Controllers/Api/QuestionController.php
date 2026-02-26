@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateQuestionRequest;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\Exam;
+use App\Services\RoleScopeService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,11 @@ use App\Imports\QuestionsImport;
 
 class QuestionController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
     /**
      * PHASE 3: Enhanced Question Controller
      * Support for 14 comprehensive question types
@@ -44,6 +50,12 @@ class QuestionController extends Controller
     public function index(Request $request)
     {
         $query = Question::with(['exam', 'options', 'tags']);
+
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $query->whereHas('exam', function ($examQuery) use ($request) {
+                $this->roleScopeService->applyExamScope($examQuery, $request->user());
+            });
+        }
 
         // Filter by exam
         if ($request->has('exam_id')) {
@@ -147,6 +159,9 @@ class QuestionController extends Controller
         
         // Get exam and validate it's open for editing
         $exam = Exam::findOrFail($validated['exam_id']);
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
         
         // Validate exam can accept this question
         $examErrors = $exam->validateQuestionAddition($validated['marks']);
@@ -244,6 +259,9 @@ class QuestionController extends Controller
         
         // Get exam and validate it's open for editing
         $exam = $question->exam;
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         // Check if exam is closed - this should always be validated
         if ($exam->isClosed()) {
@@ -748,6 +766,9 @@ class QuestionController extends Controller
     {
         $question = Question::findOrFail($id);
         $exam = $question->exam;
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         // Check if exam is closed
         if ($exam->isClosed()) {

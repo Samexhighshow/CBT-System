@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AnnouncementsCarousel, Card } from '../../components';
+import { AnnouncementsCarousel, Card, WelcomeBanner } from '../../components';
 import { api } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import { getCurrentStudentProfile, CurrentStudentProfile } from './studentData';
 
 interface DashboardStats {
@@ -30,6 +31,7 @@ interface CompiledPreview {
 
 const StudentOverview: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [student, setStudent] = useState<CurrentStudentProfile | null>(null);
@@ -50,7 +52,7 @@ const StudentOverview: React.FC = () => {
 
         const [statsResult, compiledResult] = await Promise.allSettled([
           api.get(`/analytics/student/${profile.id}/dashboard`),
-          api.get(`/results/student/${profile.id}`, {
+          api.get('/results/me', {
             params: { limit: 100 },
           }),
         ]);
@@ -139,14 +141,18 @@ const StudentOverview: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold text-slate-900">Student Overview</h1>
-        <p className="text-sm text-slate-600">
-          {student
-            ? `Welcome, ${student.first_name || 'Student'} (${student.registration_number || 'No Reg No'})`
-            : 'Welcome back. Here is your academic dashboard.'}
-        </p>
-      </div>
+      {/* Enhanced Welcome Banner */}
+      <WelcomeBanner
+        user={user}
+        portalTitle="Student Portal"
+        subtitle={
+          student
+            ? `${student.registration_number || 'Student'} • ${student.class_level || ''} ${student.department?.name ? '• ' + student.department.name : ''}`
+            : 'Welcome back. Here is your academic dashboard.'
+        }
+        gradientClass="bg-gradient-to-r from-cyan-500 to-blue-600"
+        icon="bx-book-reader"
+      />
 
       <AnnouncementsCarousel limit={5} autoScrollInterval={7000} />
 

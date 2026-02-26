@@ -8,6 +8,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -42,4 +43,9 @@ class User extends Authenticatable implements MustVerifyEmail
         'offline_login_enabled' => 'boolean',
         'must_change_password' => 'boolean',
     ];
+
+    public function roleScopes(): HasMany
+    {
+        return $this->hasMany(RoleScope::class);
+    }
 }

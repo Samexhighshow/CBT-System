@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card } from '../../components';
+import { Card, WelcomeBanner } from '../../components';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -40,6 +40,9 @@ const parseExamDateValue = (value: unknown): Date | null => {
 
 const getExamStartDate = (exam: any): Date | null =>
   parseExamDateValue(exam?.start_datetime ?? exam?.start_time ?? exam?.date ?? exam?.exam_date);
+
+const getExamEffectiveStatus = (exam: any): string =>
+  String(exam?.effective_status || exam?.status || '').toLowerCase();
 
 const formatExamStartTime = (exam: any, startDate: Date | null): string => {
   if (startDate) return startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -117,7 +120,7 @@ const AdminOverview: React.FC = () => {
           if (!isInWindow) return false;
 
           const isPublished = Boolean(exam.published ?? exam.is_published);
-          const status = String(exam.status || '').toLowerCase();
+          const status = getExamEffectiveStatus(exam);
           const isEligibleStatus = status === '' || status === 'scheduled' || status === 'active';
           return isPublished && isEligibleStatus;
         })
@@ -135,22 +138,13 @@ const AdminOverview: React.FC = () => {
 
   return (
     <div className="app-shell section-shell">
-      {/* Header */}
-      <div className="mb-5">
-        <h1
-          className={
-            `text-2xl md:text-3xl font-bold mb-1 ` +
-            (user?.name?.toLowerCase() === 'maximus'
-              ? 'text-blue-600'
-              : user?.name?.toLowerCase() === 'mavis'
-              ? 'bg-gradient-to-r from-yellow-400 to-blue-500 bg-clip-text text-transparent'
-              : 'text-gray-900')
-          }
-        >
-          {user?.name ?? 'Admin'}
-        </h1>
-        <p className="text-sm md:text-base text-gray-600">Welcome back! Overview of your system.</p>
-      </div>
+      {/* Enhanced Welcome Banner */}
+      <WelcomeBanner
+        user={user}
+        subtitle="Welcome back! Here's your system overview."
+        gradientClass="bg-gradient-to-r from-indigo-600 to-blue-500"
+        icon="bx-chart"
+      />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -268,7 +262,14 @@ const AdminOverview: React.FC = () => {
       {/* Upcoming Exams Section */}
       <div className="mt-6">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl md:text-2xl font-bold text-gray-900">Upcoming Exams (Next 7 Days)</h2>
+          <div>
+            <h2 className="text-xl md:text-2xl font-bold text-gray-900">Upcoming Exams (Next 7 Days)</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {upcomingExams.length > 0
+                ? `${upcomingExams.length} scheduled exam${upcomingExams.length > 1 ? 's' : ''} in this window`
+                : 'No exams currently scheduled in this window'}
+            </p>
+          </div>
           <button
             onClick={() => navigate('/admin/exams')}
             className="text-blue-600 text-sm font-medium hover:text-blue-700 flex items-center space-x-1"
@@ -278,10 +279,20 @@ const AdminOverview: React.FC = () => {
           </button>
         </div>
         {upcomingExams.length === 0 ? (
-          <Card className="panel-compact">
+          <Card className="panel-compact bg-gradient-to-r from-slate-50 to-blue-50 border border-blue-100">
             <div className="text-center py-8 text-gray-500">
-              <i className='bx bx-calendar-x text-4xl mb-2'></i>
-              <p className="text-sm">No upcoming exams scheduled for the next 7 days</p>
+              <div className="mx-auto mb-3 h-14 w-14 rounded-full bg-white border border-blue-100 flex items-center justify-center">
+                <i className='bx bx-calendar-x text-3xl text-blue-500'></i>
+              </div>
+              <p className="text-sm font-medium text-gray-700">No upcoming exams scheduled for the next 7 days</p>
+              <p className="text-xs text-gray-500 mt-1">Create a new exam to keep your assessment pipeline active.</p>
+              <button
+                onClick={() => navigate('/admin/exams')}
+                className="mt-3 inline-flex items-center space-x-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                <span>Go to Exam Management</span>
+                <i className='bx bx-right-arrow-alt'></i>
+              </button>
             </div>
           </Card>
         ) : (
@@ -289,32 +300,54 @@ const AdminOverview: React.FC = () => {
             {upcomingExams.map((exam) => (
               <Card
                 key={exam.id}
-                className="panel-compact cursor-pointer hover:shadow-lg transition-all"
+                className="panel-compact cursor-pointer border border-slate-200 hover:border-blue-200 hover:shadow-lg transition-all"
                 onClick={() => navigate(`/admin/exams/${exam.id}`)}
               >
                 <div className="flex items-start space-x-3">
-                  <div className="bg-blue-500 text-white p-2 rounded-lg flex items-center justify-center w-12 h-12 flex-shrink-0">
+                  <div className="bg-gradient-to-br from-blue-500 to-indigo-500 text-white rounded-xl flex items-center justify-center w-12 h-12 flex-shrink-0 shadow-sm">
                     <i className="bx bx-book-content text-xl"></i>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-gray-900 truncate">{exam.title}</h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-gray-900 truncate">{exam.title}</h3>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 whitespace-nowrap">
+                        {exam.class_level || 'All Classes'}
+                      </span>
+                    </div>
                     <p className="text-xs text-gray-600 mt-0.5">{exam.subject?.name || exam.subject_name || 'No Subject'}</p>
-                    <div className="flex items-center space-x-2 mt-2 text-xs text-gray-500">
-                      <div className="flex items-center space-x-1">
-                        <i className="bx bx-calendar text-sm"></i>
-                        <span>{exam._startDate ? exam._startDate.toLocaleDateString() : 'No Date'}</span>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md bg-slate-50 border border-slate-100 px-2 py-1 text-gray-600">
+                        <div className="flex items-center space-x-1">
+                          <i className="bx bx-calendar text-sm"></i>
+                          <span className="font-medium">Date</span>
+                        </div>
+                        <p className="text-gray-700 mt-0.5 truncate">{exam._startDate ? exam._startDate.toLocaleDateString() : 'No Date'}</p>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <i className="bx bx-time text-sm"></i>
-                        <span>{formatExamStartTime(exam, exam._startDate ?? null)}</span>
+                      <div className="rounded-md bg-slate-50 border border-slate-100 px-2 py-1 text-gray-600">
+                        <div className="flex items-center space-x-1">
+                          <i className="bx bx-time text-sm"></i>
+                          <span className="font-medium">Time</span>
+                        </div>
+                        <p className="text-gray-700 mt-0.5 truncate">{formatExamStartTime(exam, exam._startDate ?? null)}</p>
                       </div>
                     </div>
-                    <div className="mt-2">
+                    <div className="mt-2 flex items-center justify-between">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        (exam.published ?? exam.is_published) ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        getExamEffectiveStatus(exam) === 'active'
+                          ? 'bg-green-100 text-green-700'
+                          : getExamEffectiveStatus(exam) === 'scheduled'
+                          ? 'bg-blue-100 text-blue-700'
+                          : getExamEffectiveStatus(exam) === 'completed'
+                          ? 'bg-purple-100 text-purple-700'
+                          : getExamEffectiveStatus(exam) === 'cancelled'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-gray-100 text-gray-700'
                       }`}>
-                        {(exam.published ?? exam.is_published) ? 'Published' : 'Draft'}
+                        {getExamEffectiveStatus(exam)
+                          ? getExamEffectiveStatus(exam).charAt(0).toUpperCase() + getExamEffectiveStatus(exam).slice(1)
+                          : 'Draft'}
                       </span>
+                      <span className="text-[11px] text-gray-500">Tap to view details</span>
                     </div>
                   </div>
                 </div>

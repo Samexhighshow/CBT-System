@@ -3,12 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\CbtSubject;
-use App\Models\TeacherSubject;
+use App\Models\RoleScope;
+use App\Models\SchoolClass;
+use App\Models\Subject;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 
 class CbtSubjectController extends Controller
 {
+    public function __construct(private readonly RoleScopeService $roleScopeService)
+    {
+    }
+
     // List subjects (teacher sees only assigned, admin sees all)
     public function index(Request $request)
     {
@@ -21,18 +27,36 @@ class CbtSubjectController extends Controller
             // Admin sees all subjects
             $subjects = CbtSubject::with('owner')->get();
         } else {
-            // Teacher: check if they have assigned subjects
-            $hasAssignedSubjects = TeacherSubject::where('teacher_id', $user->id)->exists();
-            
-            if ($hasAssignedSubjects) {
-                // Return only their assigned subjects
-                $subjectIds = TeacherSubject::where('teacher_id', $user->id)
-                    ->pluck('cbt_subject_id');
-                $subjects = CbtSubject::whereIn('id', $subjectIds)->with('owner')->get();
+            $subjectIds = $this->roleScopeService->scopedSubjectIds($user);
+            $classIds = $this->roleScopeService->scopedClassIds($user);
+            $classNames = SchoolClass::query()->whereIn('id', $classIds)->pluck('name')->map(fn ($x) => strtolower(trim((string) $x)))->all();
+
+            if (empty($subjectIds) && empty($classIds)) {
+                $subjects = collect();
             } else {
-                // New teacher with no assignments - show all subjects for selection
-                $subjects = CbtSubject::with('owner')->get();
+                $subjectNames = Subject::query()->whereIn('id', $subjectIds)->pluck('name')->map(fn ($x) => strtolower(trim((string) $x)))->all();
+                $subjects = CbtSubject::query()
+                    ->where(function ($query) use ($subjectNames, $classNames) {
+                        if (!empty($subjectNames)) {
+                            foreach ($subjectNames as $name) {
+                                $query->orWhereRaw('LOWER(subject_name) = ?', [$name]);
+                            }
+                        }
+                        if (!empty($classNames)) {
+                            foreach ($classNames as $className) {
+                                $query->orWhereRaw('LOWER(class_level) = ?', [$className]);
+                            }
+                        }
+                    })
+                    ->with('owner')
+                    ->get();
             }
+        }
+
+        // Keep admin view seeded even when CBT table is empty.
+        if ($subjects->isEmpty() && $isAdmin) {
+            $this->hydrateFromAcademicSubjects((int) $user->id);
+            $subjects = CbtSubject::with('owner')->get();
         }
 
         return response()->json(['status' => 'ok', 'subjects' => $subjects]);
@@ -68,22 +92,44 @@ class CbtSubjectController extends Controller
             'class_category' => 'required|in:junior,senior',
         ]);
 
-        $assignment = TeacherSubject::updateOrCreate(
-            [
-                'teacher_id' => $validated['teacher_id'],
-                'cbt_subject_id' => $validated['cbt_subject_id'],
-                'class_category' => $validated['class_category'],
-            ]
-        );
+        $cbtSubject = CbtSubject::findOrFail($validated['cbt_subject_id']);
+        $subject = Subject::query()
+            ->whereRaw('LOWER(name) = ?', [strtolower(trim((string) $cbtSubject->subject_name))])
+            ->first();
+        $classPrefix = $validated['class_category'] === 'senior' ? 'SSS' : 'JSS';
+        $classIds = SchoolClass::query()->where('name', 'like', $classPrefix . '%')->pluck('id');
 
-        return response()->json(['status' => 'ok', 'assignment' => $assignment]);
+        foreach ($classIds as $classId) {
+            RoleScope::updateOrCreate(
+                [
+                    'user_id' => (int) $validated['teacher_id'],
+                    'role_name' => 'teacher',
+                    'subject_id' => $subject?->id,
+                    'class_id' => (int) $classId,
+                    'academic_session' => null,
+                    'term' => null,
+                ],
+                [
+                    'is_active' => true,
+                    'status' => 'approved',
+                    'requested_by' => $request->user()?->id,
+                    'approved_by' => $request->user()?->id,
+                    'approved_at' => now(),
+                    'rejected_reason' => null,
+                ]
+            );
+        }
+
+        return response()->json(['status' => 'ok', 'message' => 'Teacher scope assigned']);
     }
 
     // Get teacher's assigned subjects
     public function teacherSubjects(Request $request, int $teacherId)
     {
-        $assignments = TeacherSubject::where('teacher_id', $teacherId)
-            ->with('subject')
+        $assignments = RoleScope::query()
+            ->where('user_id', $teacherId)
+            ->where('role_name', 'teacher')
+            ->with(['subject:id,name,code', 'schoolClass:id,name'])
             ->get();
 
         return response()->json(['status' => 'ok', 'assignments' => $assignments]);
@@ -99,26 +145,71 @@ class CbtSubjectController extends Controller
 
         $teacherId = $request->user()->id;
 
-        // Remove old assignments
-        TeacherSubject::where('teacher_id', $teacherId)->delete();
-
-        // Add new assignments
         foreach ($validated['subject_ids'] as $subjectId) {
             $subject = CbtSubject::find($subjectId);
-            
-            // Determine class category from class_level
-            $classCategory = 'junior'; // default
-            if ($subject && str_contains(strtolower($subject->class_level), 'sss')) {
-                $classCategory = 'senior';
+            if (!$subject) {
+                continue;
             }
-            
-            TeacherSubject::create([
-                'teacher_id' => $teacherId,
-                'cbt_subject_id' => $subjectId,
-                'class_category' => $classCategory,
-            ]);
+
+            $mappedSubject = Subject::query()
+                ->whereRaw('LOWER(name) = ?', [strtolower(trim((string) $subject->subject_name))])
+                ->first();
+            $class = SchoolClass::query()
+                ->whereRaw('LOWER(name) = ?', [strtolower(trim((string) $subject->class_level))])
+                ->first();
+
+            RoleScope::updateOrCreate(
+                [
+                    'user_id' => $teacherId,
+                    'role_name' => 'teacher',
+                    'subject_id' => $mappedSubject?->id,
+                    'class_id' => $class?->id,
+                    'academic_session' => null,
+                    'term' => null,
+                ],
+                [
+                    'is_active' => false,
+                    'status' => 'pending',
+                    'requested_by' => $teacherId,
+                    'approved_by' => null,
+                    'approved_at' => null,
+                    'rejected_reason' => null,
+                ]
+            );
         }
 
-        return response()->json(['status' => 'ok', 'message' => 'Subjects assigned successfully']);
+        return response()->json(['status' => 'ok', 'message' => 'Scope requests submitted for approval']);
+    }
+
+    private function hydrateFromAcademicSubjects(int $ownerId): void
+    {
+        $academicSubjects = Subject::query()
+            ->with('schoolClass:id,name')
+            ->where(function ($query) {
+                $query->whereNull('is_active')->orWhere('is_active', true);
+            })
+            ->get(['id', 'name', 'class_id', 'class_level']);
+
+        foreach ($academicSubjects as $subject) {
+            $classLevel = trim((string) ($subject->class_level ?: ($subject->schoolClass?->name ?? '')));
+            if ($classLevel === '') {
+                continue;
+            }
+
+            CbtSubject::query()->firstOrCreate(
+                [
+                    'subject_name' => (string) $subject->name,
+                    'class_level' => $classLevel,
+                ],
+                [
+                    'owner_id' => $ownerId,
+                    'shuffle_questions' => false,
+                    'questions_required' => 30,
+                    'total_marks' => 70,
+                    'duration_minutes' => 60,
+                    'is_active' => true,
+                ]
+            );
+        }
     }
 }

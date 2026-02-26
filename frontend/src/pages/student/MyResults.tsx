@@ -59,7 +59,6 @@ interface CompiledResultRow {
 const MyResults: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [studentId, setStudentId] = useState<number | null>(null);
   const [results, setResults] = useState<ResultRow[]>([]);
   const [compiledResults, setCompiledResults] = useState<CompiledResultRow[]>([]);
   const [stats, setStats] = useState<ResultStats>({
@@ -74,10 +73,9 @@ const MyResults: React.FC = () => {
       setLoading(true);
 
       const student = await getCurrentStudentProfile();
-      setStudentId(student.id);
 
       const [resultsRes, statsRes] = await Promise.allSettled([
-        api.get(`/results/student/${student.id}`, { params: { limit: 100 } }),
+        api.get('/results/me', { params: { limit: 100 } }),
         api.get(`/analytics/student/${student.id}/dashboard`),
       ]);
 
@@ -145,14 +143,12 @@ const MyResults: React.FC = () => {
   }, [compiledResults, search]);
 
   const downloadPdf = () => {
-    if (!studentId) return;
-    window.open(`${API_URL}/reports/student/${studentId}/pdf`, '_blank');
+    window.open(`${API_URL}/reports/me/pdf`, '_blank');
     showSuccess('Downloading PDF report...');
   };
 
   const downloadExcel = () => {
-    if (!studentId) return;
-    window.open(`${API_URL}/reports/student/${studentId}/excel`, '_blank');
+    window.open(`${API_URL}/reports/me/excel`, '_blank');
     showSuccess('Downloading Excel report...');
   };
 

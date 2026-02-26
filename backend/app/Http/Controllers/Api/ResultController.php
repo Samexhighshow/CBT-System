@@ -9,16 +9,50 @@ use App\Models\Exam;
 use App\Models\Question;
 use App\Models\SystemSetting;
 use App\Services\GradingService;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Http\JsonResponse;
 
 class ResultController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
+    public function getMyResults(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $student = $this->resolveAuthStudent($user);
+
+        if (!$student) {
+            return response()->json(['message' => 'Student profile not found for this account.'], 404);
+        }
+
+        return $this->getStudentResults($request, (int) $student->id);
+    }
+
     /**
      * Get results for a specific student
      */
     public function getStudentResults(Request $request, $studentId)
     {
+        $user = $request->user();
+        $isStudent = $this->isStudentRole($user);
+        $isStaff = $this->isStaffRole($user);
+
+        if (!$isStudent && !$isStaff) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if ($isStudent) {
+            $authStudent = $this->resolveAuthStudent($user);
+            if (!$authStudent || (int) $authStudent->id !== (int) $studentId) {
+                return response()->json(['message' => 'You can only access your own results.'], 403);
+            }
+        }
+
         $student = Student::findOrFail($studentId);
         $grading = $this->gradingService();
         
@@ -26,6 +60,12 @@ class ResultController extends Controller
             ->where('student_id', $studentId)
             ->whereIn('status', ['completed', 'submitted'])
             ->orderBy('completed_at', 'desc');
+
+        if ($isStaff && $this->roleScopeService->isScopedActor($user)) {
+            $query->whereHas('exam', function ($examQuery) use ($user) {
+                $this->roleScopeService->applyExamScope($examQuery, $user);
+            });
+        }
 
         $perPage = $request->input('limit', 15);
         $attempts = $query->paginate($perPage);
@@ -38,7 +78,34 @@ class ResultController extends Controller
             ->mapWithKeys(fn (int $id) => [$id => $this->buildExamRankingMap($id)])
             ->all();
 
-        $results = $attempts->getCollection()->map(function($attempt) use ($grading, $examRankingMaps) {
+        $results = $attempts->getCollection()->map(function($attempt) use ($grading, $examRankingMaps, $isStudent) {
+            if ($isStudent && !((bool) ($attempt->exam?->results_released ?? false))) {
+                return [
+                    'id' => $attempt->id,
+                    'exam_title' => $attempt->exam->title,
+                    'subject' => $attempt->exam->subject->name,
+                    'assessment_type' => $attempt->exam->assessment_type,
+                    'academic_session' => $this->resolveExamSession($attempt->exam),
+                    'term' => $this->resolveExamTerm($attempt->exam),
+                    'status' => 'not_released',
+                    'message' => 'Results have not been released yet.',
+                    'score' => null,
+                    'total_marks' => null,
+                    'percentage' => null,
+                    'passing_marks' => null,
+                    'passed' => null,
+                    'grade' => null,
+                    'position_grade' => null,
+                    'rank_position' => null,
+                    'rank_label' => null,
+                    'started_at' => $attempt->started_at,
+                    'completed_at' => $attempt->completed_at,
+                    'duration' => ($attempt->started_at && $attempt->completed_at)
+                        ? $attempt->started_at->diffInMinutes($attempt->completed_at)
+                        : null,
+                ];
+            }
+
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
             $safeTotal = max(1, (float) $totalMarks);
@@ -72,10 +139,20 @@ class ResultController extends Controller
 
         // IMPORTANT: compile against the student's full completed history,
         // not only the current paginated page.
-        $allCompletedAttempts = ExamAttempt::with(['exam.subject'])
+        $allCompletedAttemptsQuery = ExamAttempt::with(['exam.subject'])
             ->where('student_id', $studentId)
-            ->whereIn('status', ['completed', 'submitted'])
-            ->get();
+            ->whereIn('status', ['completed', 'submitted']);
+        if ($isStaff && $this->roleScopeService->isScopedActor($user)) {
+            $allCompletedAttemptsQuery->whereHas('exam', function ($examQuery) use ($user) {
+                $this->roleScopeService->applyExamScope($examQuery, $user);
+            });
+        }
+        if ($isStudent) {
+            $allCompletedAttemptsQuery->whereHas('exam', function ($q) {
+                $q->where('results_released', true);
+            });
+        }
+        $allCompletedAttempts = $allCompletedAttemptsQuery->get();
 
         $termCompilation = $this->buildTermCompilationForStudent($allCompletedAttempts);
         $compiledResults = $this->flattenCompiledResults($termCompilation);
@@ -99,6 +176,10 @@ class ResultController extends Controller
     public function getExamResults(Request $request, $examId)
     {
         $exam = Exam::findOrFail($examId);
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $grading = $this->gradingService();
         
         $query = ExamAttempt::with(['student.department'])
@@ -156,6 +237,12 @@ class ResultController extends Controller
     public function getAnalytics(Request $request)
     {
         $query = ExamAttempt::where('status', 'completed');
+        $user = $request->user();
+        if ($this->roleScopeService->isScopedActor($user)) {
+            $query->whereHas('exam', function ($examQuery) use ($user) {
+                $this->roleScopeService->applyExamScope($examQuery, $user);
+            });
+        }
 
         // Filter by exam
         if ($request->has('exam_id')) {
@@ -273,12 +360,37 @@ class ResultController extends Controller
      */
     public function getAttemptDetails($attemptId)
     {
+        $requestUser = request()->user();
+        $isStudent = $this->isStudentRole($requestUser);
+        $isStaff = $this->isStaffRole($requestUser);
+        if (!$isStudent && !$isStaff) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $grading = $this->gradingService();
         $attempt = ExamAttempt::with([
             'exam.subject',
             'student.department',
             'examAnswers.question.options'
         ])->findOrFail($attemptId);
+
+        if ($isStaff && !$this->roleScopeService->canManageExam($requestUser, $attempt->exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        if ($isStudent) {
+            $authStudent = $this->resolveAuthStudent($requestUser);
+            if (!$authStudent || (int) $authStudent->id !== (int) $attempt->student_id) {
+                return response()->json(['message' => 'You can only access your own attempt results.'], 403);
+            }
+
+            if (!(bool) ($attempt->exam?->results_released ?? false)) {
+                return response()->json([
+                    'status' => 'not_released',
+                    'message' => 'Results have not been released yet.',
+                ], 403);
+            }
+        }
 
         $questions = $attempt->examAnswers->map(function($answer) {
             $correctOption = $answer->question->options->where('is_correct', true)->first();
@@ -411,6 +523,40 @@ class ResultController extends Controller
     private function gradingService(): GradingService
     {
         return app(GradingService::class);
+    }
+
+    private function resolveAuthStudent($user): ?Student
+    {
+        if (!$user) {
+            return null;
+        }
+
+        return Student::query()
+            ->where('email', (string) $user->email)
+            ->first();
+    }
+
+    private function roleNamesLower($user): array
+    {
+        if (!$user) {
+            return [];
+        }
+
+        return collect($user->roles ?? [])
+            ->map(fn ($role) => strtolower((string) ($role->name ?? $role)))
+            ->values()
+            ->all();
+    }
+
+    private function isStudentRole($user): bool
+    {
+        return in_array('student', $this->roleNamesLower($user), true);
+    }
+
+    private function isStaffRole($user): bool
+    {
+        $roles = $this->roleNamesLower($user);
+        return count(array_intersect($roles, ['admin', 'main admin', 'teacher'])) > 0;
     }
 
     private function buildTermCompilationForStudent(Collection $attempts): array

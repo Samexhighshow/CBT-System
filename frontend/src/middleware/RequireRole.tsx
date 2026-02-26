@@ -9,7 +9,12 @@ interface Props {
 const RequireRole: React.FC<Props> = ({ roles, children }) => {
   const location = useLocation();
   const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
+  let user: any = null;
+  try {
+    user = userStr ? JSON.parse(userStr) : null;
+  } catch {
+    user = null;
+  }
 
   // Handle both role object array and simple role string
   const allowedRoles = roles.map((r) => String(r).toLowerCase());

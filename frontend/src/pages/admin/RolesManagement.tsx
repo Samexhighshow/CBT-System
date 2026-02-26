@@ -9,6 +9,9 @@ interface User { id: number; name: string; email: string; roles?: Role[] }
 interface Page { id: number; name: string; path: string; category?: string; permission_name: string; }
 type RolePageMap = Record<number, number[]>;
 
+const isStudentAccount = (user: User): boolean =>
+  (user.roles || []).some((role) => String(role?.name || '').toLowerCase() === 'student');
+
 const RolesManagement: React.FC = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -57,6 +60,12 @@ const RolesManagement: React.FC = () => {
   useEffect(() => { loadData(); }, []);
 
   const assignRole = async (userId: number, roleName: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (target && isStudentAccount(target)) {
+      showError('Student accounts cannot be assigned admin roles from this page.');
+      return;
+    }
+
     try {
       await api.post(`/admin/users/${userId}/roles`, { role: roleName });
       showSuccess('Role assigned');
@@ -133,17 +142,21 @@ const RolesManagement: React.FC = () => {
                       <p className="text-xs text-gray-500">Roles: {u.roles?.map(r => r.name).join(', ') || 'None'}</p>
                     </div>
                     <div>
-                      <select
-                        className="border rounded px-2 py-1 text-xs"
-                        onChange={(e) => assignRole(u.id, e.target.value)}
-                        defaultValue=""
-                        aria-label={`Assign role to ${u.name}`}
-                      >
-                        <option value="" disabled>Assign role</option>
-                        {roles.map(r => (
-                          <option key={r.id} value={r.name}>{r.name}</option>
-                        ))}
-                      </select>
+                      {isStudentAccount(u) ? (
+                        <span className="text-xs text-gray-500">Not applicable for student accounts</span>
+                      ) : (
+                        <select
+                          className="border rounded px-2 py-1 text-xs"
+                          onChange={(e) => assignRole(u.id, e.target.value)}
+                          defaultValue=""
+                          aria-label={`Assign role to ${u.name}`}
+                        >
+                          <option value="" disabled>Assign role</option>
+                          {roles.map(r => (
+                            <option key={r.id} value={r.name}>{r.name}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
                 </div>

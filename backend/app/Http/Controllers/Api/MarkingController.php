@@ -11,6 +11,7 @@ use App\Models\ExamAttemptEvent;
 use App\Models\ExamAttemptSession;
 use App\Models\Question;
 use App\Services\GradingService;
+use App\Services\RoleScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -19,15 +20,18 @@ use Illuminate\Support\Facades\DB;
 class MarkingController extends Controller
 {
     public function __construct(
-        private readonly GradingService $gradingService
+        private readonly GradingService $gradingService,
+        private readonly RoleScopeService $roleScopeService
     ) {
     }
 
     public function exams(): JsonResponse
     {
-        $exams = Exam::with(['subject:id,name', 'schoolClass:id,name'])
-            ->orderByDesc('created_at')
-            ->get()
+        $query = Exam::with(['subject:id,name', 'schoolClass:id,name'])
+            ->orderByDesc('created_at');
+        $this->roleScopeService->applyExamScope($query, request()->user());
+
+        $exams = $query->get()
             ->map(function (Exam $exam) {
                 $attempts = ExamAttempt::where('exam_id', $exam->id)
                     ->whereNotIn('status', ['voided'])
@@ -53,9 +57,16 @@ class MarkingController extends Controller
     public function attempts(int $examId): JsonResponse
     {
         $exam = Exam::findOrFail($examId);
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         $rankings = $this->attemptRankingMapForExam($examId);
 
-        $attempts = ExamAttempt::with('student:id,registration_number,first_name,last_name,class_level')
+        $attempts = ExamAttempt::with([
+                'student:id,registration_number,first_name,last_name,class_level',
+                'exam:id,assessment_type',
+            ])
             ->where('exam_id', $examId)
             ->whereNotIn('status', ['voided'])
             ->orderByRaw("CASE WHEN status = 'submitted' THEN 0 ELSE 1 END")
@@ -80,8 +91,10 @@ class MarkingController extends Controller
                     'rank_position' => $rank,
                     'rank_label' => $this->gradingService->ordinalPosition($rank),
                     'switch_count' => $attempt->switch_count,
+                    'started_at' => $attempt->started_at?->toIso8601String(),
                     'submitted_at' => $attempt->submitted_at?->toIso8601String(),
                     'completed_at' => $attempt->completed_at?->toIso8601String(),
+                    'assessment_type' => $attempt->exam?->assessment_type,
                     'student' => [
                         'id' => $attempt->student?->id,
                         'registration_number' => $attempt->student?->registration_number,
@@ -145,6 +158,10 @@ class MarkingController extends Controller
             'examAnswers.question.options',
             'examAnswers.option',
         ])->findOrFail($attemptId);
+
+        if (!$this->roleScopeService->canManageExam(request()->user(), $attempt->exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $questionIds = collect($attempt->question_order ?: []);
         if ($questionIds->isEmpty()) {
@@ -244,6 +261,17 @@ class MarkingController extends Controller
         ]);
 
         $attempt = ExamAttempt::with('examAnswers')->findOrFail($attemptId);
+        $exam = Exam::findOrFail((int) $attempt->exam_id);
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        if ($attempt->status === 'completed') {
+            return response()->json([
+                'message' => 'Cannot modify scores for a finalized attempt.',
+            ], 422);
+        }
+
         $question = Question::with('bankQuestion:id,marks,question_type')->findOrFail($questionId);
 
         $answer = ExamAnswer::where('attempt_id', $attemptId)
@@ -276,6 +304,10 @@ class MarkingController extends Controller
     public function finalize(int $attemptId): JsonResponse
     {
         $attempt = ExamAttempt::findOrFail($attemptId);
+        $exam = Exam::findOrFail((int) $attempt->exam_id);
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $result = $this->recalculateAttemptScore($attempt, true);
 
@@ -292,18 +324,38 @@ class MarkingController extends Controller
         ]);
     }
 
-    public function clearAttempt(int $attemptId): JsonResponse
+    public function clearAttempt(Request $request, int $attemptId): JsonResponse
     {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+            'admin_override' => 'nullable|boolean',
+        ]);
+
         $attempt = ExamAttempt::with(['student:id,registration_number,first_name,last_name', 'exam:id,title'])
             ->findOrFail($attemptId);
+        if (!$this->roleScopeService->canManageExam($request->user(), $attempt->exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $adminOverride = (bool) ($validated['admin_override'] ?? false);
+        if ($attempt->status === 'completed' && !$adminOverride) {
+            return response()->json([
+                'message' => 'Finalized attempts can only be cleared with admin override.',
+            ], 422);
+        }
 
         DB::transaction(function () use ($attempt) {
             ExamAnswer::where('attempt_id', $attempt->id)->delete();
             ExamAttemptSession::where('attempt_id', $attempt->id)->delete();
             ExamAttemptEvent::where('attempt_id', $attempt->id)->delete();
-            $this->logAttemptAction($attempt, 'reset_attempt');
             $attempt->delete();
         });
+
+        $this->logAttemptAction($attempt, 'reset_attempt', [
+            'reason' => (string) $validated['reason'],
+            'admin_override' => $adminOverride,
+            'previous_status' => $attempt->status,
+        ]);
 
         return response()->json([
             'message' => 'Attempt cleared successfully. Student can restart with a fresh attempt.',
@@ -317,10 +369,17 @@ class MarkingController extends Controller
         ]);
     }
 
-    public function forceSubmit(int $attemptId): JsonResponse
+    public function forceSubmit(Request $request, int $attemptId): JsonResponse
     {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+        ]);
+
         $attempt = ExamAttempt::with(['student:id,registration_number,first_name,last_name', 'exam:id,title'])
             ->findOrFail($attemptId);
+        if (!$this->roleScopeService->canManageExam($request->user(), $attempt->exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $result = $this->recalculateAttemptScore($attempt, true);
         $now = now();
@@ -345,11 +404,18 @@ class MarkingController extends Controller
         ExamAttemptEvent::create([
             'attempt_id' => $attempt->id,
             'event_type' => 'force_submitted_by_admin',
-            'meta_json' => ['source' => 'admin_marking'],
+            'meta_json' => [
+                'source' => 'admin_marking',
+                'reason' => (string) $validated['reason'],
+            ],
             'created_at' => $now,
         ]);
 
-        $this->logAttemptAction($attempt, 'force_submit');
+        $this->logAttemptAction($attempt, 'force_submit', [
+            'reason' => (string) $validated['reason'],
+            'forced_at' => $now->toIso8601String(),
+            'previous_status' => $attempt->status,
+        ]);
 
         return response()->json([
             'message' => 'Attempt force-submitted successfully.',
@@ -361,10 +427,14 @@ class MarkingController extends Controller
     {
         $validated = $request->validate([
             'minutes' => 'required|integer|min:1|max:180',
+            'reason' => 'required|string|max:500',
         ]);
 
         $attempt = ExamAttempt::with(['student:id,registration_number,first_name,last_name', 'exam:id,title'])
             ->findOrFail($attemptId);
+        if (!$this->roleScopeService->canManageExam($request->user(), $attempt->exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $baseEndsAt = $attempt->ends_at ?? now();
         $minutes = (int) $validated['minutes'];
@@ -383,6 +453,7 @@ class MarkingController extends Controller
             'meta_json' => [
                 'minutes' => $minutes,
                 'new_ends_at' => $newEndsAt->toIso8601String(),
+                'reason' => (string) $validated['reason'],
             ],
             'created_at' => now(),
         ]);
@@ -390,6 +461,7 @@ class MarkingController extends Controller
         $this->logAttemptAction($attempt, 'extend_time', [
             'minutes' => $minutes,
             'new_ends_at' => $newEndsAt->toIso8601String(),
+            'reason' => (string) $validated['reason'],
         ]);
 
         return response()->json([
