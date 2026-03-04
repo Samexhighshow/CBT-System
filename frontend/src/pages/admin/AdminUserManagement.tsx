@@ -16,6 +16,7 @@ interface RoleScopeRecord {
   id: number;
   user_id: number;
   role_name?: string | null;
+  status?: 'pending' | 'approved' | 'rejected' | string;
   subject_id?: number | null;
   class_id?: number | null;
   exam_id?: number | null;
@@ -26,6 +27,28 @@ interface RoleScopeRecord {
   subject?: { id: number; name: string; code?: string };
   school_class?: { id: number; name: string };
   exam?: { id: number; title: string };
+  rejected_reason?: string | null;
+}
+
+interface TeacherScopeRequest {
+  batch_id: string;
+  user: { id: number; name: string; email: string };
+  reason: string;
+  requested_at: string;
+  requested_scopes: Array<{
+    id: number;
+    subject_id: number;
+    subject_name: string;
+    class_id: number;
+    class_name: string;
+  }>;
+  current_approved_scopes: Array<{
+    id: number;
+    subject_id: number;
+    subject_name: string;
+    class_id: number;
+    class_name: string;
+  }>;
 }
 
 const hasStudentRole = (user: User): boolean =>
@@ -33,6 +56,25 @@ const hasStudentRole = (user: User): boolean =>
 
 const CORE_ADMIN_ROLE_NAMES = ['Main Admin', 'Admin', 'Teacher'];
 const PROTECTED_ROLE_NAMES = ['Main Admin', 'Student'];
+
+const ROLE_DISPLAY_PRIORITY: Record<string, number> = {
+  'teacher': 0,
+  'admin': 1,
+  'main admin': 2,
+};
+
+const compareRoleNames = (left: string, right: string): number => {
+  const leftKey = String(left || '').trim().toLowerCase();
+  const rightKey = String(right || '').trim().toLowerCase();
+  const leftPriority = ROLE_DISPLAY_PRIORITY[leftKey] ?? 999;
+  const rightPriority = ROLE_DISPLAY_PRIORITY[rightKey] ?? 999;
+
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  return left.localeCompare(right);
+};
 
 const normalizeList = <T,>(payload: any, keys: string[] = []): T[] => {
   if (Array.isArray(payload)) return payload as T[];
@@ -64,12 +106,15 @@ const AdminUserManagement: React.FC = () => {
   const [roleScopes, setRoleScopes] = useState<RoleScopeRecord[]>([]);
   const [roleScopesLoading, setRoleScopesLoading] = useState(false);
   const [roleScopeSaving, setRoleScopeSaving] = useState(false);
-  const [deletingScopeId, setDeletingScopeId] = useState<number | null>(null);
   const [updatingScopeId, setUpdatingScopeId] = useState<number | null>(null);
-  const [scopeStatusFilter, setScopeStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [scopeStatusFilter, setScopeStatusFilter] = useState<'all' | 'approved' | 'rejected'>('all');
+  const [scopeTab, setScopeTab] = useState<'requests' | 'active' | 'assign'>('requests');
   const [scopeSubjects, setScopeSubjects] = useState<ScopeOption[]>([]);
   const [scopeClasses, setScopeClasses] = useState<ScopeOption[]>([]);
   const [scopeExams, setScopeExams] = useState<ScopeOption[]>([]);
+  const [pendingScopeRequests, setPendingScopeRequests] = useState<TeacherScopeRequest[]>([]);
+  const [scopeSearch, setScopeSearch] = useState('');
+  const [editingScopeId, setEditingScopeId] = useState<number | null>(null);
   const [scopeForm, setScopeForm] = useState({
     user_id: '',
     role_name: 'teacher',
@@ -287,7 +332,7 @@ const AdminUserManagement: React.FC = () => {
   const fetchScopeUsers = useCallback(async () => {
     if (!isMainAdmin) return;
     try {
-      const res = await api.get('/users');
+      const res = await api.get('/admin/users');
       const data = (res.data as any).data || res.data || [];
       setScopeUsers(Array.isArray(data) ? data : []);
     } catch {
@@ -299,7 +344,11 @@ const AdminUserManagement: React.FC = () => {
     if (!isMainAdmin) return;
     setRoleScopesLoading(true);
     try {
-      const res = await api.get('/admin/role-scopes', { params: { per_page: 200, status: scopeStatusFilter } });
+      const params: Record<string, any> = { per_page: 200 };
+      if (scopeStatusFilter !== 'all') {
+        params.status = scopeStatusFilter;
+      }
+      const res = await api.get('/admin/role-scopes', { params });
       const rows = normalizeList<RoleScopeRecord>(res.data, ['data']);
       setRoleScopes(rows);
     } catch (err: any) {
@@ -309,6 +358,21 @@ const AdminUserManagement: React.FC = () => {
       setRoleScopesLoading(false);
     }
   }, [isMainAdmin, scopeStatusFilter]);
+
+  const loadPendingScopeRequests = useCallback(async () => {
+    if (!isMainAdmin) return;
+    try {
+      const res = await api.get('/admin/teacher-scope-requests');
+      const rows = normalizeList<TeacherScopeRequest>(res.data?.pending_requests ?? res.data, ['pending_requests']);
+      setPendingScopeRequests(rows);
+    } catch (err: any) {
+      const status = Number(err?.response?.status || 0);
+      if (status !== 403 && status !== 404) {
+        showError(err?.response?.data?.message || 'Failed to load scope requests');
+      }
+      setPendingScopeRequests([]);
+    }
+  }, [isMainAdmin]);
 
   const loadScopeOptions = useCallback(async () => {
     if (!isMainAdmin) return;
@@ -333,8 +397,8 @@ const AdminUserManagement: React.FC = () => {
       setScopeSubjects(subjects);
       setScopeClasses(classes);
       setScopeExams(exams);
-    } catch {
-      // silent fallback; form remains usable with free-text role and ids not mandatory
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to load scope options');
       setScopeSubjects([]);
       setScopeClasses([]);
       setScopeExams([]);
@@ -371,8 +435,12 @@ const AdminUserManagement: React.FC = () => {
       options.add(roleName);
     });
 
-    return Array.from(options);
+    return Array.from(options).sort(compareRoleNames);
   }, [roles, isMainAdmin]);
+
+  const sortedRoles = useMemo(() => {
+    return [...roles].sort((a, b) => compareRoleNames(String(a.name || ''), String(b.name || '')));
+  }, [roles]);
 
   const displayRoleModules = useMemo<Record<string, string[]>>(() => {
     const merged: Record<string, string[]> = {};
@@ -399,16 +467,53 @@ const AdminUserManagement: React.FC = () => {
     return merged;
   }, [roleModulesState, roles, availableModules]);
 
+  const sortedDisplayRoleModules = useMemo(() => {
+    return Object.entries(displayRoleModules).sort(([leftRole], [rightRole]) => compareRoleNames(leftRole, rightRole));
+  }, [displayRoleModules]);
+
+  const activeApprovedScopes = useMemo(
+    () => roleScopes.filter((scope) => String(scope.status || '').toLowerCase() === 'approved' && Boolean(scope.is_active)),
+    [roleScopes]
+  );
+
+  const filteredActiveApprovedScopes = useMemo(() => {
+    const query = scopeSearch.trim().toLowerCase();
+    const statusFilteredScopes = roleScopes.filter((scope) => {
+      if (scopeStatusFilter === 'all') return true;
+      return String(scope.status || '').toLowerCase() === scopeStatusFilter;
+    });
+
+    if (!query) return statusFilteredScopes;
+    return statusFilteredScopes.filter((scope) => {
+      const haystack = [
+        scope.user?.name || '',
+        scope.user?.email || '',
+        scope.role_name || '',
+        scope.subject?.name || '',
+        scope.school_class?.name || '',
+        scope.exam?.title || '',
+        scope.term || '',
+        scope.academic_session || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [roleScopes, scopeSearch, scopeStatusFilter]);
+
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => {
     loadRoles();
     loadRolePermissions(); // Load initial permissions from database
   }, [loadRolePermissions, loadRoles]);
   useEffect(() => {
+    if (!isMainAdmin || !showRoleDetails) return;
+
     loadRoleScopes();
     loadScopeOptions();
     fetchScopeUsers();
-  }, [loadRoleScopes, loadScopeOptions, fetchScopeUsers]);
+    loadPendingScopeRequests();
+  }, [isMainAdmin, showRoleDetails, loadRoleScopes, loadScopeOptions, fetchScopeUsers, loadPendingScopeRequests]);
 
   const assignRole = async (userId: number, roleName: string) => {
     const targetUser = users.find((u) => u.id === userId);
@@ -590,31 +695,109 @@ const AdminUserManagement: React.FC = () => {
 
     try {
       setRoleScopeSaving(true);
-      await api.post('/admin/role-scopes', payload);
+      if (editingScopeId) {
+        await api.put(`/admin/role-scopes/${editingScopeId}`, payload);
+      } else {
+        await api.post('/admin/role-scopes', payload);
+      }
       await loadRoleScopes();
       setScopeForm((prev) => ({
         ...prev,
+        user_id: '',
+        role_name: 'teacher',
         subject_id: '',
         class_id: '',
         exam_id: '',
         academic_session: '',
         term: '',
+        is_active: true,
       }));
-      showSuccess('Role scope saved successfully');
+      setEditingScopeId(null);
+      showSuccess(editingScopeId ? 'Role scope updated successfully' : 'Role scope saved successfully');
     } catch (err: any) {
-      showError(err?.response?.data?.message || 'Failed to save role scope');
+      showError(err?.response?.data?.message || (editingScopeId ? 'Failed to update role scope' : 'Failed to save role scope'));
     } finally {
       setRoleScopeSaving(false);
     }
   };
 
-  const approveRoleScope = async (scopeId: number) => {
+  const editRoleScope = (scope: RoleScopeRecord) => {
+    setEditingScopeId(scope.id);
+    setScopeForm({
+      user_id: String(scope.user_id || ''),
+      role_name: String(scope.role_name || 'teacher'),
+      subject_id: scope.subject_id ? String(scope.subject_id) : '',
+      class_id: scope.class_id ? String(scope.class_id) : '',
+      exam_id: scope.exam_id ? String(scope.exam_id) : '',
+      academic_session: scope.academic_session || '',
+      term: scope.term || '',
+      is_active: Boolean(scope.is_active),
+    });
+    setScopeTab('assign');
+  };
+
+  const cancelEditRoleScope = () => {
+    setEditingScopeId(null);
+    setScopeForm({
+      user_id: '',
+      role_name: 'teacher',
+      subject_id: '',
+      class_id: '',
+      exam_id: '',
+      academic_session: '',
+      term: '',
+      is_active: true,
+    });
+  };
+
+  const deleteRoleScope = async (scopeId: number) => {
     if (!isMainAdmin) return;
+
+    const ok = await showConfirm('Delete this scope assignment?');
+    if (!ok) return;
+
     try {
       setUpdatingScopeId(scopeId);
-      await api.post(`/admin/role-scopes/${scopeId}/approve`);
+      await api.delete(`/admin/role-scopes/${scopeId}`);
       await loadRoleScopes();
-      showSuccess('Scope request approved');
+      if (editingScopeId === scopeId) {
+        cancelEditRoleScope();
+      }
+      showSuccess('Role scope deleted');
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to delete role scope');
+    } finally {
+      setUpdatingScopeId(null);
+    }
+  };
+
+  const removeUserRole = async (user: User, roleName: string) => {
+    if (user.id === currentUserId) {
+      showError('You cannot modify your own roles');
+      return;
+    }
+
+    const ok = await showConfirm(`Remove role "${roleName}" from ${user.name}?`);
+    if (!ok) return;
+
+    try {
+      await api.delete(`/admin/users/${user.id}/roles/${encodeURIComponent(roleName)}`);
+      showSuccess('Role removed successfully');
+      await fetchUsers();
+    } catch (err: any) {
+      showError(err?.response?.data?.message || 'Failed to remove role');
+    }
+  };
+
+  const approveScopeRequestBatch = async (batchId: string) => {
+    if (!isMainAdmin) return;
+    const ok = await showConfirm('Approve this scope request batch? Current approved scopes will be replaced.');
+    if (!ok) return;
+    try {
+      setUpdatingScopeId(-1);
+      await api.post(`/admin/teacher-scope-requests/${batchId}/approve`);
+      await Promise.all([loadPendingScopeRequests(), loadRoleScopes()]);
+      showSuccess('Scope request approved successfully');
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to approve scope request');
     } finally {
@@ -622,7 +805,7 @@ const AdminUserManagement: React.FC = () => {
     }
   };
 
-  const rejectRoleScope = async (scopeId: number) => {
+  const rejectScopeRequestBatch = async (batchId: string) => {
     if (!isMainAdmin) return;
     const reason = window.prompt('Enter rejection reason:')?.trim() || '';
     if (!reason) {
@@ -630,34 +813,14 @@ const AdminUserManagement: React.FC = () => {
       return;
     }
     try {
-      setUpdatingScopeId(scopeId);
-      await api.post(`/admin/role-scopes/${scopeId}/reject`, { reason });
-      await loadRoleScopes();
+      setUpdatingScopeId(-1);
+      await api.post(`/admin/teacher-scope-requests/${batchId}/reject`, { reason });
+      await loadPendingScopeRequests();
       showSuccess('Scope request rejected');
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to reject scope request');
     } finally {
       setUpdatingScopeId(null);
-    }
-  };
-
-  const deleteRoleScope = async (scopeId: number) => {
-    if (!isMainAdmin) {
-      showError('Only Main Admin can manage role scopes');
-      return;
-    }
-    const ok = await showConfirm('Delete this role scope?');
-    if (!ok) return;
-
-    try {
-      setDeletingScopeId(scopeId);
-      await api.delete(`/admin/role-scopes/${scopeId}`);
-      await loadRoleScopes();
-      showSuccess('Role scope deleted successfully');
-    } catch (err: any) {
-      showError(err?.response?.data?.message || 'Failed to delete role scope');
-    } finally {
-      setDeletingScopeId(null);
     }
   };
 
@@ -730,7 +893,7 @@ const AdminUserManagement: React.FC = () => {
               </button>
             </div>
             <div className="mt-3 space-y-2">
-              {roles.map((role) => (
+              {sortedRoles.map((role) => (
                 <div key={role.id || role.name} className="flex flex-col md:flex-row md:items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2">
                   {(() => {
                     const isProtected = PROTECTED_ROLE_NAMES.includes(String(role.name || '').trim());
@@ -764,7 +927,7 @@ const AdminUserManagement: React.FC = () => {
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-800">{role.name}</p>
                         <p className="text-xs text-gray-500">
-                          {role.users_count ?? 0} users • {role.permissions_count ?? 0} permissions
+                          {role.users_count ?? 0} users â€¢ {role.permissions_count ?? 0} permissions
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -799,231 +962,251 @@ const AdminUserManagement: React.FC = () => {
           </div>
 
           <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Role Scope Assignment</p>
-              <div className="flex items-center gap-2">
-                <select
-                  value={scopeStatusFilter}
-                  onChange={(e) => setScopeStatusFilter(e.target.value as 'pending' | 'approved' | 'rejected')}
-                  className="px-2 py-1.5 text-xs border border-gray-300 rounded"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={loadRoleScopes}
-                  className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
-                >
-                  Refresh Scopes
-                </button>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 mb-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Role Scope Management</p>
+                <p className="text-xs text-gray-500 mt-1">Use requests for approvals, active assignments for audits, and manual assign for direct overrides.</p>
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-              <select
-                value={scopeForm.user_id}
-                onChange={(e) => setScopeForm((prev) => ({ ...prev, user_id: e.target.value }))}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled={!isMainAdmin}
-              >
-                <option value="">Select user</option>
-                {scopeUsers
-                  .filter((u) => !hasStudentRole(u))
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.email})
-                    </option>
-                  ))}
-              </select>
-
-              <select
-                value={scopeForm.role_name}
-                onChange={(e) => setScopeForm((prev) => ({ ...prev, role_name: e.target.value }))}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled={!isMainAdmin}
-              >
-                <option value="">Role (optional)</option>
-                {roleOptions.map((name) => (
-                  <option key={name} value={name.toLowerCase()}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={scopeForm.term}
-                onChange={(e) => setScopeForm((prev) => ({ ...prev, term: e.target.value }))}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled={!isMainAdmin}
-              >
-                <option value="">Term (optional)</option>
-                <option value="First Term">First Term</option>
-                <option value="Second Term">Second Term</option>
-                <option value="Third Term">Third Term</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
-              <select
-                value={scopeForm.subject_id}
-                onChange={(e) => setScopeForm((prev) => ({ ...prev, subject_id: e.target.value }))}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled={!isMainAdmin}
-              >
-                <option value="">Subject scope (optional)</option>
-                {scopeSubjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={scopeForm.class_id}
-                onChange={(e) => setScopeForm((prev) => ({ ...prev, class_id: e.target.value }))}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled={!isMainAdmin}
-              >
-                <option value="">Class scope (optional)</option>
-                {scopeClasses.map((schoolClass) => (
-                  <option key={schoolClass.id} value={schoolClass.id}>
-                    {schoolClass.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={scopeForm.exam_id}
-                onChange={(e) => setScopeForm((prev) => ({ ...prev, exam_id: e.target.value }))}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled={!isMainAdmin}
-              >
-                <option value="">Exam scope (optional)</option>
-                {scopeExams.map((exam) => (
-                  <option key={exam.id} value={exam.id}>
-                    {exam.name}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                value={scopeForm.academic_session}
-                onChange={(e) => setScopeForm((prev) => ({ ...prev, academic_session: e.target.value }))}
-                className="rounded border border-gray-300 px-3 py-2 text-sm"
-                placeholder="Academic session (optional)"
-                disabled={!isMainAdmin}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={scopeForm.is_active}
-                  onChange={(e) => setScopeForm((prev) => ({ ...prev, is_active: e.target.checked }))}
-                  disabled={!isMainAdmin}
-                />
-                Active scope
-              </label>
               <button
                 type="button"
-                onClick={saveRoleScope}
-                disabled={!isMainAdmin || roleScopeSaving}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs md:text-sm hover:bg-blue-700 disabled:opacity-60"
+                onClick={() => {
+                  loadPendingScopeRequests();
+                  loadRoleScopes();
+                  loadScopeOptions();
+                  fetchScopeUsers();
+                }}
+                className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
               >
-                {roleScopeSaving ? 'Saving...' : 'Add Scope'}
+                Refresh Scopes
               </button>
             </div>
 
-            <div className="mt-3 overflow-x-auto border border-gray-200 rounded">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="p-2 border-b text-left font-semibold">User</th>
-                    <th className="p-2 border-b text-left font-semibold">Role</th>
-                    <th className="p-2 border-b text-left font-semibold">Subject</th>
-                    <th className="p-2 border-b text-left font-semibold">Class</th>
-                    <th className="p-2 border-b text-left font-semibold">Exam</th>
-                    <th className="p-2 border-b text-left font-semibold">Session/Term</th>
-                    <th className="p-2 border-b text-left font-semibold">Status</th>
-                    <th className="p-2 border-b text-left font-semibold">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {roleScopesLoading ? (
-                    <tr>
-                      <td colSpan={8} className="p-3 text-center text-gray-500">Loading role scopes...</td>
-                    </tr>
-                  ) : roleScopes.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="p-3 text-center text-gray-500">No role scopes assigned yet.</td>
-                    </tr>
-                  ) : (
-                    roleScopes.map((scope) => (
-                      <tr key={scope.id} className="hover:bg-gray-50">
-                        <td className="p-2 border-b">
-                          <div className="font-medium text-gray-800">{scope.user?.name || `User #${scope.user_id}`}</div>
-                          <div className="text-gray-500">{scope.user?.email || '-'}</div>
-                        </td>
-                        <td className="p-2 border-b">{scope.role_name || '-'}</td>
-                        <td className="p-2 border-b">{scope.subject?.name || '-'}</td>
-                        <td className="p-2 border-b">{scope.school_class?.name || '-'}</td>
-                        <td className="p-2 border-b">{scope.exam?.title || '-'}</td>
-                        <td className="p-2 border-b">
-                          <div>{(scope.academic_session || '-')}{' / '}{(scope.term || '-')}</div>
-                          {scope.status === 'rejected' && scope.rejected_reason ? (
-                            <div className="text-red-600">{scope.rejected_reason}</div>
-                          ) : null}
-                        </td>
-                        <td className="p-2 border-b">
-                          <span className={`px-2 py-0.5 rounded ${scope.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'}`}>
-                            {scope.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="p-2 border-b">
-                          <div className="flex items-center gap-1">
-                            {scope.status === 'pending' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => approveRoleScope(scope.id)}
-                                  disabled={!isMainAdmin || updatingScopeId === scope.id}
-                                  className="px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60"
-                                >
-                                  {updatingScopeId === scope.id ? '...' : 'Approve'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => rejectRoleScope(scope.id)}
-                                  disabled={!isMainAdmin || updatingScopeId === scope.id}
-                                  className="px-2 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-60"
-                                >
-                                  {updatingScopeId === scope.id ? '...' : 'Reject'}
-                                </button>
-                              </>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => deleteRoleScope(scope.id)}
-                              disabled={!isMainAdmin || deletingScopeId === scope.id}
-                              className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
-                            >
-                              {deletingScopeId === scope.id ? 'Deleting...' : 'Delete'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {[
+                { key: 'requests', label: `Requests (${pendingScopeRequests.length})` },
+                { key: 'active', label: `Active Assignments (${activeApprovedScopes.length})` },
+                { key: 'assign', label: 'Manual Assign' },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setScopeTab(tab.key as 'requests' | 'active' | 'assign')}
+                  className={`px-3 py-1.5 rounded text-xs md:text-sm border ${
+                    scopeTab === tab.key
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-          </div>
 
-          <div className="overflow-x-auto">
+            {scopeTab === 'requests' && (
+              <div className="overflow-x-auto border border-gray-200 rounded">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="p-2 border-b text-left font-semibold">Teacher</th>
+                      <th className="p-2 border-b text-left font-semibold">Requested Scope</th>
+                      <th className="p-2 border-b text-left font-semibold">Current Approved</th>
+                      <th className="p-2 border-b text-left font-semibold">Reason</th>
+                      <th className="p-2 border-b text-left font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingScopeRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-3 text-center text-gray-500">No pending scope requests.</td>
+                      </tr>
+                    ) : (
+                      pendingScopeRequests.map((request) => (
+                        <tr key={request.batch_id} className="hover:bg-gray-50">
+                          <td className="p-2 border-b">
+                            <div className="font-medium text-gray-800">{request.user?.name || '-'}</div>
+                            <div className="text-gray-500">{request.user?.email || '-'}</div>
+                          </td>
+                          <td className="p-2 border-b">
+                            <div className="flex flex-wrap gap-1">
+                              {request.requested_scopes.map((scope) => (
+                                <span key={scope.id} className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                                  {scope.subject_name} • {scope.class_name}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-2 border-b">
+                            <div className="flex flex-wrap gap-1">
+                              {(request.current_approved_scopes || []).length === 0 ? (
+                                <span className="text-gray-400">None</span>
+                              ) : (
+                                request.current_approved_scopes.map((scope) => (
+                                  <span key={scope.id} className="px-1.5 py-0.5 rounded bg-green-100 text-green-800">
+                                    {scope.subject_name} • {scope.class_name}
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 border-b text-gray-700">{request.reason || '-'}</td>
+                          <td className="p-2 border-b">
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => approveScopeRequestBatch(request.batch_id)}
+                                disabled={!isMainAdmin || updatingScopeId === -1}
+                                className="px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => rejectScopeRequestBatch(request.batch_id)}
+                                disabled={!isMainAdmin || updatingScopeId === -1}
+                                className="px-2 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-60"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {scopeTab === 'active' && (
+              <>
+                <div className="mb-2 flex flex-col md:flex-row gap-2">
+                  <select
+                    value={scopeStatusFilter}
+                  onChange={(e) => setScopeStatusFilter(e.target.value as 'all' | 'approved' | 'rejected')}
+                  className="px-2 py-1.5 text-xs border border-gray-300 rounded"
+                >
+                  <option value="all">All</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={scopeSearch}
+                    onChange={(e) => setScopeSearch(e.target.value)}
+                    placeholder="Search user/subject/class/exam..."
+                    className="rounded border border-gray-300 px-3 py-1.5 text-xs md:text-sm flex-1"
+                  />
+                </div>
+                <div className="overflow-x-auto border border-gray-200 rounded">
+                  <table className="min-w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="p-2 border-b text-left font-semibold">User</th>
+                        <th className="p-2 border-b text-left font-semibold">Role</th>
+                        <th className="p-2 border-b text-left font-semibold">Subject</th>
+                        <th className="p-2 border-b text-left font-semibold">Class</th>
+                        <th className="p-2 border-b text-left font-semibold">Exam</th>
+                        <th className="p-2 border-b text-left font-semibold">Session/Term</th>
+                        <th className="p-2 border-b text-left font-semibold">Status</th>
+                        <th className="p-2 border-b text-left font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roleScopesLoading ? (
+                        <tr><td colSpan={8} className="p-3 text-center text-gray-500">Loading role scopes...</td></tr>
+                      ) : filteredActiveApprovedScopes.length === 0 ? (
+                        <tr><td colSpan={8} className="p-3 text-center text-gray-500">No matching assignments.</td></tr>
+                      ) : (
+                        filteredActiveApprovedScopes.map((scope) => (
+                          <tr key={scope.id} className="hover:bg-gray-50">
+                            <td className="p-2 border-b"><div className="font-medium text-gray-800">{scope.user?.name || `User #${scope.user_id}`}</div><div className="text-gray-500">{scope.user?.email || '-'}</div></td>
+                            <td className="p-2 border-b">{scope.role_name || '-'}</td>
+                            <td className="p-2 border-b">{scope.subject?.name || '-'}</td>
+                            <td className="p-2 border-b">{scope.school_class?.name || '-'}</td>
+                            <td className="p-2 border-b">{scope.exam?.title || '-'}</td>
+                            <td className="p-2 border-b">{(scope.academic_session || '-')}{' / '}{(scope.term || '-')}</td>
+                            <td className="p-2 border-b">
+                              <span className={`px-2 py-0.5 rounded ${String(scope.status || '').toLowerCase() === 'approved' ? 'bg-green-100 text-green-800' : String(scope.status || '').toLowerCase() === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {String(scope.status || 'pending').toLowerCase()}
+                              </span>
+                            </td>
+                            <td className="p-2 border-b">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => editRoleScope(scope)}
+                                  disabled={!isMainAdmin}
+                                  className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteRoleScope(scope.id)}
+                                  disabled={!isMainAdmin || updatingScopeId === scope.id}
+                                  className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
+                                >
+                                  {updatingScopeId === scope.id ? 'Deleting...' : 'Delete'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {scopeTab === 'assign' && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                  <select value={scopeForm.user_id} onChange={(e) => setScopeForm((prev) => ({ ...prev, user_id: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
+                    <option value="">Select user</option>
+                    {scopeUsers.filter((u) => !hasStudentRole(u)).map((u) => (<option key={u.id} value={u.id}>{u.name} ({u.email})</option>))}
+                  </select>
+                  <select value={scopeForm.role_name} onChange={(e) => setScopeForm((prev) => ({ ...prev, role_name: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
+                    <option value="">Role (optional)</option>
+                    {roleOptions.map((name) => (<option key={name} value={name.toLowerCase()}>{name}</option>))}
+                  </select>
+                  <select value={scopeForm.term} onChange={(e) => setScopeForm((prev) => ({ ...prev, term: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
+                    <option value="">Term (optional)</option><option value="First Term">First Term</option><option value="Second Term">Second Term</option><option value="Third Term">Third Term</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
+                  <select value={scopeForm.subject_id} onChange={(e) => setScopeForm((prev) => ({ ...prev, subject_id: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
+                    <option value="">Subject scope (optional)</option>
+                    {scopeSubjects.map((subject) => (<option key={subject.id} value={subject.id}>{subject.name}</option>))}
+                  </select>
+                  <select value={scopeForm.class_id} onChange={(e) => setScopeForm((prev) => ({ ...prev, class_id: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
+                    <option value="">Class scope (optional)</option>
+                    {scopeClasses.map((schoolClass) => (<option key={schoolClass.id} value={schoolClass.id}>{schoolClass.name}</option>))}
+                  </select>
+                  <select value={scopeForm.exam_id} onChange={(e) => setScopeForm((prev) => ({ ...prev, exam_id: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
+                    <option value="">Exam scope (optional)</option>
+                    {scopeExams.map((exam) => (<option key={exam.id} value={exam.id}>{exam.name}</option>))}
+                  </select>
+                  <input type="text" value={scopeForm.academic_session} onChange={(e) => setScopeForm((prev) => ({ ...prev, academic_session: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" placeholder="Academic session (optional)" disabled={!isMainAdmin} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="inline-flex items-center gap-2 text-xs text-gray-700"><input type="checkbox" checked={scopeForm.is_active} onChange={(e) => setScopeForm((prev) => ({ ...prev, is_active: e.target.checked }))} disabled={!isMainAdmin} />Active scope</label>
+                  <div className="flex items-center gap-2">
+                    {editingScopeId && (
+                      <button
+                        type="button"
+                        onClick={cancelEditRoleScope}
+                        className="px-3 py-1.5 border border-gray-300 rounded text-xs md:text-sm hover:bg-gray-50"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                    <button type="button" onClick={saveRoleScope} disabled={!isMainAdmin || roleScopeSaving} className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs md:text-sm hover:bg-blue-700 disabled:opacity-60">{roleScopeSaving ? (editingScopeId ? 'Updating...' : 'Saving...') : (editingScopeId ? 'Update Scope' : 'Add Scope')}</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div><div className="overflow-x-auto">
             <table className="min-w-full border border-gray-200 text-sm">
               <thead>
                 <tr className="bg-gray-50">
@@ -1032,7 +1215,7 @@ const AdminUserManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(displayRoleModules).map(([role, modules]) => (
+                {sortedDisplayRoleModules.map(([role, modules]) => (
                   <tr key={role} className="hover:bg-gray-50">
                     <td className="p-2 border-b">
                       <span className="font-medium text-blue-600 text-xs md:text-sm">{role}</span>
@@ -1189,9 +1372,19 @@ const AdminUserManagement: React.FC = () => {
                           {u.roles.map(r => (
                             <span
                               key={r.name}
-                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium"
+                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium inline-flex items-center gap-1"
                             >
                               {r.name}
+                              {!hasStudentRole(u) && u.id !== currentUserId && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeUserRole(u, r.name)}
+                                  className="text-blue-700 hover:text-red-700 font-bold"
+                                  title={`Remove ${r.name}`}
+                                >
+                                  ×
+                                </button>
+                              )}
                             </span>
                           ))}
                         </div>
@@ -1250,3 +1443,4 @@ const AdminUserManagement: React.FC = () => {
 };
 
 export default AdminUserManagement;
+

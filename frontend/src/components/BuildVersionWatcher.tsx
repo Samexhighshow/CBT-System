@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import offlineCacheUpdater from '../services/offlineCacheUpdater';
+import { checkReachability } from '../services/reachability';
 
 const VERSION_URL = '/version.json';
 const STORAGE_KEY = 'app_build_version';
@@ -11,7 +12,12 @@ const BuildVersionWatcher: React.FC = () => {
 
     const refreshIfPending = async () => {
       const pending = localStorage.getItem(PENDING_REFRESH_KEY) === 'true';
-      if (!pending || !navigator.onLine) {
+      if (!pending) {
+        return;
+      }
+
+      const reachability = await checkReachability();
+      if (reachability.status === 'OFFLINE') {
         return;
       }
 
@@ -38,10 +44,8 @@ const BuildVersionWatcher: React.FC = () => {
         if (previous && previous !== version) {
           localStorage.setItem(STORAGE_KEY, version);
           localStorage.setItem(PENDING_REFRESH_KEY, 'true');
-
-          if (navigator.onLine) {
-            window.location.reload();
-          }
+          // Keep runtime stable. Do not auto-reload during active sessions.
+          window.dispatchEvent(new Event('app_update_ready'));
           return;
         }
 
@@ -56,17 +60,17 @@ const BuildVersionWatcher: React.FC = () => {
     refreshIfPending();
     checkVersion();
 
-    const handleOnline = () => {
+    const handleOnlineSignal = () => {
       refreshIfPending();
       checkVersion();
     };
 
-    window.addEventListener('online', handleOnline);
+    window.addEventListener('online', handleOnlineSignal);
     window.addEventListener('focus', checkVersion);
 
     return () => {
       active = false;
-      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('online', handleOnlineSignal);
       window.removeEventListener('focus', checkVersion);
     };
   }, []);

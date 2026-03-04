@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { checkReachability, ReachabilityResult, ConnectivityStatus } from '../services/reachability';
 
 const DEFAULT_STATUS: ReachabilityResult = {
-  status: navigator.onLine ? 'LAN_ONLY' : 'OFFLINE',
-  canReachLocal: navigator.onLine,
+  status: 'OFFLINE',
+  canReachLocal: false,
   canReachCloud: false,
-  reason: navigator.onLine ? undefined : 'browser_offline',
+  reason: undefined,
 };
 
 type StableConnectivityStatus = ConnectivityStatus | 'CHECKING';
@@ -15,17 +15,19 @@ type ConnectivityState = ReachabilityResult & {
   checking: boolean;
   initialized: boolean;
   lastCheckedAt: number | null;
+  lastReachableAt: number | null;
   failureStreak: number;
   successStreak: number;
+  reconnectPending: boolean;
 };
 
-const NORMAL_INTERVAL_MS = 15000;
+const NORMAL_INTERVAL_MS = 20000;
 const EXAM_INTERVAL_MS = 45000;
-const OFFLINE_INTERVAL_MS = 30000;
-const MIN_INTERVAL_MS = 15000;
+const OFFLINE_INTERVAL_MS = 45000;
+const MIN_INTERVAL_MS = 10000;
 const ONLINE_CONFIRMATION_COUNT = 2;
 const OFFLINE_CONFIRMATION_COUNT = 2;
-const EXAM_OFFLINE_STICKY_MS = 30000;
+const OFFLINE_TRANSITION_GRACE_MS = 25000;
 
 let sharedState: ConnectivityState = {
   ...DEFAULT_STATUS,
@@ -33,8 +35,10 @@ let sharedState: ConnectivityState = {
   checking: false,
   initialized: false,
   lastCheckedAt: null,
+  lastReachableAt: null,
   failureStreak: 0,
   successStreak: 0,
+  reconnectPending: false,
 };
 
 const listeners = new Set<(state: ConnectivityState) => void>();
@@ -43,8 +47,6 @@ let monitorStarted = false;
 let browserEventsBound = false;
 let activeSubscribers = 0;
 let currentPollIntervalMs = NORMAL_INTERVAL_MS;
-let onlineCandidateSince: number | null = null;
-
 const notifyAll = () => {
   listeners.forEach((listener) => listener(sharedState));
 };
@@ -88,38 +90,39 @@ const resolveStabilizedStatus = (
   force: boolean
 ): StableConnectivityStatus => {
   const candidateReachable = probe.status !== 'OFFLINE';
-  const now = Date.now();
 
   if (candidateReachable) {
     sharedState.successStreak += 1;
     sharedState.failureStreak = 0;
+    sharedState.lastReachableAt = Date.now();
   } else {
     sharedState.failureStreak += 1;
     sharedState.successStreak = 0;
-    onlineCandidateSince = null;
+    sharedState.reconnectPending = false;
+
+    const withinGracePeriod = !!sharedState.lastReachableAt
+      && (Date.now() - sharedState.lastReachableAt) < OFFLINE_TRANSITION_GRACE_MS;
+    if (!force && withinGracePeriod) {
+      return sharedState.initialized ? sharedState.status : 'CHECKING';
+    }
   }
 
-  // Sticky offline policy during active exams.
-  if (isExamRoute() && sharedState.status === 'OFFLINE' && candidateReachable && !force) {
-    if (!onlineCandidateSince) {
-      onlineCandidateSince = now;
-      return 'OFFLINE';
-    }
-
-    if (now - onlineCandidateSince < EXAM_OFFLINE_STICKY_MS) {
-      return 'OFFLINE';
-    }
+  // Offline lock during active attempts:
+  // if exam route is active and we are already offline, keep offline until manual retry.
+  if (!force && isExamRoute() && sharedState.status === 'OFFLINE' && candidateReachable) {
+    sharedState.reconnectPending = true;
+    return 'OFFLINE';
   }
 
   if (candidateReachable) {
-    onlineCandidateSince = null;
-    if (force || sharedState.successStreak >= ONLINE_CONFIRMATION_COUNT) {
+    sharedState.reconnectPending = false;
+    if (sharedState.successStreak >= ONLINE_CONFIRMATION_COUNT) {
       return probe.status;
     }
     return sharedState.initialized ? sharedState.status : 'CHECKING';
   }
 
-  if (force || sharedState.failureStreak >= OFFLINE_CONFIRMATION_COUNT) {
+  if (sharedState.failureStreak >= OFFLINE_CONFIRMATION_COUNT) {
     return 'OFFLINE';
   }
 
@@ -155,7 +158,7 @@ const runCheck = async (force = false): Promise<void> => {
       status: 'OFFLINE',
       canReachLocal: false,
       canReachCloud: false,
-      reason: !navigator.onLine ? 'browser_offline' : 'health_check_failed',
+      reason: 'health_check_failed',
     }, force);
 
     sharedState = {
@@ -163,7 +166,7 @@ const runCheck = async (force = false): Promise<void> => {
       status: stabilizedStatus,
       canReachLocal: false,
       canReachCloud: false,
-      reason: !navigator.onLine ? 'browser_offline' : 'health_check_failed',
+      reason: 'health_check_failed',
       checking: false,
       initialized: true,
       lastCheckedAt: Date.now(),
@@ -210,7 +213,13 @@ const startMonitor = () => {
 
   if (!monitorStarted) {
     monitorStarted = true;
-    void runCheck(true);
+    void runCheck(true).then(() => {
+      if (sharedState.status === 'CHECKING') {
+        window.setTimeout(() => {
+          void runCheck(true);
+        }, 1200);
+      }
+    });
   }
 };
 
@@ -242,6 +251,11 @@ const subscribe = (listener: (state: ConnectivityState) => void) => {
   };
 };
 
+export const refreshConnectivity = async (): Promise<ConnectivityState> => {
+  await runCheck(true);
+  return sharedState;
+};
+
 export const useConnectivity = () => {
   const [state, setState] = useState<ConnectivityState>(sharedState);
 
@@ -255,6 +269,7 @@ export const useConnectivity = () => {
   return {
     ...state,
     isOnline: isStableReachable(state.status),
+    refresh: refreshConnectivity,
   };
 };
 

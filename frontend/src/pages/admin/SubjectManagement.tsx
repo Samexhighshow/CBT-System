@@ -74,7 +74,7 @@ const SubjectManagement: React.FC = () => {
     const confirmed = await showDeleteConfirm(`Delete ${selectedClassIds.length} selected classes?`);
     if (confirmed.isConfirmed) {
       try {
-        await Promise.all(selectedClassIds.map(id => api.delete(`/classes/${id}`)));
+        await Promise.all(selectedClassIds.map(id => api.delete(`/staff/classes/${id}`)));
         showSuccess('Selected classes deleted');
         setSelectedClassIds([]);
         loadClasses();
@@ -114,7 +114,7 @@ const SubjectManagement: React.FC = () => {
 
   const loadClasses = async () => {
     try {
-      const res = await api.get('/classes');
+      const res = await api.get('/staff/classes');
       const classesData = res.data.data || res.data || [];
       setClasses(Array.isArray(classesData) ? classesData : []);
     } catch (error) {
@@ -272,7 +272,7 @@ const SubjectManagement: React.FC = () => {
                     <button className="px-4 py-2 border rounded" onClick={() => setShowClassModal(false)}>Cancel</button>
                     <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={async () => {
                       try {
-                        await api.post('/classes', classForm);
+                        await api.post('/staff/classes', classForm);
                         showSuccess('Class added');
                         setShowClassModal(false);
                         loadClasses();

@@ -9,51 +9,169 @@ use App\Models\Student;
 use App\Models\Department;
 use App\Models\Subject;
 use App\Models\Question;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AnalyticsController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
     /**
      * Get admin dashboard statistics
      */
     public function getAdminDashboardStats()
     {
         try {
-            $stats = [
-                'total_students' => Student::count(),
-                'active_students' => Student::where('is_active', true)->count(),
-                'total_exams' => Exam::count(),
-                'published_exams' => Exam::where('published', true)->count(),
-                'total_departments' => Department::count(),
-                'total_subjects' => Subject::count(),
-                'total_attempts' => ExamAttempt::where('status', 'completed')->count(),
-                'ongoing_exams' => Exam::where('published', true)->count(),
-            ];
+            $user = auth()->user();
+            $isTeacherScopedView = $user
+                && $user->hasRole('Teacher')
+                && !$this->roleScopeService->isAdminBypass($user);
 
-            // Recent activity
-            $stats['recent_attempts'] = ExamAttempt::with(['student', 'exam'])
-                ->where('status', 'completed')
-                ->orderBy('ended_at', 'desc')
-                ->limit(5)
-                ->get()
-                ->map(function($attempt) {
-                    if (!$attempt->student || !$attempt->exam) {
-                        return null;
-                    }
-                    return [
-                        'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
-                        'exam_title' => $attempt->exam->title,
-                        'score' => $attempt->score,
-                        'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
-                        'completed_at' => $attempt->ended_at,
-                    ];
-                })
-                ->filter();
+            if ($isTeacherScopedView) {
+                $subjectIds = $this->roleScopeService->scopedSubjectIds($user);
+                $classIds = $this->roleScopeService->scopedClassIds($user);
 
-            // Performance trends (last 30 days)
-            $stats['performance_trend'] = $this->getPerformanceTrend(30);
+                $scopedExamQuery = Exam::query()->select(['id', 'class_id']);
+                $this->roleScopeService->applyExamScope($scopedExamQuery, $user);
+                $scopedExamRows = $scopedExamQuery->get();
+
+                $scopedExamIds = $scopedExamRows
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $scopedExamClassIds = $scopedExamRows
+                    ->pluck('class_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $scopedClassIdsForStudents = collect([...$classIds, ...$scopedExamClassIds])
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $totalStudentsInScope = !empty($scopedClassIdsForStudents)
+                    ? Student::whereIn('class_id', $scopedClassIdsForStudents)->count()
+                    : 0;
+
+                $activeStudentsInScope = !empty($scopedClassIdsForStudents)
+                    ? Student::whereIn('class_id', $scopedClassIdsForStudents)->where('is_active', true)->count()
+                    : 0;
+
+                $publishedScopedExams = !empty($scopedExamIds)
+                    ? Exam::whereIn('id', $scopedExamIds)->where('published', true)->count()
+                    : 0;
+
+                $totalScopedAttempts = !empty($scopedExamIds)
+                    ? ExamAttempt::whereIn('exam_id', $scopedExamIds)->where('status', 'completed')->count()
+                    : 0;
+
+                $now = now();
+                $ongoingScopedExams = !empty($scopedExamIds)
+                    ? Exam::whereIn('id', $scopedExamIds)
+                        ->where('published', true)
+                        ->whereIn('status', ['scheduled', 'active'])
+                        ->where(function ($query) use ($now) {
+                            $query->whereNull('start_datetime')->orWhere('start_datetime', '<=', $now);
+                        })
+                        ->where(function ($query) use ($now) {
+                            $query->whereNull('end_datetime')->orWhere('end_datetime', '>=', $now);
+                        })
+                        ->count()
+                    : 0;
+
+                $stats = [
+                    'total_students' => $totalStudentsInScope,
+                    'active_students' => $activeStudentsInScope,
+                    'total_exams' => count($scopedExamIds),
+                    'published_exams' => $publishedScopedExams,
+                    'total_departments' => !empty($subjectIds)
+                        ? Subject::whereIn('id', $subjectIds)->whereNotNull('department_id')->distinct('department_id')->count('department_id')
+                        : 0,
+                    'total_subjects' => count($subjectIds),
+                    'total_attempts' => $totalScopedAttempts,
+                    'ongoing_exams' => $ongoingScopedExams,
+                    // Teacher-focused scope metrics for dashboard cards.
+                    'assigned_subjects_count' => count($subjectIds),
+                    'assigned_classes_count' => count($classIds),
+                    'scoped_exams_count' => count($scopedExamIds),
+                    'scoped_published_exams_count' => $publishedScopedExams,
+                    'scoped_attempts_count' => $totalScopedAttempts,
+                    'scoped_students_count' => $totalStudentsInScope,
+                    'scoped_ongoing_exams_count' => $ongoingScopedExams,
+                ];
+
+                $stats['recent_attempts'] = (!empty($scopedExamIds)
+                    ? ExamAttempt::with(['student', 'exam'])
+                        ->where('status', 'completed')
+                        ->whereIn('exam_id', $scopedExamIds)
+                        ->orderBy('ended_at', 'desc')
+                        ->limit(5)
+                        ->get()
+                    : collect())
+                    ->map(function ($attempt) {
+                        if (!$attempt->student || !$attempt->exam) {
+                            return null;
+                        }
+                        return [
+                            'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
+                            'exam_title' => $attempt->exam->title,
+                            'score' => $attempt->score,
+                            'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
+                            'completed_at' => $attempt->ended_at,
+                        ];
+                    })
+                    ->filter();
+
+                $stats['performance_trend'] = $this->getPerformanceTrend(30, $scopedExamIds);
+            } else {
+                $stats = [
+                    'total_students' => Student::count(),
+                    'active_students' => Student::where('is_active', true)->count(),
+                    'total_exams' => Exam::count(),
+                    'published_exams' => Exam::where('published', true)->count(),
+                    'total_departments' => Department::count(),
+                    'total_subjects' => Subject::count(),
+                    'total_attempts' => ExamAttempt::where('status', 'completed')->count(),
+                    'ongoing_exams' => Exam::where('published', true)->count(),
+                ];
+
+                // Recent activity
+                $stats['recent_attempts'] = ExamAttempt::with(['student', 'exam'])
+                    ->where('status', 'completed')
+                    ->orderBy('ended_at', 'desc')
+                    ->limit(5)
+                    ->get()
+                    ->map(function($attempt) {
+                        if (!$attempt->student || !$attempt->exam) {
+                            return null;
+                        }
+                        return [
+                            'student_name' => $attempt->student->first_name . ' ' . $attempt->student->last_name,
+                            'exam_title' => $attempt->exam->title,
+                            'score' => $attempt->score,
+                            'total_marks' => $attempt->exam->metadata['total_marks'] ?? null,
+                            'completed_at' => $attempt->ended_at,
+                        ];
+                    })
+                    ->filter();
+
+                // Performance trends (last 30 days)
+                $stats['performance_trend'] = $this->getPerformanceTrend(30);
+            }
 
             return response()->json($stats);
         } catch (\Exception $e) {
@@ -265,16 +383,25 @@ class AnalyticsController extends Controller
     /**
      * Helper: Calculate performance trend
      */
-    private function getPerformanceTrend($days)
+    private function getPerformanceTrend($days, ?array $examIds = null)
     {
         $trend = [];
         $startDate = now()->subDays($days);
 
         for ($i = 0; $i < $days; $i++) {
             $date = $startDate->copy()->addDays($i);
-            $attempts = ExamAttempt::whereDate('ended_at', $date)
-                ->where('status', 'completed')
-                ->get();
+            $attemptQuery = ExamAttempt::whereDate('ended_at', $date)
+                ->where('status', 'completed');
+
+            if (is_array($examIds)) {
+                if (empty($examIds)) {
+                    $attemptQuery->whereRaw('1 = 0');
+                } else {
+                    $attemptQuery->whereIn('exam_id', $examIds);
+                }
+            }
+
+            $attempts = $attemptQuery->get();
 
             $trend[] = [
                 'date' => $date->format('Y-m-d'),

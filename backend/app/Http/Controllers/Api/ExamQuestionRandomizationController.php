@@ -5,17 +5,17 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Exam;
 use App\Services\QuestionSelectionService;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 
 class ExamQuestionRandomizationController extends Controller
 {
-    protected $selectionService;
-
-    public function __construct(QuestionSelectionService $selectionService)
-    {
-        $this->selectionService = $selectionService;
+    public function __construct(
+        private readonly QuestionSelectionService $selectionService,
+        private readonly RoleScopeService $roleScopeService
+    ) {
     }
 
     /**
@@ -24,6 +24,10 @@ class ExamQuestionRandomizationController extends Controller
     public function updateRandomizationSettings(Request $request, $examId)
     {
         $exam = Exam::findOrFail($examId);
+
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         // Prevent changes if questions are locked
         if ($exam->questions_locked) {
@@ -190,6 +194,10 @@ class ExamQuestionRandomizationController extends Controller
     public function previewSelection($examId)
     {
         $exam = Exam::findOrFail($examId);
+
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
         
         $preview = $this->selectionService->generatePreview($exam);
 
@@ -202,6 +210,10 @@ class ExamQuestionRandomizationController extends Controller
     public function lockQuestions($examId)
     {
         $exam = Exam::findOrFail($examId);
+
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         if ($exam->questions_locked) {
             return response()->json([
@@ -232,6 +244,10 @@ class ExamQuestionRandomizationController extends Controller
     {
         $exam = Exam::findOrFail($examId);
 
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
         if (!$exam->questions_locked) {
             return response()->json([
                 'message' => 'Questions are not locked',
@@ -258,6 +274,10 @@ class ExamQuestionRandomizationController extends Controller
     public function getStudentSelection(Request $request, $examId)
     {
         $exam = Exam::findOrFail($examId);
+
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
         
         $studentId = $request->input('student_id');
         $userId = $request->input('user_id', auth()->id());
@@ -311,6 +331,10 @@ class ExamQuestionRandomizationController extends Controller
     public function getRandomizationStats($examId)
     {
         $exam = Exam::findOrFail($examId);
+
+        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $questionsQuery = DB::table('exam_questions as eq')
             ->join('bank_questions as bq', 'bq.id', '=', 'eq.bank_question_id')

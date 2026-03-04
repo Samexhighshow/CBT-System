@@ -5,6 +5,7 @@ import useConnectivity from '../../hooks/useConnectivity';
 import offlineDB, { AccessCodeRecord } from '../../services/offlineDB';
 import syncService from '../../services/syncService';
 import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
+import { runWithRetry } from '../../utils/requestRetry';
 
 interface Exam {
   id: number;
@@ -60,8 +61,23 @@ const ExamAccess: React.FC = () => {
   const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
 
   useEffect(() => {
-    fetchTodayExams();
-    fetchGeneratedAccess();
+    let isActive = true;
+
+    const loadInitial = async () => {
+      await Promise.all([fetchTodayExams(), fetchGeneratedAccess()]);
+    };
+
+    loadInitial();
+
+    const delayedRefresh = window.setTimeout(() => {
+      if (!isActive) return;
+      loadInitial();
+    }, 1500);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(delayedRefresh);
+    };
   }, [connectivity.status]);
 
   useEffect(() => {
@@ -127,7 +143,9 @@ const ExamAccess: React.FC = () => {
     try {
       if (connectivity.status !== 'OFFLINE') {
         await syncService.syncDown();
-        const response = await api.get('/admin/exams/today');
+        const response = await runWithRetry(() =>
+          api.get('/admin/exams/today', { skipGlobalLoading: true } as any)
+        );
         const rows = Array.isArray(response.data?.data) ? response.data.data : [];
         setExams(rows.map(toExamOption));
         return;
@@ -145,7 +163,9 @@ const ExamAccess: React.FC = () => {
   const fetchGeneratedAccess = async () => {
     try {
       if (connectivity.status !== 'OFFLINE') {
-        const response = await api.get('/admin/exam-access');
+        const response = await runWithRetry(() =>
+          api.get('/admin/exam-access', { skipGlobalLoading: true } as any)
+        );
         const rows = Array.isArray(response.data?.data) ? response.data.data : [];
 
         const upserts: AccessCodeRecord[] = rows.map((row: any) => ({

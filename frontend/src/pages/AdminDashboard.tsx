@@ -18,6 +18,8 @@ import ExamAccess from './admin/ExamAccess';
 import AdminAnnouncements from './admin/Announcements';
 import MarkingWorkbench from './admin/MarkingWorkbench';
 import SyncDashboard from './admin/SyncDashboard';
+import MyTeachingAssignment from './admin/MyTeachingAssignment';
+import TeacherScopeRequests from './admin/TeacherScopeRequests';
 import RequireRole from '../middleware/RequireRole';
 import RequirePagePermission from '../middleware/RequirePagePermission';
 
@@ -49,6 +51,8 @@ const AdminDashboard: React.FC = () => {
         <Route path="allocations/generate" element={<RequirePagePermission permissionName="Generate Allocation"><AllocationGenerator /></RequirePagePermission>} />
         <Route path="allocations/:id" element={<RequirePagePermission permissionName="View Allocations"><AllocationViewer /></RequirePagePermission>} />
         <Route path="teachers/assign" element={<RequirePagePermission permissionName="Teacher Assignment"><TeacherAssignment /></RequirePagePermission>} />
+        <Route path="my-teaching-assignment" element={<RequireRole roles={["Teacher"]}><MyTeachingAssignment /></RequireRole>} />
+        <Route path="teacher-scope-requests" element={<RequireRole roles={["Main Admin"]}><TeacherScopeRequests /></RequireRole>} />
         <Route path="results" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />
         <Route path="marking" element={<RequirePagePermission permissionName="Marking Workbench"><MarkingWorkbench /></RequirePagePermission>} />
         <Route path="sync" element={<RequirePagePermission permissionName="Offline Sync"><SyncDashboard /></RequirePagePermission>} />

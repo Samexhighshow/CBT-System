@@ -205,6 +205,15 @@ class SubjectController extends Controller
             'ids.*' => 'required|exists:subjects,id',
         ]);
 
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $subjects = Subject::whereIn('id', $validated['ids'])->get();
+            foreach ($subjects as $subject) {
+                if (!$this->roleScopeService->canManageSubject($request->user(), $subject)) {
+                    return response()->json(['message' => 'Forbidden: one or more subjects are outside your role scope.'], 403);
+                }
+            }
+        }
+
         $deletedCount = Subject::whereIn('id', $validated['ids'])->delete();
 
         return response()->json([
@@ -285,6 +294,21 @@ class SubjectController extends Controller
                     $errors[] = "Row {$rowNum}: Invalid subject_type '{$row['subject_type']}'";
                     $rowNum++;
                     continue;
+                }
+
+                if ($this->roleScopeService->isScopedActor($request->user())) {
+                    $allowed = $this->roleScopeService->canAccessSubjectClass(
+                        $request->user(),
+                        null,
+                        (string) $row['class_level'],
+                        null
+                    );
+
+                    if (!$allowed) {
+                        $errors[] = "Row {$rowNum}: Forbidden for class level '{$row['class_level']}' (outside your role scope)";
+                        $rowNum++;
+                        continue;
+                    }
                 }
 
                 // Check for duplicate at class level

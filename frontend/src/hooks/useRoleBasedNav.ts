@@ -17,6 +17,14 @@ const rateLimitCooldownUntil: Record<string, number> = {};
 const REQUEST_CACHE_TTL_MS = 2 * 60 * 1000;
 const USER_PAGES_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const ROLE_PAGE_FALLBACKS: Record<string, string[]> = {
+  'teacher': ['Overview', 'Questions', 'Results & Marking', 'Marking Workbench'],
+  'moderator': ['Overview', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench'],
+  'sub-admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls'],
+  'sub admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls'],
+  'admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls', 'Offline Sync'],
+};
+
 const normalizePermissionName = (value: string): string => String(value || '').trim().toLowerCase();
 
 const sleep = (ms: number) =>
@@ -126,6 +134,20 @@ export const useRoleBasedNav = () => {
       .sort();
     return names.join('|');
   }, [user?.roles]);
+  const roleNames = useMemo(() => {
+    return (user?.roles || [])
+      .map((role: any) => String(role?.name || role || '').trim().toLowerCase())
+      .filter(Boolean);
+  }, [user?.roles]);
+
+  const fallbackPagesFromRoles = useMemo(() => {
+    const pages = new Set<string>();
+    roleNames.forEach((roleName) => {
+      const defaults = ROLE_PAGE_FALLBACKS[roleName] || [];
+      defaults.forEach((name) => pages.add(name));
+    });
+    return Array.from(pages);
+  }, [roleNames]);
   const isMainAdmin = useMemo(() => {
     return (user?.roles || []).some(
       (role: any) => String(role?.name || role || '').trim().toLowerCase() === 'main admin'
@@ -192,15 +214,19 @@ export const useRoleBasedNav = () => {
           .map((page: any) => String(page?.name || '').trim())
           .filter(Boolean);
 
-        setCachedData(userPagesCacheKey, accessiblePages, USER_PAGES_CACHE_TTL_MS);
+        const effectivePages = accessiblePages.length > 0
+          ? accessiblePages
+          : fallbackPagesFromRoles;
+
+        setCachedData(userPagesCacheKey, effectivePages, USER_PAGES_CACHE_TTL_MS);
         if (isMounted) {
-          setUserPages(accessiblePages);
+          setUserPages(effectivePages);
         }
       } catch (err) {
         console.error('Failed to load user pages:', err);
         if (isMounted) {
-          // Fail closed for non-main-admin when permissions cannot be loaded.
-          setUserPages([]);
+          // Fallback to role defaults to avoid false hard-lock on transient API failures.
+          setUserPages(fallbackPagesFromRoles);
         }
       } finally {
         if (fallbackTimer) {
@@ -222,7 +248,7 @@ export const useRoleBasedNav = () => {
       }
       isMounted = false;
     };
-  }, [userId, roleSignature, permissionsVersion]);
+  }, [userId, roleSignature, permissionsVersion, fallbackPagesFromRoles]);
 
   // Filter navigation links based on user permissions
   const filterNavLinks = useCallback((navLinks: NavLinkConfig[]): NavLinkConfig[] => {

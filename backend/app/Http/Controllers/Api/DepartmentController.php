@@ -4,14 +4,85 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Department;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 
 class DepartmentController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
+    private function buildClassLevelVariants(array $levels): array
+    {
+        return collect($levels)
+            ->flatMap(function ($level) {
+                $raw = trim((string) $level);
+                if ($raw === '') {
+                    return [];
+                }
+                $compact = str_replace(' ', '', $raw);
+
+                $normalizedUpper = strtoupper($compact);
+                $families = [];
+                if (str_starts_with($normalizedUpper, 'SS')) {
+                    $families[] = 'SSS';
+                }
+                if (str_starts_with($normalizedUpper, 'JSS')) {
+                    $families[] = 'JSS';
+                }
+
+                return [
+                    $raw,
+                    strtolower($raw),
+                    strtoupper($raw),
+                    $compact,
+                    strtolower($compact),
+                    strtoupper($compact),
+                    ...$families,
+                ];
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function isDepartmentLevelWithinScope(?\App\Models\User $user, string $departmentClassLevel): bool
+    {
+        if (!$this->roleScopeService->isScopedActor($user)) {
+            return true;
+        }
+
+        if ($this->roleScopeService->canAccessSubjectClass($user, null, $departmentClassLevel, null)) {
+            return true;
+        }
+
+        $variants = $this->buildClassLevelVariants($this->roleScopeService->scopedClassLevels($user));
+        $target = strtoupper(str_replace(' ', '', trim($departmentClassLevel)));
+
+        return in_array($target, array_map(fn ($v) => strtoupper(str_replace(' ', '', (string) $v)), $variants), true);
+    }
+
+    private function canManageDepartmentScope(?\App\Models\User $user, Department $department): bool
+    {
+        return $this->isDepartmentLevelWithinScope($user, (string) ($department->class_level ?? ''));
+    }
+
     public function index(Request $request)
     {
         // Return basic departments without counting relations
         $query = Department::query();
+
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $variants = $this->buildClassLevelVariants($this->roleScopeService->scopedClassLevels($request->user()));
+            if (empty($variants)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereIn('class_level', $variants);
+            }
+        }
 
         // Search filter
         if ($request->has('search')) {
@@ -37,10 +108,13 @@ class DepartmentController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         // Return department without loading relations to avoid errors
         $department = Department::findOrFail($id);
+        if (!$this->canManageDepartmentScope($request->user(), $department)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
         return response()->json($department);
     }
 
@@ -53,6 +127,10 @@ class DepartmentController extends Controller
             'class_level' => 'required|string|max:255'
         ]);
 
+        if (!$this->isDepartmentLevelWithinScope($request->user(), (string) $validated['class_level'])) {
+            return response()->json(['message' => 'Forbidden: class level is outside your role scope.'], 403);
+        }
+
         $department = Department::create($validated);
 
         return response()->json([
@@ -64,6 +142,9 @@ class DepartmentController extends Controller
     public function update(Request $request, $id)
     {
         $department = Department::findOrFail($id);
+        if (!$this->canManageDepartmentScope($request->user(), $department)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255|unique:departments,name,' . $id,
@@ -71,6 +152,12 @@ class DepartmentController extends Controller
             'description' => 'nullable|string',
             'class_level' => 'sometimes|string|max:255'
         ]);
+
+        if (array_key_exists('class_level', $validated)) {
+            if (!$this->isDepartmentLevelWithinScope($request->user(), (string) $validated['class_level'])) {
+                return response()->json(['message' => 'Forbidden: class level is outside your role scope.'], 403);
+            }
+        }
 
         $department->update($validated);
 
@@ -80,9 +167,12 @@ class DepartmentController extends Controller
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $department = Department::findOrFail($id);
+        if (!$this->canManageDepartmentScope($request->user(), $department)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
         $department->delete();
 
         return response()->json([
@@ -99,6 +189,15 @@ class DepartmentController extends Controller
             'ids' => 'required|array|min:1',
             'ids.*' => 'required|exists:departments,id',
         ]);
+
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $departments = Department::whereIn('id', $validated['ids'])->get();
+            foreach ($departments as $department) {
+                if (!$this->canManageDepartmentScope($request->user(), $department)) {
+                    return response()->json(['message' => 'Forbidden: one or more departments are outside your role scope.'], 403);
+                }
+            }
+        }
 
         $deletedCount = Department::whereIn('id', $validated['ids'])->delete();
 
@@ -163,6 +262,11 @@ class DepartmentController extends Controller
             $description = trim($row[2]);
             $classLevel = trim($row[3]);
             $isActive = strtolower(trim($row[4])) === 'true' || trim($row[4]) === '1';
+
+            if (!$this->isDepartmentLevelWithinScope($request->user(), (string) $classLevel)) {
+                $errors[] = "Line {$lineNum}: class level '{$classLevel}' is outside your role scope";
+                continue;
+            }
 
             // Validate required fields are not empty
             if (empty($name) || empty($code) || empty($classLevel)) {

@@ -40,6 +40,8 @@ class EnforceEndpointSettings
             'api/subjects*',
             'api/departments*',
             'api/classes*',
+            'api/public/classes*',
+            'api/staff/classes*',
             'api/preferences/options',
             'api/preferences/subjects/class/*',
             'api/cbt/subjects*',

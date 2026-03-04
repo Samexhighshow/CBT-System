@@ -5,6 +5,7 @@ import { clearStoredSession, loadStoredSession } from '../services/sessionStore'
 import { CbtAttemptState, CbtQuestion } from '../types';
 import { cbtFontFamily, cbtTheme } from '../theme';
 import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
+import useConnectivity from '../../hooks/useConnectivity';
 
 type AutoSaveState = 'Saved' | 'Saving...' | 'Save failed';
 type AnswerValue = {
@@ -93,6 +94,8 @@ const CbtExamSession: React.FC = () => {
   const [showReview, setShowReview] = useState(false);
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false);
   const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
+  const [showReconnectPrompt, setShowReconnectPrompt] = useState(false);
+  const connectivity = useConnectivity();
 
   const eventThrottleRef = useRef<Record<string, number>>({});
   const sessionResumeLoggedRef = useRef(false);
@@ -293,6 +296,34 @@ const CbtExamSession: React.FC = () => {
     sessionResumeLoggedRef.current = true;
     logAttemptEvent('session_resumed', { source: 'cbt_exam_session' }, { throttleMs: 1000 });
   }, [attemptState, logAttemptEvent]);
+
+  useEffect(() => {
+    if (!attemptState || attemptState.status !== 'in_progress') {
+      setShowReconnectPrompt(false);
+      return;
+    }
+
+    if (connectivity.status === 'OFFLINE' && connectivity.reconnectPending) {
+      setShowReconnectPrompt(true);
+      return;
+    }
+
+    if (connectivity.status === 'ONLINE' || connectivity.status === 'LAN_ONLY') {
+      setShowReconnectPrompt(false);
+    }
+  }, [attemptState, connectivity.status, connectivity.reconnectPending]);
+
+  const handleSyncNow = useCallback(async () => {
+    const next = await connectivity.refresh();
+    if (next.status === 'ONLINE' || next.status === 'LAN_ONLY') {
+      setConnectionStatus('Connected');
+      setShowReconnectPrompt(false);
+      await hydrateAttempt();
+      return;
+    }
+    setConnectionStatus('Reconnecting...');
+    setShowReconnectPrompt(true);
+  }, [connectivity, hydrateAttempt]);
 
   useEffect(() => {
     if (!attemptState || attemptState.status !== 'in_progress' || !sessionToken) return;
@@ -871,6 +902,19 @@ const CbtExamSession: React.FC = () => {
                 {tabWarningCount}/{tabWarningLimit}
               </span>
             </p>
+            {showReconnectPrompt && (
+              <div className="flex items-center gap-2 rounded-md border px-2 py-1" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB', color: '#92400E' }}>
+                <span>Server connection restored. Sync now?</span>
+                <button
+                  type="button"
+                  onClick={handleSyncNow}
+                  className="rounded border px-2 py-0.5 text-[11px] font-semibold"
+                  style={{ borderColor: '#D1D5DB', backgroundColor: '#FFFFFF', color: '#1F2937' }}
+                >
+                  Sync now
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="mt-3 flex items-center gap-2 lg:hidden">

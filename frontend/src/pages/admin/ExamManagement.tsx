@@ -5,6 +5,7 @@ import { SkeletonTable } from '../../components';
 import { api } from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { runWithRetry } from '../../utils/requestRetry';
 import QuestionRandomization from './QuestionRandomization';
 
 /*
@@ -40,6 +41,27 @@ const formatDate = (value?: string) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleString();
+};
+
+const toApiDateTime = (value?: string): string | null => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    return `${raw.replace('T', ' ')}:00`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = parsed.getFullYear();
+  const month = pad(parsed.getMonth() + 1);
+  const day = pad(parsed.getDate());
+  const hours = pad(parsed.getHours());
+  const minutes = pad(parsed.getMinutes());
+  const seconds = pad(parsed.getSeconds());
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
 const getDisplayStatus = (exam: ExamRow): ExamStatus => exam.effective_status || exam.status;
@@ -124,13 +146,36 @@ const ExamManagement: React.FC = () => {
   const loadExams = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/exams');
+      const response = await runWithRetry(() => api.get('/exams', { skipGlobalLoading: true } as any));
       const data = response.data?.data || response.data || [];
       setExams(data);
       setSelectedExams([]);
-    } catch (error) {
-      console.error('Failed to fetch exams', error);
-      showError('Unable to load exams');
+    } catch (error: any) {
+      console.error('Failed to fetch exams:', error);
+      
+      // Provide detailed error messages
+      let errorMessage = 'Unable to load exams';
+      
+      if (error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
+        errorMessage = 'Cannot connect to server. Please ensure the backend API is running on port 8000.';
+      } else if (error?.response?.status === 401) {
+        errorMessage = 'Authentication failed. Please log in again.';
+        // Redirect to login after a moment
+        setTimeout(() => {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/admin-login';
+        }, 2000);
+      } else if (error?.response?.status === 403) {
+        errorMessage = 'You do not have permission to view exams. Please contact an administrator.';
+      } else if (error?.response?.status === 404) {
+        errorMessage = 'Exams endpoint not found. The API may be misconfigured.';
+      } else if (error?.response?.status >= 500) {
+        errorMessage = 'Server error. Please try again later or contact support.';
+      } else if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+      
+      showError(errorMessage);
       setExams([]);
     } finally {
       setLoading(false);
@@ -253,7 +298,9 @@ const ExamManagement: React.FC = () => {
 
   const loadClasses = async () => {
     try {
-      const response = await api.get('/classes?limit=1000');
+      const response = await runWithRetry(() =>
+        api.get('/staff/classes?limit=1000', { skipGlobalLoading: true } as any)
+      );
       const data = response.data?.data || response.data || [];
       setClasses(data);
     } catch (error) {
@@ -328,6 +375,18 @@ const ExamManagement: React.FC = () => {
     }
 
     try {
+      const normalizedStart = toApiDateTime(examForm.start_datetime);
+      const normalizedEnd = toApiDateTime(examForm.end_datetime);
+
+      if (normalizedStart && normalizedEnd) {
+        const startTs = new Date(normalizedStart).getTime();
+        const endTs = new Date(normalizedEnd).getTime();
+        if (!Number.isNaN(startTs) && !Number.isNaN(endTs) && endTs <= startTs) {
+          showError('End Date & Time must be after Start Date & Time.');
+          return;
+        }
+      }
+
       const payload = {
         title: examForm.title,
         description: examForm.description,
@@ -335,8 +394,8 @@ const ExamManagement: React.FC = () => {
         subject_id: Number(examForm.subject_id),
         duration_minutes: examForm.duration_minutes,
         assessment_weight: examForm.assessment_weight ? Number(examForm.assessment_weight) : null,
-        start_datetime: examForm.start_datetime || null,
-        end_datetime: examForm.end_datetime || null,
+        start_datetime: normalizedStart,
+        end_datetime: normalizedEnd,
         instructions: examForm.instructions,
       };
 
@@ -351,13 +410,36 @@ const ExamManagement: React.FC = () => {
       resetForm();
       loadExams();
     } catch (error: any) {
-      showError(error.response?.data?.message || 'Failed to save exam');
+      const validationErrors = error?.response?.data?.errors;
+      if (validationErrors && typeof validationErrors === 'object') {
+        const firstKey = Object.keys(validationErrors)[0];
+        const firstMessage = firstKey ? validationErrors[firstKey]?.[0] : null;
+        showError(firstMessage || error?.response?.data?.message || 'Failed to save exam');
+        return;
+      }
+
+      showError(error?.response?.data?.message || 'Failed to save exam');
     }
   };
 
   useEffect(() => {
-    loadExams();
-    loadClasses();
+    let isActive = true;
+
+    const loadInitialData = async () => {
+      await Promise.all([loadExams(), loadClasses()]);
+    };
+
+    loadInitialData();
+
+    const delayedRefresh = window.setTimeout(() => {
+      if (!isActive) return;
+      loadInitialData();
+    }, 1500);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(delayedRefresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -457,12 +539,12 @@ const ExamManagement: React.FC = () => {
     try {
       await api.put(`/exams/${exam.id}`, {
         published: false,
-        status: 'draft', // Return to draft status when unpublishing
       });
-      showSuccess('Exam unpublished - moved back to draft');
+      showSuccess('Exam unpublished');
       loadExams();
-    } catch (error) {
-      showError('Unpublish failed');
+    } catch (error: any) {
+      const message = error?.response?.data?.message || 'Unpublish failed';
+      showError(message);
     }
   };
 

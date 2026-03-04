@@ -142,7 +142,7 @@ const StudentRegistrationForm: React.FC = () => {
     const fetchClasses = async () => {
       try {
         setLoadingClasses(true);
-        const response = await axios.get(`${API_URL}/classes?is_active=1`);
+        const response = await axios.get(`${API_URL}/public/classes?is_active=1`);
         const payload = response.data?.data || response.data || [];
         setClasses(Array.isArray(payload) ? payload : []);
       } catch (err: any) {

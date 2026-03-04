@@ -6,10 +6,27 @@ use App\Http\Controllers\Controller;
 use App\Models\RoleScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class RoleScopeController extends Controller
 {
+    private function pendingScopeQueryByBatch(string $batchId)
+    {
+        if (str_starts_with($batchId, 'legacy-')) {
+            $legacyId = (int) str_replace('legacy-', '', $batchId);
+            return RoleScope::query()
+                ->where('id', $legacyId)
+                ->where('role_name', 'teacher')
+                ->where('status', 'pending');
+        }
+
+        return RoleScope::query()
+            ->where('request_batch_id', $batchId)
+            ->where('role_name', 'teacher')
+            ->where('status', 'pending');
+    }
+
     public function index(Request $request): JsonResponse
     {
         $query = RoleScope::query()
@@ -189,6 +206,160 @@ class RoleScopeController extends Controller
 
         return response()->json([
             'message' => 'Role scope deleted successfully.',
+        ]);
+    }
+
+    public function pendingTeacherRequests(Request $request): JsonResponse
+    {
+        $rows = RoleScope::query()
+            ->where('role_name', 'teacher')
+            ->where('status', 'pending')
+            ->with([
+                'user:id,name,email',
+                'subject:id,name,code',
+                'schoolClass:id,name',
+            ])
+            ->orderByDesc('id')
+            ->get();
+
+        $grouped = $rows
+            ->groupBy(fn (RoleScope $scope) => $scope->request_batch_id ?: ('legacy-' . $scope->id))
+            ->map(function ($scopes, $batchId) {
+                $first = $scopes->first();
+                $userId = (int) ($first->user_id ?? 0);
+
+                $currentApproved = RoleScope::query()
+                    ->where('user_id', $userId)
+                    ->where('role_name', 'teacher')
+                    ->where('status', 'approved')
+                    ->where('is_active', true)
+                    ->with(['subject:id,name,code', 'schoolClass:id,name'])
+                    ->orderBy('subject_id')
+                    ->orderBy('class_id')
+                    ->get();
+
+                return [
+                    'batch_id' => (string) $batchId,
+                    'user' => [
+                        'id' => $userId,
+                        'name' => (string) ($first->user?->name ?? ''),
+                        'email' => (string) ($first->user?->email ?? ''),
+                    ],
+                    'reason' => (string) ($first->request_reason ?? ''),
+                    'requested_at' => (string) ($scopes->max('created_at') ?? ''),
+                    'requested_scopes' => $scopes->map(function (RoleScope $scope) {
+                        return [
+                            'id' => (int) $scope->id,
+                            'subject_id' => (int) ($scope->subject_id ?? 0),
+                            'subject_name' => (string) ($scope->subject?->name ?? ''),
+                            'class_id' => (int) ($scope->class_id ?? 0),
+                            'class_name' => (string) ($scope->schoolClass?->name ?? ''),
+                        ];
+                    })->values(),
+                    'current_approved_scopes' => $currentApproved->map(function (RoleScope $scope) {
+                        return [
+                            'id' => (int) $scope->id,
+                            'subject_id' => (int) ($scope->subject_id ?? 0),
+                            'subject_name' => (string) ($scope->subject?->name ?? ''),
+                            'class_id' => (int) ($scope->class_id ?? 0),
+                            'class_name' => (string) ($scope->schoolClass?->name ?? ''),
+                        ];
+                    })->values(),
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'pending_requests' => $grouped,
+            'total' => $grouped->count(),
+        ]);
+    }
+
+    public function approveTeacherRequestBatch(Request $request, string $batchId): JsonResponse
+    {
+        $adminId = (int) ($request->user()?->id ?? 0);
+
+        $approvedCount = DB::transaction(function () use ($batchId, $adminId) {
+            $pendingScopes = $this->pendingScopeQueryByBatch($batchId)
+                ->lockForUpdate()
+                ->get();
+
+            if ($pendingScopes->isEmpty()) {
+                return 0;
+            }
+
+            $userId = (int) $pendingScopes->first()->user_id;
+
+            RoleScope::query()
+                ->where('user_id', $userId)
+                ->where('role_name', 'teacher')
+                ->where('status', 'approved')
+                ->where('is_active', true)
+                ->update(['is_active' => false]);
+
+            $ids = $pendingScopes->pluck('id')->map(fn ($id) => (int) $id)->values();
+
+            RoleScope::query()
+                ->whereIn('id', $ids)
+                ->update([
+                    'status' => 'approved',
+                    'is_active' => true,
+                    'approved_by' => $adminId > 0 ? $adminId : null,
+                    'approved_at' => now(),
+                    'rejected_reason' => null,
+                ]);
+
+            RoleScope::query()
+                ->where('user_id', $userId)
+                ->where('role_name', 'teacher')
+                ->where('status', 'pending')
+                ->whereNotIn('id', $ids)
+                ->update([
+                    'status' => 'rejected',
+                    'is_active' => false,
+                    'rejected_reason' => 'Superseded by another approved scope request.',
+                    'approved_by' => null,
+                    'approved_at' => null,
+                ]);
+
+            return $ids->count();
+        });
+
+        if ($approvedCount === 0) {
+            return response()->json([
+                'message' => 'Pending request not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'message' => 'Teacher scope request approved successfully.',
+            'approved_rows' => $approvedCount,
+        ]);
+    }
+
+    public function rejectTeacherRequestBatch(Request $request, string $batchId): JsonResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $updated = $this->pendingScopeQueryByBatch($batchId)->update([
+            'status' => 'rejected',
+            'is_active' => false,
+            'rejected_reason' => (string) $validated['reason'],
+            'approved_by' => null,
+            'approved_at' => null,
+        ]);
+
+        if ($updated === 0) {
+            return response()->json([
+                'message' => 'Pending request not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'message' => 'Teacher scope request rejected.',
+            'rejected_rows' => $updated,
         ]);
     }
 }

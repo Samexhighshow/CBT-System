@@ -102,6 +102,42 @@ const SubjectManagementNew: React.FC = () => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const userRoles = useMemo(() => {
+    try {
+      const userRaw = localStorage.getItem('user');
+      if (!userRaw) return [] as string[];
+      const user = JSON.parse(userRaw);
+      const rolesFromArray = Array.isArray(user?.roles)
+        ? user.roles.map((role: any) =>
+            typeof role === 'string' ? role : (role?.name || role?.role || '')
+          )
+        : [];
+      const roleField = typeof user?.role === 'string'
+        ? [user.role]
+        : user?.role?.name
+          ? [user.role.name]
+          : [];
+
+      return Array.from(
+        new Set(
+          [...rolesFromArray, ...roleField]
+            .map((role: string) => String(role || '').trim().toLowerCase())
+            .filter(Boolean)
+        )
+      );
+    } catch {
+      return [] as string[];
+    }
+  }, []);
+
+  const canManageAcademic = userRoles.includes('admin') || userRoles.includes('main admin');
+
+  const ensureAcademicWriteAccess = () => {
+    if (canManageAcademic) return true;
+    showError('Access denied. Only Admin can modify departments, classes, and subjects.');
+    return false;
+  };
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -128,7 +164,7 @@ const SubjectManagementNew: React.FC = () => {
       setLoading(true);
       const [deptRes, classRes, subjectRes] = await Promise.all([
         api.get(`/departments?limit=1000${deptShowAll ? '&show_all=1' : ''}`),
-        api.get(`/classes?limit=1000${classShowAll ? '&show_all=1' : ''}`),
+        api.get(`/staff/classes?limit=1000${classShowAll ? '&show_all=1' : ''}`),
         api.get(`/subjects?limit=1000${subjectLevelFilter ? `&class_level=${encodeURIComponent(subjectLevelFilter)}` : ''}${subjectShowAll ? `&show_all=1` : ''}`),
       ]);
       
@@ -313,6 +349,7 @@ const SubjectManagementNew: React.FC = () => {
   // Department CRUD
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureAcademicWriteAccess()) return;
     
     if (!deptForm.name || !deptForm.code) {
       showError('Please fill in all required fields');
@@ -337,6 +374,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleDeleteDepartment = async (id: number) => {
+    if (!ensureAcademicWriteAccess()) return;
     const confirmed = await showDeleteConfirm('Delete this department? This will affect all related classes and subjects.');
     if (confirmed.isConfirmed) {
       try {
@@ -350,6 +388,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleToggleDeptStatus = async (dept: any) => {
+    if (!ensureAcademicWriteAccess()) return;
     try {
       const newStatus = !dept.is_active;
       await api.put(`/departments/${dept.id}`, {
@@ -365,6 +404,7 @@ const SubjectManagementNew: React.FC = () => {
   // Class CRUD
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureAcademicWriteAccess()) return;
     
     if (!classForm.name) {
       showError('Please fill in all required fields');
@@ -382,10 +422,10 @@ const SubjectManagementNew: React.FC = () => {
 
     try {
       if (editingClass) {
-        await api.put(`/classes/${editingClass.id}`, classForm);
+        await api.put(`/staff/classes/${editingClass.id}`, classForm);
         showSuccess('Class updated successfully');
       } else {
-        await api.post('/classes', classForm);
+        await api.post('/staff/classes', classForm);
         showSuccess('Class created successfully');
       }
       setShowClassModal(false);
@@ -404,10 +444,11 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleDeleteClass = async (id: number) => {
+    if (!ensureAcademicWriteAccess()) return;
     const confirmed = await showDeleteConfirm('Delete this class? This will affect all students and subjects in this class.');
     if (confirmed.isConfirmed) {
       try {
-        await api.delete(`/classes/${id}`);
+        await api.delete(`/staff/classes/${id}`);
         showSuccess('Class deleted successfully');
         loadAllData();
       } catch (error) {
@@ -417,9 +458,10 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleToggleClassStatus = async (cls: any) => {
+    if (!ensureAcademicWriteAccess()) return;
     try {
       const newStatus = !cls.is_active;
-      await api.put(`/classes/${cls.id}`, {
+      await api.put(`/staff/classes/${cls.id}`, {
         is_active: newStatus
       });
       showSuccess(`Class ${newStatus ? 'activated' : 'deactivated'} successfully`);
@@ -432,6 +474,7 @@ const SubjectManagementNew: React.FC = () => {
   // Subject CRUD
   const handleCreateSubject = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureAcademicWriteAccess()) return;
     
     if (!subjectForm.name || !subjectForm.code || !subjectForm.class_level) {
       showError('Please fill in all required fields');
@@ -468,6 +511,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleDeleteSubject = async (id: number) => {
+    if (!ensureAcademicWriteAccess()) return;
     const confirmed = await showDeleteConfirm('Delete this subject?');
     if (confirmed.isConfirmed) {
       try {
@@ -481,6 +525,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleToggleSubjectStatus = async (subject: any) => {
+    if (!ensureAcademicWriteAccess()) return;
     try {
       const newStatus = !subject.is_active;
       await api.put(`/subjects/${subject.id}`, {
@@ -495,6 +540,7 @@ const SubjectManagementNew: React.FC = () => {
 
   // Bulk Delete Handlers
   const handleBulkDeleteDepts = async () => {
+    if (!ensureAcademicWriteAccess()) return;
     if (selectedDepts.length === 0) {
       showError('No departments selected');
       return;
@@ -513,6 +559,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleBulkDeleteClasses = async () => {
+    if (!ensureAcademicWriteAccess()) return;
     if (selectedClasses.length === 0) {
       showError('No classes selected');
       return;
@@ -520,7 +567,7 @@ const SubjectManagementNew: React.FC = () => {
     const confirmed = await showDeleteConfirm(`Delete ${selectedClasses.length} class(es)?`);
     if (confirmed.isConfirmed) {
       try {
-        await api.post('/classes/bulk-delete', { ids: selectedClasses });
+        await api.post('/staff/classes/bulk-delete', { ids: selectedClasses });
         showSuccess(`${selectedClasses.length} class(es) deleted successfully`);
         setSelectedClasses([]);
         loadAllData();
@@ -531,6 +578,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleBulkDeleteSubjects = async () => {
+    if (!ensureAcademicWriteAccess()) return;
     if (selectedSubjects.length === 0) {
       showError('No subjects selected');
       return;
@@ -550,6 +598,7 @@ const SubjectManagementNew: React.FC = () => {
 
   // Edit Handlers
   const handleEditDept = (dept: Department) => {
+    if (!ensureAcademicWriteAccess()) return;
     setEditingDept(dept);
     setDeptForm({
       name: dept.name,
@@ -561,6 +610,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleEditClass = (cls: SchoolClass) => {
+    if (!ensureAcademicWriteAccess()) return;
     setEditingClass(cls);
     setClassForm({
       name: cls.name,
@@ -573,6 +623,7 @@ const SubjectManagementNew: React.FC = () => {
   };
 
   const handleEditSubject = (subject: Subject) => {
+    if (!ensureAcademicWriteAccess()) return;
     setEditingSubject(subject);
     setSubjectForm({
       name: subject.name,
@@ -588,6 +639,7 @@ const SubjectManagementNew: React.FC = () => {
   // Update handlers for edit mode
   const handleUpdateDept = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureAcademicWriteAccess()) return;
     if (!editingDept) return;
 
     if (!deptForm.name || !deptForm.code) {
@@ -609,6 +661,7 @@ const SubjectManagementNew: React.FC = () => {
 
   const handleUpdateClass = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureAcademicWriteAccess()) return;
     if (!editingClass) return;
 
     if (!classForm.name) {
@@ -617,7 +670,7 @@ const SubjectManagementNew: React.FC = () => {
     }
 
     try {
-      await api.put(`/classes/${editingClass.id}`, classForm);
+      await api.put(`/staff/classes/${editingClass.id}`, classForm);
       showSuccess('Class updated successfully');
       setShowClassModal(false);
       setEditingClass(null);
@@ -630,6 +683,7 @@ const SubjectManagementNew: React.FC = () => {
 
   const handleUpdateSubject = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ensureAcademicWriteAccess()) return;
     if (!editingSubject) return;
 
     if (!subjectForm.name || !subjectForm.code || !subjectForm.class_level) {
@@ -741,6 +795,7 @@ const SubjectManagementNew: React.FC = () => {
 
   // Bulk upload handler
   const handleBulkUpload = async (type: 'departments' | 'classes' | 'subjects') => {
+    if (!ensureAcademicWriteAccess()) return;
     if (!uploadFile) {
       showError('Please select a file');
       return;
@@ -752,7 +807,7 @@ const SubjectManagementNew: React.FC = () => {
 
     try {
       const endpoint = type === 'departments' ? '/departments/bulk-upload' :
-                      type === 'classes' ? '/classes/bulk-upload' :
+                      type === 'classes' ? '/staff/classes/bulk-upload' :
                       '/subjects/bulk-upload';
       
       const response = await api.post(endpoint, formData, {
@@ -822,7 +877,11 @@ const SubjectManagementNew: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Academic Management
           </h1>
-          <p className="text-xs md:text-sm text-gray-600 mt-1">Manage departments, classes, and subjects</p>
+          <p className="text-xs md:text-sm text-gray-600 mt-1">
+            {canManageAcademic
+              ? 'Manage departments, classes, and subjects'
+              : 'View departments, classes, and subjects'}
+          </p>
         </div>
 
         {/* Tabs */}
@@ -861,19 +920,22 @@ const SubjectManagementNew: React.FC = () => {
                     Required for SSS classes â€¢ {departments.length} total
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleExportDepts()}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
-                  >
-                    <i className='bx bx-download'></i>
-                    Export CSV
-                  </button>
-                </div>
+                {canManageAcademic && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleExportDepts()}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                    >
+                      <i className='bx bx-download'></i>
+                      Export CSV
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Action Cards */}
+            {canManageAcademic ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {/* Upload CSV Card */}
               <div 
@@ -917,6 +979,11 @@ const SubjectManagementNew: React.FC = () => {
                 <p className="text-sm text-gray-600">Add departments one by one</p>
               </div>
             </div>
+            ) : (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Read-only view: only Admin/Main Admin can upload, export, or create departments.
+              </div>
+            )}
 
             {/* Departments List Section */}
             {departments.length > 0 && (
@@ -975,6 +1042,7 @@ const SubjectManagementNew: React.FC = () => {
                   </div>
 
                   {/* Selection Bar */}
+                  {canManageAcademic && (
                   <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                       <div className="flex items-center gap-3">
@@ -1007,6 +1075,7 @@ const SubjectManagementNew: React.FC = () => {
                       )}
                     </div>
                   </div>
+                  )}
                 </div>
 
                 {/* Departments Table */}
@@ -1014,7 +1083,7 @@ const SubjectManagementNew: React.FC = () => {
                   <table className="w-full min-w-[900px] text-xs border-collapse bg-white">
                     <thead>
                       <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
-                        <th className="px-3 py-2 w-10">
+                        {canManageAcademic && (<th className="px-3 py-2 w-10">
                           <input
                             type="checkbox"
                             checked={pagedDepartments.length > 0 && pagedDepartments.every((dept: any) => selectedDepts.includes(dept.id))}
@@ -1022,19 +1091,19 @@ const SubjectManagementNew: React.FC = () => {
                             className="w-4 h-4 cursor-pointer"
                             title="Select current page departments"
                           />
-                        </th>
+                        </th>)}
                         <th className="px-3 py-2 text-left font-semibold">Department</th>
                         <th className="px-3 py-2 text-left font-semibold">Code</th>
                         <th className="px-3 py-2 text-left font-semibold">Class Level</th>
                         <th className="px-3 py-2 text-left font-semibold">Description</th>
                         <th className="px-3 py-2 text-left font-semibold">Status</th>
-                        <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                        {canManageAcademic && <th className="px-3 py-2 text-left font-semibold">Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {pagedDepartments.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-3 py-6 text-center text-gray-500 text-sm">
+                          <td colSpan={canManageAcademic ? 7 : 5} className="px-3 py-6 text-center text-gray-500 text-sm">
                             No departments found for the current filters.
                           </td>
                         </tr>
@@ -1046,6 +1115,7 @@ const SubjectManagementNew: React.FC = () => {
                               index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                             } hover:bg-blue-50/60 ${selectedDepts.includes(dept.id) ? 'bg-blue-50' : ''}`}
                           >
+                            {canManageAcademic && (
                             <td className="px-3 py-2">
                               <input
                                 type="checkbox"
@@ -1060,6 +1130,7 @@ const SubjectManagementNew: React.FC = () => {
                                 className="w-4 h-4 cursor-pointer"
                               />
                             </td>
+                            )}
                             <td className="px-3 py-2 text-sm text-gray-900 font-medium">{dept.name}</td>
                             <td className="px-3 py-2 text-sm text-gray-700">
                               <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-[11px] font-semibold">
@@ -1073,6 +1144,7 @@ const SubjectManagementNew: React.FC = () => {
                               </span>
                             </td>
                             <td className="px-3 py-2">
+                              {canManageAcademic ? (
                               <button
                                 onClick={() => handleToggleDeptStatus(dept)}
                                 className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
@@ -1084,7 +1156,17 @@ const SubjectManagementNew: React.FC = () => {
                               >
                                 {dept.is_active ? 'Active' : 'Inactive'}
                               </button>
+                              ) : (
+                              <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                                dept.is_active
+                                  ? 'bg-green-100 text-green-800 border-green-200'
+                                  : 'bg-gray-100 text-gray-700 border-gray-200'
+                              }`}>
+                                {dept.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                              )}
                             </td>
+                            {canManageAcademic && (
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
@@ -1103,6 +1185,7 @@ const SubjectManagementNew: React.FC = () => {
                                 </button>
                               </div>
                             </td>
+                            )}
                           </tr>
                         ))
                       )}
@@ -1173,19 +1256,22 @@ const SubjectManagementNew: React.FC = () => {
                     }
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleExportClasses()}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
-                  >
-                    <i className='bx bx-download'></i>
-                    Export CSV
-                  </button>
-                </div>
+                {canManageAcademic && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleExportClasses()}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                    >
+                      <i className='bx bx-download'></i>
+                      Export CSV
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Action Cards */}
+            {canManageAcademic ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {/* Upload CSV Card */}
               <div 
@@ -1229,6 +1315,11 @@ const SubjectManagementNew: React.FC = () => {
                 <p className="text-sm text-gray-600">Add classes one by one</p>
               </div>
             </div>
+            ) : (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Read-only view: only Admin/Main Admin can upload, export, or create classes.
+              </div>
+            )}
 
             {/* Classes Summary */}
             {classes.length > 0 && (
@@ -1331,6 +1422,7 @@ const SubjectManagementNew: React.FC = () => {
                   </div>
 
                   {/* Selection Bar */}
+                  {canManageAcademic && (
                   <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                       <div className="flex items-center gap-3">
@@ -1363,6 +1455,7 @@ const SubjectManagementNew: React.FC = () => {
                     )}
                   </div>
                 </div>
+                  )}
                 </div>
 
                 {/* Classes Table */}
@@ -1370,7 +1463,7 @@ const SubjectManagementNew: React.FC = () => {
                   <table className="w-full min-w-[980px] text-xs border-collapse bg-white">
                     <thead>
                       <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
-                        <th className="px-3 py-2 w-10">
+                        {canManageAcademic && (<th className="px-3 py-2 w-10">
                           <input
                             type="checkbox"
                             checked={pagedClasses.length > 0 && pagedClasses.every((cls: any) => selectedClasses.includes(cls.id))}
@@ -1378,19 +1471,19 @@ const SubjectManagementNew: React.FC = () => {
                             className="w-4 h-4 cursor-pointer"
                             title="Select current page classes"
                           />
-                        </th>
+                        </th>)}
                         <th className="px-3 py-2 text-left font-semibold">Class</th>
                         <th className="px-3 py-2 text-left font-semibold">Type</th>
                         <th className="px-3 py-2 text-left font-semibold">Capacity</th>
                         <th className="px-3 py-2 text-left font-semibold">Departments</th>
                         <th className="px-3 py-2 text-left font-semibold">Status</th>
-                        <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                        {canManageAcademic && <th className="px-3 py-2 text-left font-semibold">Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {pagedClasses.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-3 py-6 text-center text-gray-500 text-sm">
+                          <td colSpan={canManageAcademic ? 7 : 5} className="px-3 py-6 text-center text-gray-500 text-sm">
                             No classes found for the current filters.
                           </td>
                         </tr>
@@ -1404,6 +1497,7 @@ const SubjectManagementNew: React.FC = () => {
                                 index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                               } hover:bg-blue-50/60 ${selectedClasses.includes(cls.id) ? 'bg-blue-50' : ''}`}
                             >
+                              {canManageAcademic && (
                               <td className="px-3 py-2">
                                 <input
                                   type="checkbox"
@@ -1418,6 +1512,7 @@ const SubjectManagementNew: React.FC = () => {
                                   className="w-4 h-4 cursor-pointer"
                                 />
                               </td>
+                              )}
                               <td className="px-3 py-2 text-sm text-gray-900 font-medium">{cls.name}</td>
                               <td className="px-3 py-2 text-sm text-gray-700">
                                 {isSSClass(cls.name) ? (
@@ -1441,6 +1536,7 @@ const SubjectManagementNew: React.FC = () => {
                                 )}
                               </td>
                               <td className="px-3 py-2">
+                                {canManageAcademic ? (
                                 <button
                                   onClick={() => handleToggleClassStatus(cls)}
                                   className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
@@ -1452,7 +1548,17 @@ const SubjectManagementNew: React.FC = () => {
                                 >
                                   {cls.is_active ? 'Active' : 'Inactive'}
                                 </button>
+                                ) : (
+                                <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                                  cls.is_active
+                                    ? 'bg-green-100 text-green-800 border-green-200'
+                                    : 'bg-gray-100 text-gray-700 border-gray-200'
+                                }`}>
+                                  {cls.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                                )}
                               </td>
+                              {canManageAcademic && (
                               <td className="px-3 py-2">
                                 <div className="flex items-center justify-end gap-1.5">
                                   <button
@@ -1471,6 +1577,7 @@ const SubjectManagementNew: React.FC = () => {
                                   </button>
                                 </div>
                               </td>
+                              )}
                             </tr>
                           );
                         })
@@ -1542,19 +1649,22 @@ const SubjectManagementNew: React.FC = () => {
                     }
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleExportSubjects()}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
-                  >
-                    <i className='bx bx-download'></i>
-                    Export CSV
-                  </button>
-                </div>
+                {canManageAcademic && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleExportSubjects()}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                    >
+                      <i className='bx bx-download'></i>
+                      Export CSV
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Action Cards */}
+            {canManageAcademic ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {/* Upload CSV Card */}
               <div 
@@ -1606,6 +1716,11 @@ const SubjectManagementNew: React.FC = () => {
                 <p className="text-sm text-gray-600">Add subjects one by one</p>
               </div>
             </div>
+            ) : (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Read-only view: only Admin/Main Admin can upload, export, or create subjects.
+              </div>
+            )}
 
             {/* Subjects List Section */}
             <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -1665,7 +1780,7 @@ const SubjectManagementNew: React.FC = () => {
                 </div>
 
                 {/* Selection Bar */}
-                {filteredSubjects.length > 0 && (
+                {filteredSubjects.length > 0 && canManageAcademic && (
                   <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                       <div className="flex items-center gap-3">
@@ -1738,7 +1853,7 @@ const SubjectManagementNew: React.FC = () => {
                 <table className="w-full min-w-[1100px] text-xs border-collapse bg-white">
                   <thead>
                     <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
-                      <th className="px-3 py-2 w-10">
+                      {canManageAcademic && (<th className="px-3 py-2 w-10">
                         <input
                           type="checkbox"
                           checked={pagedSubjects.length > 0 && pagedSubjects.every((subject: any) => selectedSubjects.includes(subject.id))}
@@ -1746,20 +1861,20 @@ const SubjectManagementNew: React.FC = () => {
                           className="w-4 h-4 cursor-pointer"
                           title="Select current page subjects"
                         />
-                      </th>
+                      </th>)}
                       <th className="px-3 py-2 text-left font-semibold">Subject</th>
                       <th className="px-3 py-2 text-left font-semibold">Code</th>
                       <th className="px-3 py-2 text-left font-semibold">Class Level</th>
                       <th className="px-3 py-2 text-left font-semibold">Type</th>
                       <th className="px-3 py-2 text-left font-semibold">Description</th>
                       <th className="px-3 py-2 text-left font-semibold">Status</th>
-                      <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                      {canManageAcademic && <th className="px-3 py-2 text-left font-semibold">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {pagedSubjects.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-3 py-6 text-center text-gray-500 text-sm">
+                        <td colSpan={canManageAcademic ? 8 : 6} className="px-3 py-6 text-center text-gray-500 text-sm">
                           No subjects available for the current filters.
                         </td>
                       </tr>
@@ -1771,6 +1886,7 @@ const SubjectManagementNew: React.FC = () => {
                             index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                           } hover:bg-blue-50/60 ${selectedSubjects.includes(subject.id) ? 'bg-blue-50' : ''}`}
                         >
+                          {canManageAcademic && (
                           <td className="px-3 py-2">
                             <input
                               type="checkbox"
@@ -1785,6 +1901,7 @@ const SubjectManagementNew: React.FC = () => {
                               className="w-4 h-4 cursor-pointer"
                             />
                           </td>
+                          )}
                           <td className="px-3 py-2 text-sm text-gray-900 font-medium">{subject.name}</td>
                           <td className="px-3 py-2 text-sm text-gray-700">
                             <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-[11px] font-semibold">
@@ -1811,6 +1928,7 @@ const SubjectManagementNew: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-3 py-2">
+                            {canManageAcademic ? (
                             <button
                               onClick={() => handleToggleSubjectStatus(subject)}
                               className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
@@ -1822,7 +1940,17 @@ const SubjectManagementNew: React.FC = () => {
                             >
                               {subject.is_active ? 'Active' : 'Inactive'}
                             </button>
+                            ) : (
+                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                              subject.is_active
+                                ? 'bg-green-100 text-green-800 border-green-200'
+                                : 'bg-gray-100 text-gray-700 border-gray-200'
+                            }`}>
+                              {subject.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                            )}
                           </td>
+                          {canManageAcademic && (
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
@@ -1841,6 +1969,7 @@ const SubjectManagementNew: React.FC = () => {
                               </button>
                             </div>
                           </td>
+                          )}
                         </tr>
                       ))
                     )}
@@ -1895,7 +2024,7 @@ const SubjectManagementNew: React.FC = () => {
         )}
 
         {/* Department Modal */}
-        {showDeptModal && (
+        {showDeptModal && canManageAcademic && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
               <div className="flex justify-between items-center mb-4">
@@ -1986,7 +2115,7 @@ const SubjectManagementNew: React.FC = () => {
         )}
 
         {/* Class Modal */}
-        {showClassModal && (
+        {showClassModal && canManageAcademic && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4">
               <div className="flex justify-between items-center mb-4">
@@ -2109,7 +2238,7 @@ const SubjectManagementNew: React.FC = () => {
         )}
 
         {/* Subject Modal */}
-        {showSubjectModal && (
+        {showSubjectModal && canManageAcademic && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
@@ -2260,7 +2389,7 @@ const SubjectManagementNew: React.FC = () => {
           </div>
         )}
         {/* Bulk Upload Modal */}
-        {uploadModal && (
+        {uploadModal && canManageAcademic && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
               <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">

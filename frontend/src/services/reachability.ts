@@ -3,13 +3,12 @@ export type ConnectivityStatus = 'ONLINE' | 'LAN_ONLY' | 'OFFLINE';
 const cloudBaseUrl = (process.env.REACT_APP_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
 const localBaseUrl = (process.env.REACT_APP_LOCAL_API_URL || cloudBaseUrl).replace(/\/$/, '');
 
-const CHECK_TIMEOUT_LOCAL_MS = 4500;
-const CHECK_TIMEOUT_CLOUD_MS = 5500;
-const GRACE_WINDOW_MS = 30000;
-const CHECK_CACHE_TTL_MS = 4000;
+const CHECK_TIMEOUT_LOCAL_MS = 4000;
+const CHECK_TIMEOUT_CLOUD_MS = 4500;
+const CHECK_CACHE_TTL_MS = 10000;
+const PROBE_RETRY_COUNT = 1;
+const PROBE_RETRY_DELAY_MS = 250;
 
-let lastKnownOnlineAt = 0;
-let lastKnownStatus: ConnectivityStatus = 'OFFLINE';
 let lastCheckAt = 0;
 let lastResult: ReachabilityResult | null = null;
 let inFlightCheck: Promise<ReachabilityResult> | null = null;
@@ -54,6 +53,32 @@ const fetchWithTimeout = async (
   }
 };
 
+const wait = (ms: number) => new Promise<void>((resolve) => {
+  window.setTimeout(resolve, ms);
+});
+
+const probeWithRetry = async (
+  url: string,
+  timeoutMs: number,
+  retries: number
+): Promise<{ ok: boolean; reason?: string }> => {
+  let lastReason = '';
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const result = await fetchWithTimeout(url, timeoutMs);
+    if (result.ok) {
+      return { ok: true };
+    }
+
+    lastReason = result.reason || lastReason;
+    if (attempt < retries) {
+      await wait(PROBE_RETRY_DELAY_MS);
+    }
+  }
+
+  return { ok: false, reason: lastReason || `unreachable:${url}` };
+};
+
 export interface ReachabilityResult {
   status: ConnectivityStatus;
   canReachLocal: boolean;
@@ -71,7 +96,7 @@ const runReachabilityCheck = async (): Promise<ReachabilityResult> => {
   ): Promise<{ ok: boolean; reason?: string }> => {
     let lastReason = '';
     for (const url of urls) {
-      const result = await fetchWithTimeout(url, timeoutMs);
+      const result = await probeWithRetry(url, timeoutMs, PROBE_RETRY_COUNT);
       if (result.ok) {
         return { ok: true };
       }
@@ -103,27 +128,19 @@ const runReachabilityCheck = async (): Promise<ReachabilityResult> => {
     reason = cloudResult.reason || localResult.reason || '';
   }
 
-  let status: ConnectivityStatus = 'OFFLINE';
-  if (cloudOk) {
-    status = 'ONLINE';
-  } else if (localOk) {
-    status = 'LAN_ONLY';
-  } else if (navigator.onLine && Date.now() - lastKnownOnlineAt < GRACE_WINDOW_MS) {
-    status = lastKnownStatus === 'OFFLINE' ? 'LAN_ONLY' : lastKnownStatus;
-  }
-
-  if (status !== 'OFFLINE') {
-    lastKnownOnlineAt = Date.now();
-    lastKnownStatus = status;
-  }
+  // API reachability is the single source of truth for connectivity.
+  // Distinguish full online from LAN-only reachability for operational visibility.
+  const status: ConnectivityStatus = cloudOk
+    ? 'ONLINE'
+    : localOk
+      ? 'LAN_ONLY'
+      : 'OFFLINE';
 
   return {
     status,
     canReachLocal: localOk,
     canReachCloud: cloudOk,
-    reason: status === 'OFFLINE'
-      ? (!navigator.onLine ? 'browser_offline' : (reason || 'health_check_failed'))
-      : undefined,
+    reason: status === 'OFFLINE' ? (reason || 'health_check_failed') : undefined,
   };
 };
 
@@ -151,11 +168,13 @@ export const checkReachability = async (force = false): Promise<ReachabilityResu
   return inFlightCheck;
 };
 
+export const getCachedReachability = (): ReachabilityResult | null => lastResult;
+
 export const getReachableBaseUrl = (result: ReachabilityResult): string | null => {
-  if (result.status === 'ONLINE') {
+  if (result.canReachCloud) {
     return cloudBaseUrl;
   }
-  if (result.status === 'LAN_ONLY') {
+  if (result.canReachLocal) {
     return localBaseUrl;
   }
   return null;

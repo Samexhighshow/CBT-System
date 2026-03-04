@@ -32,6 +32,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
   const [scopeRows, setScopeRows] = useState<Array<{ subject_id: number; class_id: number }>>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<number | ''>('');
   const [selectedClassId, setSelectedClassId] = useState<number | ''>('');
+  const [requestReason, setRequestReason] = useState('');
   const [loadingSubjects, setLoadingSubjects] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -46,6 +47,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
       setScopeRows([]);
       setSelectedSubjectId('');
       setSelectedClassId('');
+      setRequestReason('');
       setError('');
       setPendingInfo(null);
     }
@@ -115,12 +117,18 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
       return;
     }
 
+    if (requestReason.trim().length < 5) {
+      setError('Reason is required (minimum 5 characters).');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
 
     try {
       await api.post('/preferences/teacher/subjects', {
         subjects: scopeRows,
+        reason: requestReason.trim(),
       });
 
       showSuccess('Scope request submitted for approval');
@@ -175,8 +183,8 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
             <h3 className="text-lg font-semibold mb-4">Request Teaching Scope</h3>
             {pendingInfo && (
               <div className="mb-3 text-xs text-gray-600">
-                Pending: {pendingInfo.pending_count || 0} · Rejected: {pendingInfo.rejected_count || 0}
-                {pendingInfo.latest_rejection_reason ? ` · Last rejection: ${pendingInfo.latest_rejection_reason}` : ''}
+                Pending: {pendingInfo.pending_count || 0} ï¿½ Rejected: {pendingInfo.rejected_count || 0}
+                {pendingInfo.latest_rejection_reason ? ` ï¿½ Last rejection: ${pendingInfo.latest_rejection_reason}` : ''}
               </div>
             )}
 
@@ -233,7 +241,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
                       {displayRows.map((row) => (
                         <div key={`${row.subject_id}-${row.class_id}`} className="p-3 flex items-center justify-between">
                           <div className="text-sm text-gray-800">
-                            {row.subject_name} · {row.class_name}
+                            {row.subject_name} ï¿½ {row.class_name}
                           </div>
                           <button
                             type="button"
@@ -247,6 +255,17 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
                     </div>
                   )}
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Reason for request</label>
+                  <textarea
+                    value={requestReason}
+                    onChange={(e) => setRequestReason(e.target.value)}
+                    rows={3}
+                    className="w-full border rounded px-3 py-2 text-sm"
+                    placeholder="Explain why you need this assignment"
+                  />
+                </div>
               </div>
             )}
           </Card>
@@ -255,7 +274,7 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
             <Button variant="outline" onClick={onClose} disabled={submitting}>
               Skip for Now
             </Button>
-            <Button onClick={handleSubmit} disabled={scopeRows.length === 0 || submitting} loading={submitting}>
+            <Button onClick={handleSubmit} disabled={scopeRows.length === 0 || requestReason.trim().length < 5 || submitting} loading={submitting}>
               Submit for Approval ({scopeRows.length})
             </Button>
           </div>

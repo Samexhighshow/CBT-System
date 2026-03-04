@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\User;
 use App\Models\SchoolClass;
 use App\Services\RegistrationNumberService;
+use App\Services\RoleScopeService;
 use App\Jobs\SendStudentOnboardingEmailJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -17,6 +18,28 @@ use Spatie\Permission\Models\Role;
 
 class StudentBulkController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
+    private function buildClassLevelVariants(array $levels): array
+    {
+        return collect($levels)
+            ->flatMap(function ($level) {
+                $raw = trim((string) $level);
+                if ($raw === '') {
+                    return [];
+                }
+                $compact = str_replace(' ', '', $raw);
+                return [$raw, strtolower($raw), strtoupper($raw), $compact, strtolower($compact), strtoupper($compact)];
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     /**
      * Import students from CSV
      */
@@ -35,6 +58,19 @@ class StudentBulkController extends Controller
         
         $imported = 0;
         $errors = [];
+        $allowedClassVariants = [];
+
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $allowedClassVariants = $this->buildClassLevelVariants($this->roleScopeService->scopedClassLevels($request->user()));
+            if (empty($allowedClassVariants)) {
+                return response()->json([
+                    'message' => 'No approved class scope available for import.',
+                    'imported' => 0,
+                    'errors' => ['You do not have class scope for this operation.'],
+                ], 403);
+            }
+        }
+
         $studentRole = Role::firstOrCreate([
             'name' => 'student',
             'guard_name' => 'web',
@@ -75,6 +111,15 @@ class StudentBulkController extends Controller
                         'row' => $index + 2, // +2 because of header and 0-index
                         'data' => $row,
                         'errors' => $validator->errors()->all(),
+                    ];
+                    continue;
+                }
+
+                if (!empty($allowedClassVariants) && !in_array((string) $rowData['class_level'], $allowedClassVariants, true)) {
+                    $errors[] = [
+                        'row' => $index + 2,
+                        'data' => $row,
+                        'errors' => ["Class level '{$rowData['class_level']}' is outside your approved scope."],
                     ];
                     continue;
                 }
@@ -159,6 +204,24 @@ class StudentBulkController extends Controller
     public function exportCsv(Request $request)
     {
         $query = Student::with('department');
+
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $classIds = $this->roleScopeService->scopedClassIds($request->user());
+            $classVariants = $this->buildClassLevelVariants($this->roleScopeService->scopedClassLevels($request->user()));
+
+            if (empty($classIds) && empty($classVariants)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where(function ($q) use ($classIds, $classVariants) {
+                    if (!empty($classIds)) {
+                        $q->orWhereIn('class_id', $classIds);
+                    }
+                    if (!empty($classVariants)) {
+                        $q->orWhereIn('class_level', $classVariants);
+                    }
+                });
+            }
+        }
 
         // Apply filters
         if ($request->has('class_level')) {

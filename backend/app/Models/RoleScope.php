@@ -13,6 +13,7 @@ class RoleScope extends Model
     protected $fillable = [
         'user_id',
         'role_name',
+        'request_batch_id',
         'subject_id',
         'class_id',
         'exam_id',
@@ -20,6 +21,7 @@ class RoleScope extends Model
         'term',
         'is_active',
         'status',
+        'request_reason',
         'requested_by',
         'approved_by',
         'approved_at',

@@ -47,6 +47,7 @@ const StudentManagement: React.FC = () => {
   const [perPage, setPerPage] = useState(25);
   const [page, setPage] = useState(1);
   const [departments, setDepartments] = useState<Array<{id: number; name: string}>>([]);
+  const [availableClassLevels, setAvailableClassLevels] = useState<string[]>([]);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState<null | Student>(null);
   const [viewStudentDetails, setViewStudentDetails] = useState<Student | null>(null);
@@ -72,7 +73,34 @@ const StudentManagement: React.FC = () => {
   useEffect(() => {
     loadStudents();
     loadDepartments();
+    loadClassLevels();
   }, []);
+
+  const loadClassLevels = async () => {
+    try {
+      const response = await api.get('/staff/classes?limit=1000');
+      const classData = response?.data?.data || response?.data || [];
+      const levels = Array.from(
+        new Set(
+          (Array.isArray(classData) ? classData : [])
+            .map((cls: any) => String(cls?.name || '').trim().toUpperCase())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b));
+
+      setAvailableClassLevels(levels);
+      if (levels.length > 0) {
+        setForm((prev) => ({
+          ...prev,
+          class_level: levels.includes(prev.class_level) ? prev.class_level : levels[0],
+          department_id: isSssClass(levels.includes(prev.class_level) ? prev.class_level : levels[0]) ? prev.department_id : 0,
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load scoped classes:', error);
+      setAvailableClassLevels([]);
+    }
+  };
 
   const loadDepartments = async () => {
     try {
@@ -631,7 +659,7 @@ const StudentManagement: React.FC = () => {
                   }}
                   aria-label="Class level"
                 >
-                  {['JSS1','JSS2','JSS3','SSS1','SSS2','SSS3'].map(l => <option key={l} value={l}>{l}</option>)}
+                  {availableClassLevels.map(l => <option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
               <div>
@@ -664,6 +692,10 @@ const StudentManagement: React.FC = () => {
             <button className="px-4 py-2 border rounded" onClick={() => setShowRegisterModal(false)}>Cancel</button>
             <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={async () => {
               try {
+                if (availableClassLevels.length === 0) {
+                  showError('No assigned class is available for registration.');
+                  return;
+                }
                 if (isSssClass(form.class_level) && !form.department_id) {
                   showError('Please select a department for SSS class registration.');
                   return;
@@ -677,7 +709,7 @@ const StudentManagement: React.FC = () => {
                   last_name: '',
                   email: '',
                   department_id: 0,
-                  class_level: 'JSS1',
+                  class_level: availableClassLevels[0] || '',
                   status: 'active',
                 });
                 loadStudents();

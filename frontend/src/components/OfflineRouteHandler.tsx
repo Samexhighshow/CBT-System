@@ -1,6 +1,5 @@
-import React, { useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import useConnectivity from '../hooks/useConnectivity';
+import React from 'react';
+import useConnectivity, { refreshConnectivity } from '../hooks/useConnectivity';
 
 // Routes that work offline
 const OFFLINE_ENABLED_ROUTES = [
@@ -15,45 +14,21 @@ const OFFLINE_ENABLED_ROUTES = [
   '/profile',
 ];
 
-// Routes that require network reachability
-const ONLINE_ONLY_ROUTES = [
-  '/admin',
-  '/register',
-];
-
 /**
  * Offline Routing Handler
- * Redirects users from online-only routes when no backend is reachable.
+ * Shows offline status only; does not control routing.
  */
 const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const connectivity = useConnectivity();
   const isOnline = connectivity.status === 'ONLINE' || connectivity.status === 'LAN_ONLY';
   const showOfflineBanner = !isOnline && connectivity.initialized && !connectivity.checking;
-  const navigate = useNavigate();
-  const location = useLocation();
 
   const reasonText =
-    connectivity.reason === 'browser_offline'
-      ? 'Internet is disconnected on this device.'
-      : connectivity.reason?.startsWith('timeout:')
-        ? 'Server health check timed out.'
-        : connectivity.reason?.startsWith('unreachable:')
-          ? 'Server is unreachable (network/CORS/API URL issue).'
-          : 'Backend health check failed.';
-
-  useEffect(() => {
-    if (isOnline || !connectivity.initialized || connectivity.checking) return;
-
-    const currentPath = location.pathname;
-    const isOnlineOnlyRoute = ONLINE_ONLY_ROUTES.some((route) => currentPath.startsWith(route));
-    if (!isOnlineOnlyRoute) return;
-
-    const user = localStorage.getItem('user');
-    const token = localStorage.getItem('auth_token');
-    if (user && token) {
-      navigate(getOfflineFallbackRoute(), { replace: true });
-    }
-  }, [isOnline, connectivity.initialized, connectivity.checking, navigate, location.pathname]);
+    connectivity.reason?.startsWith('timeout:')
+      ? 'Server health check timed out.'
+      : connectivity.reason?.startsWith('unreachable:')
+        ? 'Server is unreachable (network/CORS/API URL issue).'
+        : 'Backend health check failed.';
 
   return (
     <>
@@ -64,7 +39,7 @@ const OfflineRouteHandler: React.FC<{ children: React.ReactNode }> = ({ children
             <span className="font-medium">You are currently offline. Some features may be limited.</span>
             <span className="hidden text-xs opacity-90 md:inline">({reasonText})</span>
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => { void refreshConnectivity(); }}
               className="ml-4 rounded bg-white px-3 py-1 text-sm text-yellow-700 transition hover:bg-yellow-50"
               type="button"
             >

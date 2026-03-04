@@ -202,7 +202,7 @@ const QuestionBank: React.FC<{}> = () => {
   const loadClasses = async () => {
     try {
       setLoading(true);
-      const classesRes = await api.get('/classes');
+      const classesRes = await api.get('/staff/classes');
       const allClasses = classesRes.data?.data || classesRes.data || [];
       
       // Deduplicate by class name - keep only unique levels

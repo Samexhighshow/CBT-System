@@ -11,6 +11,7 @@ use App\Models\SchoolClass;
 use App\Mail\StudentOnboardingMail;
 use App\Services\GradingService;
 use App\Services\RegistrationNumberService;
+use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -21,6 +22,31 @@ use Spatie\Permission\Models\Role;
 
 class StudentController extends Controller
 {
+    public function __construct(
+        private readonly RoleScopeService $roleScopeService
+    ) {
+    }
+
+    private function enforceStudentScope(Request $request, Student $student): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$this->roleScopeService->isScopedActor($request->user())) {
+            return null;
+        }
+
+        $allowed = $this->roleScopeService->canAccessSubjectClass(
+            $request->user(),
+            null,
+            (string) ($student->class_level ?? ''),
+            (int) ($student->class_id ?? 0)
+        );
+
+        if ($allowed) {
+            return null;
+        }
+
+        return response()->json(['message' => 'Forbidden: student outside your class scope.'], 403);
+    }
+
     /**
      * Get current authenticated student's profile snapshot.
      */
@@ -76,6 +102,35 @@ class StudentController extends Controller
     {
         $query = Student::with(['department', 'exams']);
 
+        if ($this->roleScopeService->isScopedActor($request->user())) {
+            $classIds = $this->roleScopeService->scopedClassIds($request->user());
+            $classLevels = $this->roleScopeService->scopedClassLevels($request->user());
+
+            if (empty($classIds) && empty($classLevels)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where(function ($q) use ($classIds, $classLevels) {
+                    if (!empty($classIds)) {
+                        $q->orWhereIn('class_id', $classIds);
+                    }
+
+                    if (!empty($classLevels)) {
+                        $variants = collect($classLevels)
+                            ->flatMap(function ($level) {
+                                $raw = trim((string) $level);
+                                $compact = str_replace(' ', '', $raw);
+                                return [$raw, strtolower($raw), strtoupper($raw), $compact, strtolower($compact), strtoupper($compact)];
+                            })
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->all();
+                        $q->orWhereIn('class_level', $variants);
+                    }
+                });
+            }
+        }
+
         // Search filter
         if ($request->has('search')) {
             $search = $request->search;
@@ -120,9 +175,13 @@ class StudentController extends Controller
     /**
      * Display the specified student
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $student = Student::with(['department', 'schoolClass', 'subjects', 'exams', 'examAttempts.exam'])->findOrFail($id);
+        $scopeError = $this->enforceStudentScope($request, $student);
+        if ($scopeError) {
+            return $scopeError;
+        }
         
         return response()->json($student);
     }
@@ -184,6 +243,22 @@ class StudentController extends Controller
             $validated['class_level'] = $classLevel;
         } else {
             $validated['class_level'] = strtoupper((string) ($validated['class_level'] ?? 'JSS1'));
+        }
+
+        $user = $request->user();
+        if ($user && $this->roleScopeService->isScopedActor($user)) {
+            $allowed = $this->roleScopeService->canAccessSubjectClass(
+                $user,
+                null,
+                (string) ($validated['class_level'] ?? ''),
+                (int) ($validated['class_id'] ?? 0)
+            );
+
+            if (!$allowed) {
+                return response()->json([
+                    'message' => 'Forbidden: you can only register students in your assigned class(es).'
+                ], 403);
+            }
         }
 
         $normalizedLevel = strtoupper((string) ($validated['class_level'] ?? ''));
@@ -371,6 +446,10 @@ class StudentController extends Controller
     public function update(Request $request, $id)
     {
         $student = Student::findOrFail($id);
+        $scopeError = $this->enforceStudentScope($request, $student);
+        if ($scopeError) {
+            return $scopeError;
+        }
 
         $validated = $request->validate([
             'registration_number' => ['sometimes', 'string', Rule::unique('students')->ignore($student->id)],
@@ -484,9 +563,13 @@ class StudentController extends Controller
     /**
      * Remove the specified student
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $student = Student::findOrFail($id);
+        $scopeError = $this->enforceStudentScope($request, $student);
+        if ($scopeError) {
+            return $scopeError;
+        }
         $student->delete();
 
         return response()->json([
@@ -497,9 +580,13 @@ class StudentController extends Controller
     /**
      * Get student's available exams
      */
-    public function getExams($id)
+    public function getExams(Request $request, $id)
     {
         $student = Student::findOrFail($id);
+        $scopeError = $this->enforceStudentScope($request, $student);
+        if ($scopeError) {
+            return $scopeError;
+        }
 
         $now = now();
 
@@ -530,9 +617,13 @@ class StudentController extends Controller
     /**
      * Get student's exam results
      */
-    public function getResults($id)
+    public function getResults(Request $request, $id)
     {
         $student = Student::findOrFail($id);
+        $scopeError = $this->enforceStudentScope($request, $student);
+        if ($scopeError) {
+            return $scopeError;
+        }
         
         $results = $student->examAttempts()
             ->with(['exam.subject'])
@@ -546,9 +637,13 @@ class StudentController extends Controller
     /**
      * Get student statistics
      */
-    public function getStatistics($id)
+    public function getStatistics(Request $request, $id)
     {
         $student = Student::findOrFail($id);
+        $scopeError = $this->enforceStudentScope($request, $student);
+        if ($scopeError) {
+            return $scopeError;
+        }
 
         $attempts = $student->examAttempts()
             ->whereIn('status', ['completed', 'submitted'])

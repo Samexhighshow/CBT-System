@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, SkeletonCard, SkeletonList } from '../../components';
 import { api } from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
+import { runWithRetry } from '../../utils/requestRetry';
 
 interface AnalyticsData {
   average_score: number;
@@ -59,6 +60,7 @@ interface CompiledAdminRow {
   exam_score: number | null;
   compiled_score: number | null;
   cumulative_average: number | null;
+  source_exam_ids: number[];
 }
 
 const ResultsAnalytics: React.FC = () => {
@@ -90,15 +92,29 @@ const ResultsAnalytics: React.FC = () => {
   const resultsPerPage = 10;
 
   useEffect(() => {
-    loadExams();
-    loadAnalytics();
-    loadMarkingSummary();
+    let isActive = true;
+
+    const loadInitial = async () => {
+      await Promise.all([loadExams(), loadAnalytics(), loadMarkingSummary()]);
+    };
+
+    loadInitial();
+
+    const delayedRefresh = window.setTimeout(() => {
+      if (!isActive) return;
+      loadInitial();
+    }, 1500);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(delayedRefresh);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadExams = async () => {
     try {
-      const response = await api.get('/exams');
+      const response = await runWithRetry(() => api.get('/exams', { skipGlobalLoading: true } as any));
       const data = response.data?.data || response.data || [];
       setExams(Array.isArray(data) ? data.map((e: any) => ({
         id: e.id,
@@ -233,6 +249,9 @@ const ResultsAnalytics: React.FC = () => {
           exam_score: best.exam_score ?? null,
           compiled_score: best.compiled_score ?? null,
           cumulative_average: best.cumulative_average ?? null,
+          source_exam_ids: Array.isArray(best.source_exam_ids)
+            ? best.source_exam_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
+            : [],
         });
       });
 
@@ -254,7 +273,7 @@ const ResultsAnalytics: React.FC = () => {
   const loadMarkingSummary = async () => {
     try {
       setLoadingMarkingSummary(true);
-      const response = await api.get('/marking/exams');
+      const response = await runWithRetry(() => api.get('/marking/exams', { skipGlobalLoading: true } as any));
       const rows = response.data?.data || [];
 
       const summary = rows.reduce((acc: MarkingSummary, row: any) => {
@@ -295,7 +314,9 @@ const ResultsAnalytics: React.FC = () => {
       const params = new URLSearchParams();
       if (examId) params.append('exam_id', examId);
 
-      const analyticsRes = await api.get(`/results/analytics?${params.toString()}`);
+      const analyticsRes = await runWithRetry(() =>
+        api.get(`/results/analytics?${params.toString()}`, { skipGlobalLoading: true } as any)
+      );
       if (analyticsRes.data) {
         const totalAttempts = Number(
           analyticsRes.data.total_attempts ?? analyticsRes.data.total_submissions ?? 0
@@ -310,7 +331,9 @@ const ResultsAnalytics: React.FC = () => {
 
       if (examId) {
         // Use marking attempts endpoint so submitted/pending scripts are included too.
-        const attemptsRes = await api.get(`/marking/exams/${examId}/attempts`);
+        const attemptsRes = await runWithRetry(() =>
+          api.get(`/marking/exams/${examId}/attempts`, { skipGlobalLoading: true } as any)
+        );
         const rows = attemptsRes.data?.data || [];
         const mapped: AttemptSummary[] = Array.isArray(rows)
           ? rows.map((row: any) => {
@@ -707,18 +730,20 @@ const ResultsAnalytics: React.FC = () => {
         <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
-              <h2 className="text-lg font-semibold">Compiled Results (CA + Exam)</h2>
+              <h2 className="text-lg font-semibold">Subject Term Aggregate (CA + Exam)</h2>
               <p className="text-xs text-slate-500">
-                {examId ? 'Primary merged scores for selected exam subject.' : 'Select an exam to load compiled results.'}
+                {examId
+                  ? 'Uses latest CA + Exam records for this subject in the current session; not limited to this single exam attempt.'
+                  : 'Select an exam to load subject term aggregates.'}
               </p>
             </div>
             {examId && <span className="text-xs text-slate-500">{compiledRows.length} row(s)</span>}
           </div>
 
-          {!examId && <p className="text-gray-500 text-sm">Choose an exam above to view compiled CA + Exam scores.</p>}
+          {!examId && <p className="text-gray-500 text-sm">Choose an exam above to view subject term aggregates.</p>}
           {examId && loadingCompiledRows && <SkeletonList items={4} />}
           {examId && !loadingCompiledRows && compiledRows.length === 0 && (
-            <p className="text-gray-500 text-sm">No compiled rows found for this exam subject yet.</p>
+            <p className="text-gray-500 text-sm">No aggregate rows found for this exam subject yet.</p>
           )}
 
           {examId && !loadingCompiledRows && compiledRows.length > 0 && (
@@ -734,6 +759,7 @@ const ResultsAnalytics: React.FC = () => {
                     <th className="px-3 py-2 text-left font-semibold">Exam (%)</th>
                     <th className="px-3 py-2 text-left font-semibold">Compiled (%)</th>
                     <th className="px-3 py-2 text-left font-semibold">CR (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold">Source Exam ID(s)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -755,6 +781,11 @@ const ResultsAnalytics: React.FC = () => {
                       <td className="px-3 py-2 text-sm text-slate-700">{row.exam_score !== null ? row.exam_score.toFixed(2) : '-'}</td>
                       <td className="px-3 py-2 text-sm font-semibold text-slate-900">{row.compiled_score !== null ? row.compiled_score.toFixed(2) : '-'}</td>
                       <td className="px-3 py-2 text-sm text-slate-700">{row.cumulative_average !== null ? row.cumulative_average.toFixed(2) : '-'}</td>
+                      <td className="px-3 py-2 text-sm text-slate-700">
+                        {row.source_exam_ids.length > 0
+                          ? row.source_exam_ids.map((id) => `#${id}`).join(', ')
+                          : '-'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

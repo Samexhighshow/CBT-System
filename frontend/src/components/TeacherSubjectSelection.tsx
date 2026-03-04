@@ -26,6 +26,7 @@ export const TeacherSubjectSelection: React.FC<TeacherSubjectSelectionProps> = (
   const [scopeRows, setScopeRows] = useState<Array<{ subject_id: number; class_id: number }>>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<number | ''>('');
   const [selectedClassId, setSelectedClassId] = useState<number | ''>('');
+  const [reason, setReason] = useState('');
 
   useEffect(() => {
     const loadData = async () => {
@@ -101,11 +102,16 @@ export const TeacherSubjectSelection: React.FC<TeacherSubjectSelectionProps> = (
       showError('Please add at least one subject and class pair');
       return;
     }
+    if (reason.trim().length < 5) {
+      showError('Please provide a reason (minimum 5 characters)');
+      return;
+    }
 
     try {
       setSaving(true);
-      await api.post('/preferences/teacher/subjects', {
+      await api.post('/preferences/teacher/scope-requests', {
         subjects: scopeRows,
+        reason: reason.trim(),
       });
       showSuccess('Scope request submitted for approval');
       onSave();
@@ -187,6 +193,17 @@ export const TeacherSubjectSelection: React.FC<TeacherSubjectSelectionProps> = (
               </Card>
             ))
           )}
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Reason for request</label>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            placeholder="Explain why you need this assignment"
+          />
         </div>
 
         <div className="flex justify-end gap-3">

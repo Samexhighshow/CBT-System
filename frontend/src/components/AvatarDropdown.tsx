@@ -7,15 +7,18 @@ const Profile = React.lazy(() => import('../pages/Profile'));
 
 interface AvatarDropdownProps {
   showSettings?: boolean; // Only show for Main Admin
+  pendingScopeRequestsCount?: number;
 }
 
-const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false }) => {
+const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, pendingScopeRequestsCount = 0 }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isTeacher = (user?.roles || []).some((role: any) => String(role?.name || role) === 'Teacher');
+  const isMainAdmin = (user?.roles || []).some((role: any) => String(role?.name || role) === 'Main Admin');
 
   const getInitials = (name: string) => {
     return name
@@ -97,6 +100,37 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false })
             </svg>
             <span>Profile Settings</span>
           </button>
+
+          {isTeacher && (
+            <button
+              onClick={() => {
+                navigate('/admin/my-teaching-assignment');
+                setIsOpen(false);
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+            >
+              <i className="bx bx-user-check text-base"></i>
+              <span>My Teaching Assignment</span>
+            </button>
+          )}
+
+          {isMainAdmin && (
+            <button
+              onClick={() => {
+                navigate('/admin/teacher-scope-requests');
+                setIsOpen(false);
+              }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+            >
+              <i className="bx bx-git-pull-request text-base mr-2"></i>
+              <span>Scope Requests</span>
+              {pendingScopeRequestsCount > 0 && (
+                <span className="ml-auto inline-flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                  {pendingScopeRequestsCount > 99 ? '99+' : pendingScopeRequestsCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Admin links */}
           <button

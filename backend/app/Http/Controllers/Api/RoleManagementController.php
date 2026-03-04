@@ -261,9 +261,53 @@ class RoleManagementController extends Controller
             return response()->json(['message' => 'Role not found'], 404);
         }
 
-        $user->syncRoles([$role->name]);
+        if ($user->hasRole($role->name)) {
+            return response()->json(['message' => 'User already has this role']);
+        }
+
+        $user->assignRole($role->name);
 
         return response()->json(['message' => 'Role assigned successfully']);
+    }
+
+    public function removeRole(Request $request, int $userId, string $roleName): JsonResponse
+    {
+        $normalizedRoleName = trim(urldecode($roleName));
+        if ($normalizedRoleName === '') {
+            return response()->json(['message' => 'Role name is required.'], 422);
+        }
+
+        if ($this->isReservedRoleName($normalizedRoleName)) {
+            return response()->json([
+                'message' => 'Student role cannot be modified from admin role management.',
+            ], 422);
+        }
+
+        $user = User::findOrFail($userId);
+
+        if ((int) $request->user()?->id === (int) $user->id) {
+            return response()->json([
+                'message' => 'You cannot modify your own roles.',
+            ], 403);
+        }
+
+        if (strcasecmp($normalizedRoleName, 'Main Admin') === 0 && !$request->user()?->hasRole('Main Admin')) {
+            return response()->json([
+                'message' => 'Only Main Admin can remove the Main Admin role.',
+            ], 403);
+        }
+
+        if (!$user->hasRole($normalizedRoleName)) {
+            return response()->json([
+                'message' => 'User does not have this role.',
+            ], 404);
+        }
+
+        $user->removeRole($normalizedRoleName);
+
+        return response()->json([
+            'message' => 'Role removed successfully.',
+        ]);
     }
 
     private function isReservedRoleName(string $name): bool

@@ -12,7 +12,9 @@ use App\Models\TeacherSubject;
 use App\Models\CbtSubject;
 use App\Models\RoleScope;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class UserPreferenceController extends Controller
 {
@@ -22,21 +24,58 @@ class UserPreferenceController extends Controller
     public function getOptions()
     {
         try {
-            $subjects = Subject::where('is_active', true)
-                ->select('id', 'name', 'code', 'class_level', 'department_id', 'is_compulsory', 'subject_group')
-                ->orderBy('name')
-                ->get();
+            $pickColumns = static function (string $table, array $columns): array {
+                return collect($columns)
+                    ->filter(fn (string $column) => Schema::hasColumn($table, $column))
+                    ->values()
+                    ->all();
+            };
 
-            $classes = SchoolClass::where('is_active', true)
-                ->select('id', 'name', 'code', 'department_id')
-                ->with('department:id,name,code')
-                ->orderBy('name')
-                ->get();
+            $subjectColumns = $pickColumns('subjects', [
+                'id',
+                'name',
+                'code',
+                'class_level',
+                'class_id',
+                'department_id',
+                'is_compulsory',
+                'subject_group',
+                'subject_type',
+            ]);
+            if (!in_array('id', $subjectColumns, true) || !in_array('name', $subjectColumns, true)) {
+                $subjectColumns = ['id', 'name'];
+            }
 
-            $departments = Department::where('is_active', true)
-                ->select('id', 'name', 'code', 'description')
-                ->orderBy('name')
-                ->get();
+            $classColumns = $pickColumns('school_classes', ['id', 'name', 'code', 'department_id']);
+            if (!in_array('id', $classColumns, true) || !in_array('name', $classColumns, true)) {
+                $classColumns = ['id', 'name'];
+            }
+
+            $departmentColumns = $pickColumns('departments', ['id', 'name', 'code', 'description', 'class_level']);
+            if (!in_array('id', $departmentColumns, true) || !in_array('name', $departmentColumns, true)) {
+                $departmentColumns = ['id', 'name'];
+            }
+
+            $subjectsQuery = Subject::query()->select($subjectColumns);
+            if (Schema::hasColumn('subjects', 'is_active')) {
+                $subjectsQuery->where('is_active', true);
+            }
+            $subjects = $subjectsQuery->orderBy('name')->get();
+
+            $classesQuery = SchoolClass::query()->select($classColumns);
+            if (Schema::hasColumn('school_classes', 'is_active')) {
+                $classesQuery->where('is_active', true);
+            }
+            if (Schema::hasColumn('school_classes', 'department_id')) {
+                $classesQuery->with('department:id,name');
+            }
+            $classes = $classesQuery->orderBy('name')->get();
+
+            $departmentsQuery = Department::query()->select($departmentColumns);
+            if (Schema::hasColumn('departments', 'is_active')) {
+                $departmentsQuery->where('is_active', true);
+            }
+            $departments = $departmentsQuery->orderBy('name')->get();
 
             return response()->json([
                 'subjects' => $subjects,
@@ -60,6 +99,7 @@ class UserPreferenceController extends Controller
             'subjects' => 'required|array',
             'subjects.*.subject_id' => 'required|integer|exists:subjects,id',
             'subjects.*.class_id' => 'required|integer|exists:school_classes,id',
+            'reason' => 'required|string|min:5|max:500',
             'academic_session' => 'nullable|string|max:64',
             'term' => 'nullable|in:First Term,Second Term,Third Term',
         ]);
@@ -73,17 +113,26 @@ class UserPreferenceController extends Controller
 
         try {
             $user = $request->user();
-            // Clean only previous pending/rejected requests before resubmission.
-            RoleScope::where('user_id', $user->id)
+            $hasPendingRequest = RoleScope::where('user_id', $user->id)
                 ->where('role_name', 'teacher')
-                ->whereIn('status', ['pending', 'rejected'])
-                ->delete();
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($hasPendingRequest) {
+                return response()->json([
+                    'message' => 'You already have a pending scope request. Please wait for review or cancel it before submitting another request.',
+                ], 409);
+            }
+
+            $batchId = (string) Str::uuid();
+            $reason = trim((string) $request->input('reason', ''));
 
             foreach ($request->subjects as $subjectData) {
                 RoleScope::updateOrCreate(
                     [
                         'user_id' => $user->id,
                         'role_name' => 'teacher',
+                        'request_batch_id' => $batchId,
                         'subject_id' => (int) $subjectData['subject_id'],
                         'class_id' => (int) $subjectData['class_id'],
                         'academic_session' => $request->input('academic_session'),
@@ -93,6 +142,7 @@ class UserPreferenceController extends Controller
                         'exam_id' => null,
                         'is_active' => false,
                         'status' => 'pending',
+                        'request_reason' => $reason,
                         'requested_by' => $user->id,
                         'approved_by' => null,
                         'approved_at' => null,
@@ -103,6 +153,7 @@ class UserPreferenceController extends Controller
 
             return response()->json([
                 'message' => 'Your subject/class selection has been submitted for approval.',
+                'request_batch_id' => $batchId,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -215,6 +266,116 @@ class UserPreferenceController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to load teacher scope status',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getTeacherAssignment(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            $approvedScopes = RoleScope::query()
+                ->where('user_id', $user->id)
+                ->where('role_name', 'teacher')
+                ->where('status', 'approved')
+                ->where('is_active', true)
+                ->with(['subject:id,name', 'schoolClass:id,name'])
+                ->orderBy('subject_id')
+                ->orderBy('class_id')
+                ->get();
+
+            $pendingScopes = RoleScope::query()
+                ->where('user_id', $user->id)
+                ->where('role_name', 'teacher')
+                ->where('status', 'pending')
+                ->with(['subject:id,name', 'schoolClass:id,name'])
+                ->orderByDesc('id')
+                ->get();
+
+            $latestRejected = RoleScope::query()
+                ->where('user_id', $user->id)
+                ->where('role_name', 'teacher')
+                ->where('status', 'rejected')
+                ->orderByDesc('updated_at')
+                ->first(['rejected_reason', 'updated_at']);
+
+            $pendingBatchId = (string) ($pendingScopes->first()?->request_batch_id ?: '');
+            $pendingReason = (string) ($pendingScopes->first()?->request_reason ?: '');
+
+            return response()->json([
+                'current_approved_scopes' => $approvedScopes->map(function (RoleScope $scope) {
+                    return [
+                        'id' => (int) $scope->id,
+                        'subject_id' => (int) ($scope->subject_id ?? 0),
+                        'subject_name' => (string) ($scope->subject?->name ?? ''),
+                        'class_id' => (int) ($scope->class_id ?? 0),
+                        'class_name' => (string) ($scope->schoolClass?->name ?? ''),
+                    ];
+                })->values(),
+                'pending_request' => $pendingScopes->isEmpty() ? null : [
+                    'batch_id' => $pendingBatchId,
+                    'reason' => $pendingReason,
+                    'created_at' => (string) $pendingScopes->max('created_at'),
+                    'scopes' => $pendingScopes->map(function (RoleScope $scope) {
+                        return [
+                            'id' => (int) $scope->id,
+                            'subject_id' => (int) ($scope->subject_id ?? 0),
+                            'subject_name' => (string) ($scope->subject?->name ?? ''),
+                            'class_id' => (int) ($scope->class_id ?? 0),
+                            'class_name' => (string) ($scope->schoolClass?->name ?? ''),
+                        ];
+                    })->values(),
+                ],
+                'latest_rejection' => $latestRejected ? [
+                    'reason' => (string) ($latestRejected->rejected_reason ?? ''),
+                    'reviewed_at' => (string) ($latestRejected->updated_at ?? ''),
+                ] : null,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to fetch teacher assignment',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function cancelPendingTeacherRequest(Request $request)
+    {
+        try {
+            $user = $request->user();
+            $batchId = trim((string) $request->input('batch_id', ''));
+
+            $query = RoleScope::query()
+                ->where('user_id', $user->id)
+                ->where('role_name', 'teacher')
+                ->where('status', 'pending');
+
+            if ($batchId !== '') {
+                $query->where('request_batch_id', $batchId);
+            }
+
+            $updated = $query->update([
+                'status' => 'rejected',
+                'is_active' => false,
+                'rejected_reason' => 'Cancelled by teacher before review.',
+                'approved_by' => null,
+                'approved_at' => null,
+            ]);
+
+            if ($updated === 0) {
+                return response()->json([
+                    'message' => 'No pending request found to cancel.',
+                ], 404);
+            }
+
+            return response()->json([
+                'message' => 'Pending request cancelled successfully.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to cancel pending request',
                 'error' => $e->getMessage(),
             ], 500);
         }

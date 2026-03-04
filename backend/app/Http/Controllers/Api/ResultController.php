@@ -702,6 +702,13 @@ class ResultController extends Controller
                         'ca_score' => $caScore,
                         'exam_score' => $examScore,
                         'term_score' => $termScore,
+                        'source_exam_ids' => $subjectRecords
+                            ->pluck('exam_id')
+                            ->filter(fn ($id) => $id !== null)
+                            ->map(fn ($id) => (int) $id)
+                            ->unique()
+                            ->values()
+                            ->all(),
                         'components_count' => [
                             'ca' => $caRecords->count(),
                             'exam' => $examRecords->count(),
@@ -888,6 +895,7 @@ class ResultController extends Controller
                         'exam_score' => $subjectRow['exam_score'] ?? null,
                         'compiled_score' => $subjectRow['term_score'] ?? null,
                         'cumulative_average' => $cumulativeAverage,
+                        'source_exam_ids' => $subjectRow['source_exam_ids'] ?? [],
                     ];
                 });
             })

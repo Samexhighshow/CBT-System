@@ -188,18 +188,6 @@ class ExamController extends Controller
                 $request->user(),
                 (int) $subject->id,
                 (string) $class->name,
-                (int) $class->id,
-                (int) $exam->id
-            )
-        ) {
-            return response()->json(['message' => 'Forbidden: class/subject outside role scope.'], 403);
-        }
-
-        if (
-            !$this->roleScopeService->canAccessSubjectClass(
-                $request->user(),
-                (int) $subject->id,
-                (string) $class->name,
                 (int) $class->id
             )
         ) {
@@ -269,7 +257,7 @@ class ExamController extends Controller
     /**
      * Display the specified exam
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $exam = Exam::with(['subject', 'schoolClass'])->find($id);
 
@@ -278,10 +266,6 @@ class ExamController extends Controller
         }
 
         if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
-            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
-        }
-
-        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
@@ -427,8 +411,9 @@ class ExamController extends Controller
         }
 
         // PHASE 8: Allow unpublishing without status change
-        // Admin should be able to unpublish exam at any time (hide from students)
-        $isPublishing = $newPublished || in_array($newStatus, ['scheduled', 'active', 'completed']);
+        // Admin should be able to hide an exam from students regardless of lifecycle status.
+        // Publish-time window checks should only run when exam is being published.
+        $isPublishing = $newPublished;
         $start = $request->input('start_datetime', $exam->start_datetime ?? $exam->start_time);
         $end = $request->input('end_datetime', $exam->end_datetime ?? $exam->end_time);
 

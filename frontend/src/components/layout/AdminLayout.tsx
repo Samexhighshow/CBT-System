@@ -21,6 +21,14 @@ const AdminLayout: React.FC = () => {
   const [showTeacherSubjects, setShowTeacherSubjects] = useState(false);
   const [showStudentSubjects, setShowStudentSubjects] = useState(false);
   const [checkedFirstLogin, setCheckedFirstLogin] = useState(false);
+  const [teacherScopeStatus, setTeacherScopeStatus] = useState<{
+    has_approved_scope: boolean;
+    approved_count: number;
+    pending_count: number;
+    rejected_count: number;
+    latest_rejection_reason: string;
+  } | null>(null);
+  const [pendingScopeRequestsCount, setPendingScopeRequestsCount] = useState(0);
   const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
   const dropdownCloseTimerRef = useRef<number | null>(null);
   const { loading: navLoading, filterNavLinks } = useRoleBasedNav();
@@ -95,6 +103,66 @@ const AdminLayout: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, checkedFirstLogin]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadScopeStatus = async () => {
+      if (!user) return;
+      const isTeacher = user.roles?.some((role: any) => role.name === 'Teacher');
+      if (!isTeacher) {
+        if (mounted) setTeacherScopeStatus(null);
+        return;
+      }
+
+      try {
+        const res = await api.get('/preferences/teacher/scope-status', { skipGlobalLoading: true } as any);
+        if (mounted) {
+          setTeacherScopeStatus(res.data || null);
+        }
+      } catch {
+        if (mounted) {
+          setTeacherScopeStatus(null);
+        }
+      }
+    };
+
+    loadScopeStatus();
+    const timer = window.setInterval(loadScopeStatus, 30000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPendingScopeRequestsCount = async () => {
+      if (!isMainAdmin) {
+        if (mounted) setPendingScopeRequestsCount(0);
+        return;
+      }
+
+      try {
+        const res = await api.get('/admin/teacher-scope-requests', { skipGlobalLoading: true } as any);
+        const total = Number(res?.data?.total ?? 0);
+        if (mounted) {
+          setPendingScopeRequestsCount(Number.isFinite(total) ? total : 0);
+        }
+      } catch {
+        if (mounted) {
+          setPendingScopeRequestsCount(0);
+        }
+      }
+    };
+
+    loadPendingScopeRequestsCount();
+    const timer = window.setInterval(loadPendingScopeRequestsCount, 30000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [isMainAdmin]);
 
   // Close sidebar when route changes (mobile)
   useEffect(() => {
@@ -234,12 +302,13 @@ const AdminLayout: React.FC = () => {
                     </button>
                   )
                 ))}
+
               </div>
             </div>
 
             {/* Right Section: Avatar */}
             <div className="ml-auto flex items-center justify-end pl-2 md:min-w-[180px] md:pl-4">
-              <AvatarDropdown showSettings={isMainAdmin} />
+              <AvatarDropdown showSettings={isMainAdmin} pendingScopeRequestsCount={pendingScopeRequestsCount} />
             </div>
           </div>
         </div>
@@ -316,6 +385,7 @@ const AdminLayout: React.FC = () => {
                 )}
               </React.Fragment>
             ))}
+
           </nav>
 
           {/* Sidebar Footer */}
@@ -335,6 +405,29 @@ const AdminLayout: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 w-full overflow-x-hidden">
+        {teacherScopeStatus && !teacherScopeStatus.has_approved_scope && (
+          <div className="mx-auto w-full max-w-[1200px] px-5 pt-4">
+            <div className={`rounded-lg border px-4 py-3 text-sm ${
+              teacherScopeStatus.rejected_count > 0
+                ? 'border-red-200 bg-red-50 text-red-800'
+                : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}>
+              {teacherScopeStatus.rejected_count > 0 ? (
+                <>
+                  Module access granted, but your teaching scope was rejected.
+                  {teacherScopeStatus.latest_rejection_reason
+                    ? ` Reason: ${teacherScopeStatus.latest_rejection_reason}`
+                    : ''}
+                  {' '}Resubmit your Subject + Class request to continue.
+                </>
+              ) : (
+                <>
+                  Module access granted, but scope approval is pending. Data access is limited until an admin approves your Subject + Class assignment.
+                </>
+              )}
+            </div>
+          </div>
+        )}
         <Outlet />
       </main>
 

@@ -13,6 +13,73 @@ use Illuminate\Support\Collection;
 
 class RoleScopeService
 {
+    private function normalizeClassLevel(?string $value): string
+    {
+        return strtolower(str_replace(' ', '', trim((string) $value)));
+    }
+
+    private function classLevelVariants(array $levels): array
+    {
+        $variants = [];
+        foreach ($levels as $level) {
+            $raw = trim((string) $level);
+            if ($raw === '') {
+                continue;
+            }
+
+            $compact = str_replace(' ', '', $raw);
+            $variants[] = $raw;
+            $variants[] = strtolower($raw);
+            $variants[] = strtoupper($raw);
+            $variants[] = $compact;
+            $variants[] = strtolower($compact);
+            $variants[] = strtoupper($compact);
+        }
+
+        return collect($variants)->filter()->unique()->values()->all();
+    }
+
+    private function matchesScopeRow(
+        RoleScope $scope,
+        ?int $subjectId,
+        ?string $classLevel,
+        ?int $classId,
+        ?int $examId,
+        array $classNameById
+    ): bool {
+        if (!is_null($scope->exam_id)) {
+            if (is_null($examId) || (int) $scope->exam_id !== (int) $examId) {
+                return false;
+            }
+        }
+
+        if (!is_null($scope->subject_id)) {
+            if (is_null($subjectId) || (int) $scope->subject_id !== (int) $subjectId) {
+                return false;
+            }
+        }
+
+        if (!is_null($scope->class_id)) {
+            $scopeClassId = (int) $scope->class_id;
+            if (!is_null($classId)) {
+                if ($scopeClassId !== (int) $classId) {
+                    return false;
+                }
+            } else {
+                $scopeClassName = (string) ($classNameById[$scopeClassId] ?? '');
+                if ($scopeClassName === '' || is_null($classLevel)) {
+                    return false;
+                }
+
+                if ($this->normalizeClassLevel($scopeClassName) !== $this->normalizeClassLevel($classLevel)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     public function isAdminBypass(?User $user): bool
     {
         if (!$user) {
@@ -123,7 +190,7 @@ class RoleScopeService
             ->whereIn('id', $classIds)
             ->pluck('name')
             ->filter()
-            ->map(fn ($name) => strtolower(trim((string) $name)))
+            ->map(fn ($name) => trim((string) $name))
             ->unique()
             ->values()
             ->all();
@@ -135,26 +202,66 @@ class RoleScopeService
             return $query;
         }
 
-        $subjectIds = $this->scopedSubjectIds($user);
-        $classIds = $this->scopedClassIds($user);
-        $classLevels = $this->scopedClassLevels($user);
-
-        if (empty($subjectIds) && empty($classIds) && empty($classLevels)) {
+        $scopes = $this->activeScopesForUser($user);
+        if ($scopes->isEmpty()) {
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->where(function ($q) use ($subjectIdColumn, $classIdColumn, $classLevelColumn, $subjectIds, $classIds, $classLevels) {
-            if (!empty($subjectIds)) {
-                $q->orWhereIn($subjectIdColumn, $subjectIds);
-            }
+        $classNameById = [];
+        $scopeClassIds = $scopes->pluck('class_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+        if (!empty($scopeClassIds)) {
+            $classNameById = SchoolClass::query()
+                ->whereIn('id', $scopeClassIds)
+                ->pluck('name', 'id')
+                ->map(fn ($name) => (string) $name)
+                ->toArray();
+        }
 
-            if ($classIdColumn && !empty($classIds)) {
-                $q->orWhereIn($classIdColumn, $classIds);
-            }
+        return $query->where(function ($outer) use ($scopes, $subjectIdColumn, $classIdColumn, $classLevelColumn, $classNameById) {
+            foreach ($scopes as $scope) {
+                $outer->orWhere(function ($inner) use ($scope, $subjectIdColumn, $classIdColumn, $classLevelColumn, $classNameById) {
+                    $hasConstraint = false;
 
-            if ($classLevelColumn && !empty($classLevels)) {
-                $q->orWhereIn($classLevelColumn, $classLevels);
-                $q->orWhereIn($classLevelColumn, array_map('strtoupper', $classLevels));
+                    if (!is_null($scope->subject_id)) {
+                        $inner->where($subjectIdColumn, (int) $scope->subject_id);
+                        $hasConstraint = true;
+                    }
+
+                    if (!is_null($scope->class_id)) {
+                        $scopeClassId = (int) $scope->class_id;
+
+                        $scopeClassName = (string) ($classNameById[$scopeClassId] ?? '');
+
+                        if ($classIdColumn && $classLevelColumn && $scopeClassName !== '') {
+                            $inner->where(function ($classMatch) use ($classIdColumn, $classLevelColumn, $scopeClassId, $scopeClassName) {
+                                $classMatch->where($classIdColumn, $scopeClassId)
+                                    ->orWhereRaw(
+                                        'REPLACE(LOWER(' . $classLevelColumn . '), " ", "") = ?',
+                                        [$this->normalizeClassLevel($scopeClassName)]
+                                    );
+                            });
+                            $hasConstraint = true;
+                        } elseif ($classIdColumn) {
+                            $inner->where($classIdColumn, $scopeClassId);
+                            $hasConstraint = true;
+                        } elseif ($classLevelColumn) {
+                            if ($scopeClassName !== '') {
+                                $inner->whereRaw(
+                                    'REPLACE(LOWER(' . $classLevelColumn . '), " ", "") = ?',
+                                    [$this->normalizeClassLevel($scopeClassName)]
+                                );
+                                $hasConstraint = true;
+                            } else {
+                                $inner->whereRaw('1 = 0');
+                                return;
+                            }
+                        }
+                    }
+
+                    if (!$hasConstraint) {
+                        $inner->whereRaw('1 = 0');
+                    }
+                });
             }
         });
     }
@@ -192,22 +299,25 @@ class RoleScopeService
             return true;
         }
 
-        $examIds = $this->scopedExamIds($user);
-        $subjectIds = $this->scopedSubjectIds($user);
-        $classIds = $this->scopedClassIds($user);
-        $classLevels = $this->scopedClassLevels($user);
+        $scopes = $this->activeScopesForUser($user);
+        if ($scopes->isEmpty()) {
+            return false;
+        }
 
-        if ($examId && in_array($examId, $examIds, true)) {
-            return true;
+        $classNameById = [];
+        $scopeClassIds = $scopes->pluck('class_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+        if (!empty($scopeClassIds)) {
+            $classNameById = SchoolClass::query()
+                ->whereIn('id', $scopeClassIds)
+                ->pluck('name', 'id')
+                ->map(fn ($name) => (string) $name)
+                ->toArray();
         }
-        if ($subjectId && in_array($subjectId, $subjectIds, true)) {
-            return true;
-        }
-        if ($classId && in_array($classId, $classIds, true)) {
-            return true;
-        }
-        if ($classLevel && in_array(strtolower(trim($classLevel)), $classLevels, true)) {
-            return true;
+
+        foreach ($scopes as $scope) {
+            if ($this->matchesScopeRow($scope, $subjectId, $classLevel, $classId, $examId, $classNameById)) {
+                return true;
+            }
         }
 
         return false;
@@ -240,6 +350,42 @@ class RoleScopeService
             $user,
             (int) ($question->subject_id ?? 0),
             (string) ($question->class_level ?? '')
+        );
+    }
+
+    public function applyClassScope(Builder $query, ?User $user, string $classIdColumn = 'id', string $classLevelColumn = 'name'): Builder
+    {
+        if (!$this->isScopedActor($user)) {
+            return $query;
+        }
+
+        $classIds = $this->scopedClassIds($user);
+        $classLevels = $this->scopedClassLevels($user);
+
+        if (empty($classIds) && empty($classLevels)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $classLevelVariants = $this->classLevelVariants($classLevels);
+
+        return $query->where(function ($q) use ($classIdColumn, $classLevelColumn, $classIds, $classLevelVariants) {
+            if (!empty($classIds)) {
+                $q->orWhereIn($classIdColumn, $classIds);
+            }
+
+            if (!empty($classLevelVariants)) {
+                $q->orWhereIn($classLevelColumn, $classLevelVariants);
+            }
+        });
+    }
+
+    public function canManageClass(?User $user, SchoolClass $class): bool
+    {
+        return $this->canAccessSubjectClass(
+            $user,
+            null,
+            (string) ($class->name ?? ''),
+            (int) ($class->id ?? 0)
         );
     }
 }
