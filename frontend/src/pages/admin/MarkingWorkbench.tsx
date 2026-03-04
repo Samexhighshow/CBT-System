@@ -451,13 +451,16 @@ const MarkingWorkbench: React.FC = () => {
       return;
     }
 
-    if (!clearReason.trim()) {
+    if (!adminOverrideClear && !clearReason.trim()) {
       showError('Provide a reason before clearing this attempt.');
       return;
     }
 
+    const reasonText = clearReason.trim();
+    const reasonNote = reasonText ? ` Reason: ${reasonText}.` : ' No reason provided (Admin Override).';
+
     const shouldProceed = window.confirm(
-      `Clear attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}? Reason: ${clearReason.trim()}. This will remove answers and allow a fresh restart.`
+      `Clear attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}?${reasonNote} This will remove answers and allow a fresh restart.`
     );
     if (!shouldProceed) return;
 
@@ -465,7 +468,7 @@ const MarkingWorkbench: React.FC = () => {
       setClearingAttempt(true);
       await api.delete(`/marking/attempts/${attemptDetail.attempt.id}`, {
         data: {
-          reason: clearReason.trim(),
+          reason: reasonText,
           admin_override: adminOverrideClear,
         },
       });

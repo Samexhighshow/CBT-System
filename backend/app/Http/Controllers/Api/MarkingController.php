@@ -327,7 +327,7 @@ class MarkingController extends Controller
     public function clearAttempt(Request $request, int $attemptId): JsonResponse
     {
         $validated = $request->validate([
-            'reason' => 'required|string|max:500',
+            'reason' => 'nullable|string|max:500',
             'admin_override' => 'nullable|boolean',
         ]);
 
@@ -338,6 +338,14 @@ class MarkingController extends Controller
         }
 
         $adminOverride = (bool) ($validated['admin_override'] ?? false);
+        $reason = trim((string) ($validated['reason'] ?? ''));
+
+        if (!$adminOverride && $reason === '') {
+            return response()->json([
+                'message' => 'Provide a reason before clearing this attempt.',
+            ], 422);
+        }
+
         if ($attempt->status === 'completed' && !$adminOverride) {
             return response()->json([
                 'message' => 'Finalized attempts can only be cleared with admin override.',
@@ -352,7 +360,7 @@ class MarkingController extends Controller
         });
 
         $this->logAttemptAction($attempt, 'reset_attempt', [
-            'reason' => (string) $validated['reason'],
+            'reason' => $reason,
             'admin_override' => $adminOverride,
             'previous_status' => $attempt->status,
         ]);
