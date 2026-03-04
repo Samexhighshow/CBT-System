@@ -456,6 +456,18 @@ const CbtExamSession: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [tabFencingAlert]);
 
+  useEffect(() => {
+    if (!showReview) return;
+
+    window.history.pushState({ cbtReview: true }, '', window.location.href);
+    const onPopState = () => {
+      setShowReview(false);
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [showReview]);
+
   const orderedQuestionIds = useMemo(() => questions.map((question) => question.id), [questions]);
   const currentQuestion = questions[currentIndex] || null;
 
@@ -743,14 +755,14 @@ const CbtExamSession: React.FC = () => {
     .slice(0, 2)
     .toUpperCase();
 
-  if (showReview || showSubmitSuccess) {
+  if (showSubmitSuccess) {
     return (
       <div className="min-h-screen" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>
         <header className="border-b" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
           <div className="mx-auto w-full max-w-[1400px] px-4 py-4 md:px-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h1 className="text-[24px] font-bold tracking-[-0.02em]" style={{ color: cbtTheme.title }}>
-                {showSubmitSuccess ? `${assessmentLabels.assessmentNoun} Submission Report` : 'Review Before Final Submit'}
+                {assessmentLabels.assessmentNoun} Submission Report
               </h1>
               <div className="text-sm" style={{ color: cbtTheme.muted }}>
                 {storedSession?.registrationNumber || 'No Reg Number'}
@@ -799,17 +811,85 @@ const CbtExamSession: React.FC = () => {
           </div>
 
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-            {!showSubmitSuccess && (
+            <button
+              type="button"
+              onClick={() => navigate('/cbt')}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+              style={{ backgroundColor: cbtTheme.primary }}
+            >
+              Back to {assessmentLabels.assessmentNoun} Selection
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (showReview) {
+    return (
+      <div className="flex min-h-screen flex-col" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>
+        <header className="sticky top-0 z-30 border-b" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+          <div className="mx-auto w-full max-w-[1800px] px-4 py-3 md:px-6 md:py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[18px] font-bold tracking-[-0.015em]" style={{ color: cbtTheme.title }}>
+                Review Before Final Submit
+              </p>
+              <div className="text-sm" style={{ color: cbtTheme.muted }}>
+                Answered <span style={{ color: '#047857', fontWeight: 600 }}>{answeredCount}</span> / {questions.length}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="mx-auto flex w-full max-w-[1800px] flex-1 flex-col px-4 pb-0 pt-4 md:px-6 md:pt-5">
+          <main className="rounded-2xl border p-5 md:p-6" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-xl border p-3" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+                <p className="text-xs" style={{ color: cbtTheme.muted }}>Total Questions</p>
+                <p className="text-xl font-bold" style={{ color: cbtTheme.title }}>{questions.length}</p>
+              </div>
+              <div className="rounded-xl border p-3" style={{ backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }}>
+                <p className="text-xs" style={{ color: '#065F46' }}>Answered</p>
+                <p className="text-xl font-bold" style={{ color: '#047857' }}>{answeredCount}</p>
+              </div>
+              <div className="rounded-xl border p-3" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
+                <p className="text-xs" style={{ color: '#B91C1C' }}>Unanswered</p>
+                <p className="text-xl font-bold" style={{ color: '#B91C1C' }}>{unansweredCount}</p>
+              </div>
+              <div className="rounded-xl border p-3" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+                <p className="text-xs" style={{ color: cbtTheme.muted }}>Time Taken</p>
+                <p className="text-xl font-bold" style={{ color: cbtTheme.title }}>
+                  {timeTakenSeconds !== null ? formatDuration(timeTakenSeconds) : '-'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+              {questions.map((question, index) => {
+                const summary = formatAnswerSummary(question);
+                const notAnswered = summary === 'Not answered';
+                return (
+                  <div key={question.id} className="border-b p-4 last:border-b-0" style={{ borderColor: cbtTheme.border }}>
+                    <p className="text-sm font-semibold" style={{ color: cbtTheme.title }}>
+                      Q{index + 1}. {question.question_text}
+                    </p>
+                    <p className="mt-2 text-sm" style={{ color: notAnswered ? '#B91C1C' : '#047857' }}>
+                      Selected: {summary}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-2 border-t pt-4" style={{ borderColor: cbtTheme.border }}>
               <button
                 type="button"
                 onClick={() => setShowReview(false)}
                 className="rounded-lg border px-4 py-2 text-sm font-semibold"
                 style={{ borderColor: '#D1D5DB', color: cbtTheme.body }}
               >
-                Back to {assessmentLabels.assessmentNoun}
+                Back to Attempt
               </button>
-            )}
-            {!showSubmitSuccess ? (
               <button
                 type="button"
                 onClick={handleFinalSubmit}
@@ -819,18 +899,9 @@ const CbtExamSession: React.FC = () => {
               >
                 {submitting ? 'Submitting...' : 'Final Submit'}
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => navigate('/cbt')}
-                className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
-                style={{ backgroundColor: cbtTheme.primary }}
-              >
-                Back to {assessmentLabels.assessmentNoun} Selection
-              </button>
-            )}
-          </div>
-        </main>
+            </div>
+          </main>
+        </div>
       </div>
     );
   }
@@ -1178,8 +1249,11 @@ const CbtExamSession: React.FC = () => {
       </div>
 
       {showStartModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border p-6 md:p-7" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
+        <div className="fixed inset-0 z-50 p-3 md:p-4" style={{ backgroundColor: cbtTheme.pageBg }}>
+          <div
+            className="mx-auto w-full max-w-[1280px] rounded-2xl border p-5 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.35)] md:p-8"
+            style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}
+          >
             <h2 className="text-[24px] font-bold leading-[1.2] tracking-[-0.02em]" style={{ color: cbtTheme.title }}>
               Read Instructions Before You Start
             </h2>
@@ -1187,19 +1261,21 @@ const CbtExamSession: React.FC = () => {
               Your timer will begin only when you click <strong>Start Now</strong>.
             </p>
 
-            <ul className="mt-4 space-y-2 text-sm leading-6" style={{ color: cbtTheme.body }}>
-              <li>1. Stay on the exam page; tab switching is monitored.</li>
-              <li>2. You can move to another system if one hangs.</li>
-              <li>3. Answers are auto-saved as you type or select.</li>
-              <li>4. Session can only run on one computer at a time.</li>
-              <li>5. Submit only after reviewing all questions.</li>
-            </ul>
+            <div className="mt-5 rounded-xl border p-4 md:p-5" style={{ borderColor: cbtTheme.border, backgroundColor: '#F8FAFC' }}>
+              <ul className="space-y-2 text-[15px] leading-7" style={{ color: cbtTheme.body }}>
+                <li>1. Stay on the exam page; tab switching is monitored.</li>
+                <li>2. You can move to another system if one hangs.</li>
+                <li>3. Answers are auto-saved as you type or select.</li>
+                <li>4. Session can only run on one computer at a time.</li>
+                <li>5. Submit only after reviewing all questions.</li>
+              </ul>
+            </div>
 
-            <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+            <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => navigate('/cbt')}
-                className="rounded-lg border px-4 py-2 text-sm font-semibold"
+                className="rounded-lg border px-5 py-2.5 text-sm font-semibold transition hover:bg-slate-50"
                 style={{ borderColor: '#D1D5DB', color: cbtTheme.body }}
               >
                 Back to {assessmentLabels.assessmentNoun} Portal
@@ -1208,7 +1284,7 @@ const CbtExamSession: React.FC = () => {
                 type="button"
                 onClick={handleStartNow}
                 disabled={startingAttempt}
-                className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className="rounded-lg px-6 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
                 style={{ backgroundColor: cbtTheme.primary }}
               >
                 {startingAttempt ? 'Starting...' : 'Start Now'}
