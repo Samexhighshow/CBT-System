@@ -339,6 +339,8 @@ Route::prefix('analytics')->group(function () {
 Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->prefix('reports')->group(function () {
     Route::get('/exam/{examId}/pdf', [ReportController::class, 'downloadExamReportPdf']);
     Route::get('/exam/{examId}/excel', [ReportController::class, 'downloadExamReportExcel']);
+    Route::get('/term/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadTermAggregatePdf']);
+    Route::get('/term/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadTermAggregateExcel']);
     Route::get('/student/{studentId}/pdf', [ReportController::class, 'downloadStudentResultsPdf']);
     Route::get('/student/{studentId}/excel', [ReportController::class, 'downloadStudentResultsExcel']);
 });

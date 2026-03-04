@@ -37,8 +37,11 @@ interface AttemptSummary {
 interface ExamOption {
   id: number;
   title: string;
+  class_id?: number;
   subject_name?: string;
   class_name?: string;
+  term?: string;
+  academic_session?: string;
   results_released?: boolean;
 }
 
@@ -66,6 +69,8 @@ interface CompiledAdminRow {
 const ResultsAnalytics: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'exam' | 'term'>('exam');
+  const [exportLoading, setExportLoading] = useState(false);
   const [analytics, setAnalytics] = useState<AnalyticsData>({
     average_score: 0,
     pass_rate: 0,
@@ -119,8 +124,11 @@ const ResultsAnalytics: React.FC = () => {
       setExams(Array.isArray(data) ? data.map((e: any) => ({
         id: e.id,
         title: e.title,
+        class_id: e.class_id,
         subject_name: e.subject?.name || '',
         class_name: e.school_class?.name || '',
+        term: e.term || '',
+        academic_session: e.academic_session || '',
         results_released: !!e.results_released,
       })) : []);
     } catch (error: any) {
@@ -415,6 +423,104 @@ const ResultsAnalytics: React.FC = () => {
     [exams, examId]
   );
 
+  const actionBanner = useMemo(() => {
+    if (!examId || !selectedExam) {
+      return {
+        tone: 'bg-slate-50 border-slate-200 text-slate-800',
+        title: 'Select an exam to continue',
+        message: 'Pick an exam first, then use tabs to review attempt-level exam results or term aggregate results.',
+        cta: null as null | 'marking' | 'release' | 'hide',
+      };
+    }
+
+    if (markingSummary.pending_manual > 0) {
+      return {
+        tone: 'bg-amber-50 border-amber-200 text-amber-900',
+        title: 'Pending marking requires attention',
+        message: 'Finalize all pending scripts before releasing results to students.',
+        cta: 'marking' as const,
+      };
+    }
+
+    if (!selectedExam.results_released) {
+      return {
+        tone: 'bg-indigo-50 border-indigo-200 text-indigo-900',
+        title: 'Results can be released',
+        message: 'All marking appears complete for this exam. You can now release results to students.',
+        cta: 'release' as const,
+      };
+    }
+
+    return {
+      tone: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+      title: 'Results are currently visible to students',
+      message: 'Use Hide if you need to pause visibility while corrections are made.',
+      cta: 'hide' as const,
+    };
+  }, [examId, selectedExam, markingSummary.pending_manual]);
+
+  const downloadReport = async (path: string, fallbackFilename: string) => {
+    try {
+      setExportLoading(true);
+      const response = await api.get(path, {
+        responseType: 'blob',
+      } as any);
+
+      const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+      if (contentType.includes('application/json')) {
+        const text = await (response.data as Blob).text();
+        const parsed = JSON.parse(text);
+        throw new Error(parsed?.message || 'Export failed.');
+      }
+
+      const disposition = String(response.headers?.['content-disposition'] || '');
+      const filenameMatch = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+      const filename = filenameMatch
+        ? filenameMatch[1].replace(/['"]/g, '')
+        : fallbackFilename;
+
+      const blobUrl = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      showSuccess('Report download started.');
+    } catch (error: any) {
+      showError(error?.message || error?.response?.data?.message || 'Failed to export report.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const slugTerm = (term: string) => term.trim().toLowerCase().replace(/\s+/g, '-');
+  const slugSession = (session: string) => session.trim().replace(/\//g, '-');
+
+  const selectedTerm = String(selectedExam?.term || '').trim();
+  const selectedSession = String(selectedExam?.academic_session || '').trim();
+  const selectedClassId = Number(selectedExam?.class_id || 0);
+  const canExportTermAggregate = !!selectedExam && !!selectedTerm && !!selectedSession && selectedClassId > 0;
+
+  const releaseSelectedExam = async (release: boolean) => {
+    if (!selectedExam) {
+      showError('Select an exam first.');
+      return;
+    }
+
+    try {
+      setReleaseLoading(true);
+      await api.post(`/exams/${selectedExam.id}/toggle-results`, { results_released: release });
+      showSuccess(release ? 'Results released for selected exam.' : 'Results hidden for selected exam.');
+      await loadExams();
+    } catch (error: any) {
+      showError(error?.response?.data?.message || 'Failed to update selected exam visibility.');
+    } finally {
+      setReleaseLoading(false);
+    }
+  };
+
   const filteredExamResults = useMemo(() => {
     const term = studentName.trim().toLowerCase();
     if (!term) return examResults;
@@ -629,7 +735,67 @@ const ResultsAnalytics: React.FC = () => {
           )}
         </div>
 
+        <Card className={`panel-compact border ${actionBanner.tone}`}>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Next Action</h2>
+              <p className="text-xs mt-1">{actionBanner.title}</p>
+              <p className="text-xs opacity-90 mt-1">{actionBanner.message}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {actionBanner.cta === 'marking' && (
+                <button
+                  onClick={() => navigate('/admin/marking')}
+                  className="btn-compact bg-amber-600 text-white hover:bg-amber-700"
+                  title="Open Marking Workbench to score pending manual scripts and finalize attempts"
+                >
+                  Open Marking
+                </button>
+              )}
+              {actionBanner.cta === 'release' && (
+                <button
+                  onClick={() => releaseSelectedExam(true)}
+                  disabled={releaseLoading}
+                  className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  title="Release makes completed results visible to students"
+                >
+                  Release Selected Exam
+                </button>
+              )}
+              {actionBanner.cta === 'hide' && (
+                <button
+                  onClick={() => releaseSelectedExam(false)}
+                  disabled={releaseLoading}
+                  className="btn-compact bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50"
+                  title="Hide removes student visibility for already computed results"
+                >
+                  Hide Selected Exam
+                </button>
+              )}
+            </div>
+          </div>
+        </Card>
+
         <Card className="panel-compact">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <button
+              className={`btn-compact ${activeTab === 'exam' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
+              onClick={() => setActiveTab('exam')}
+              title="Exam Results tab shows single-attempt ranking and status per selected exam"
+            >
+              Exam Results
+            </button>
+            <button
+              className={`btn-compact ${activeTab === 'term' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
+              onClick={() => setActiveTab('term')}
+              title="Term Aggregate tab shows CA + Exam compiled scores by subject for selected exam context"
+            >
+              Term Aggregate
+            </button>
+          </div>
+        </Card>
+
+        {activeTab === 'exam' && <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">
@@ -639,11 +805,33 @@ const ResultsAnalytics: React.FC = () => {
                 Subject Position is ranked within this exam result list.
               </p>
             </div>
-            {!!examId && (
-              <span className="text-xs text-slate-500">
-                {filteredExamResults.length} row(s) • Page {Math.min(resultsPage, totalResultPages)} of {totalResultPages}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {!!examId && (
+                <span className="text-xs text-slate-500">
+                  {filteredExamResults.length} row(s) • Page {Math.min(resultsPage, totalResultPages)} of {totalResultPages}
+                </span>
+              )}
+              {!!examId && (
+                <>
+                  <button
+                    className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+                    onClick={() => downloadReport(`/reports/exam/${examId}/pdf`, `exam_report_${examId}.pdf`)}
+                    disabled={exportLoading}
+                    title="Download printable exam result sheet (PDF)"
+                  >
+                    Print Sheet (PDF)
+                  </button>
+                  <button
+                    className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                    onClick={() => downloadReport(`/reports/exam/${examId}/excel`, `exam_report_${examId}.xlsx`)}
+                    disabled={exportLoading}
+                    title="Export exam result sheet (Excel)"
+                  >
+                    Export Excel
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {!examId ? (
@@ -686,7 +874,18 @@ const ResultsAnalytics: React.FC = () => {
                           <td className="px-3 py-2 text-sm text-slate-700">{row.grade || '-'}</td>
                           <td className="px-3 py-2 text-sm text-slate-700">{row.rank_label || '-'}</td>
                           <td className="px-3 py-2 text-sm text-slate-700">
-                            <span className={`px-2 py-1 rounded-full text-[11px] font-semibold ${statusClass(normalizedStatus)}`}>
+                            <span
+                              className={`px-2 py-1 rounded-full text-[11px] font-semibold ${statusClass(normalizedStatus)}`}
+                              title={
+                                normalizedStatus === 'Finalized'
+                                  ? 'Finalized means marking is complete and the attempt is locked from further score edits.'
+                                  : normalizedStatus === 'Released'
+                                    ? 'Released means students can view the result.'
+                                    : normalizedStatus === 'Submitted'
+                                      ? 'Submitted means waiting for manual marking and finalization.'
+                                      : 'Marked means scoring exists but finalization/release may still be pending.'
+                              }
+                            >
                               {normalizedStatus}
                             </span>
                           </td>
@@ -725,9 +924,9 @@ const ResultsAnalytics: React.FC = () => {
               </div>
             </>
           )}
-        </Card>
+        </Card>}
 
-        <Card className="panel-compact">
+        {activeTab === 'term' && <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
               <h2 className="text-lg font-semibold">Subject Term Aggregate (CA + Exam)</h2>
@@ -737,7 +936,41 @@ const ResultsAnalytics: React.FC = () => {
                   : 'Select an exam to load subject term aggregates.'}
               </p>
             </div>
-            {examId && <span className="text-xs text-slate-500">{compiledRows.length} row(s)</span>}
+            <div className="flex flex-wrap items-center gap-2">
+              {examId && <span className="text-xs text-slate-500">{compiledRows.length} row(s)</span>}
+              <button
+                className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+                disabled={!canExportTermAggregate || exportLoading}
+                title={canExportTermAggregate
+                  ? 'Download printable term aggregate report (PDF)'
+                  : 'Select an exam with class, term and session metadata to enable term export.'}
+                onClick={() => {
+                  if (!canExportTermAggregate) return;
+                  downloadReport(
+                    `/reports/term/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf`,
+                    `term_aggregate_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
+                  );
+                }}
+              >
+                Print Sheet (PDF)
+              </button>
+              <button
+                className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                disabled={!canExportTermAggregate || exportLoading}
+                title={canExportTermAggregate
+                  ? 'Download term aggregate report (Excel)'
+                  : 'Select an exam with class, term and session metadata to enable term export.'}
+                onClick={() => {
+                  if (!canExportTermAggregate) return;
+                  downloadReport(
+                    `/reports/term/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel`,
+                    `term_aggregate_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
+                  );
+                }}
+              >
+                Export Excel
+              </button>
+            </div>
           </div>
 
           {!examId && <p className="text-gray-500 text-sm">Choose an exam above to view subject term aggregates.</p>}
@@ -755,11 +988,11 @@ const ResultsAnalytics: React.FC = () => {
                     <th className="px-3 py-2 text-left font-semibold">Class</th>
                     <th className="px-3 py-2 text-left font-semibold">Term</th>
                     <th className="px-3 py-2 text-left font-semibold">Subject</th>
-                    <th className="px-3 py-2 text-left font-semibold">CA (%)</th>
-                    <th className="px-3 py-2 text-left font-semibold">Exam (%)</th>
-                    <th className="px-3 py-2 text-left font-semibold">Compiled (%)</th>
-                    <th className="px-3 py-2 text-left font-semibold">CR (%)</th>
-                    <th className="px-3 py-2 text-left font-semibold">Source Exam ID(s)</th>
+                    <th className="px-3 py-2 text-left font-semibold" title="Continuous Assessment weighted score for this subject in term context">CA (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold" title="Exam component weighted score for this subject in term context">Exam (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold" title="Compiled score from CA and Exam using configured weights">Compiled (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold" title="Cumulative/Composite result average for this student across loaded subject rows">CR (%)</th>
+                    <th className="px-3 py-2 text-left font-semibold" title="Exam IDs used as source records to compute this aggregate row">Source Exam ID(s)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -792,7 +1025,7 @@ const ResultsAnalytics: React.FC = () => {
               </table>
             </div>
           )}
-        </Card>
+        </Card>}
       </div>
     </div>
   );

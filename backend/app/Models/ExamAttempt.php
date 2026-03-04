@@ -37,6 +37,8 @@ class ExamAttempt extends Model
         'extra_time_minutes',
         'synced_at',
         'completed_at',
+        'finalized_at',
+        'finalized_by',
     ];
 
     protected $casts = [
@@ -52,10 +54,12 @@ class ExamAttempt extends Model
         'last_activity_at' => 'datetime',
         'synced_at' => 'datetime',
         'completed_at' => 'datetime',
+        'finalized_at' => 'datetime',
         'question_order' => 'array',
         'switch_count' => 'integer',
         'sync_version' => 'integer',
         'extra_time_minutes' => 'integer',
+        'finalized_by' => 'integer',
     ];
 
     public function exam(): BelongsTo

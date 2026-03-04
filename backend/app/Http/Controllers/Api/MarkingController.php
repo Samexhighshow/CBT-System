@@ -83,6 +83,8 @@ class MarkingController extends Controller
                 return [
                     'id' => $attempt->id,
                     'status' => $attempt->status,
+                    'finalized_at' => $attempt->finalized_at?->toIso8601String(),
+                    'finalized_by' => $attempt->finalized_by,
                     'score' => $score,
                     'total_marks' => $summary['total_marks'],
                     'percentage' => $percentage,
@@ -227,6 +229,8 @@ class MarkingController extends Controller
             'attempt' => [
                 'id' => $attempt->id,
                 'status' => $attempt->status,
+                'finalized_at' => $attempt->finalized_at?->toIso8601String(),
+                'finalized_by' => $attempt->finalized_by,
                 'score' => $attempt->score,
                 'submitted_at' => $attempt->submitted_at?->toIso8601String(),
                 'completed_at' => $attempt->completed_at?->toIso8601String(),
@@ -309,7 +313,7 @@ class MarkingController extends Controller
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
-        $result = $this->recalculateAttemptScore($attempt, true);
+        $result = $this->recalculateAttemptScore($attempt, true, (int) (request()->user()?->id ?? 0));
 
         if ($result['pending_manual_count'] > 0) {
             return response()->json([
@@ -552,7 +556,7 @@ class MarkingController extends Controller
         return [(int) $answeredCount, (int) $pendingCount];
     }
 
-    private function recalculateAttemptScore(ExamAttempt $attempt, bool $finalize = false): array
+    private function recalculateAttemptScore(ExamAttempt $attempt, bool $finalize = false, ?int $finalizedBy = null): array
     {
         $questionIds = $this->attemptQuestionIds($attempt);
         $questions = Question::with('bankQuestion:id,question_type,marks')
@@ -596,10 +600,14 @@ class MarkingController extends Controller
 
         $status = $pendingManual > 0 ? 'submitted' : 'completed';
 
+        $isFinalized = $finalize && $pendingManual === 0;
+
         $attempt->update([
             'score' => round($score, 2),
             'status' => $status,
             'completed_at' => $status === 'completed' ? ($attempt->completed_at ?? now()) : null,
+            'finalized_at' => $isFinalized ? ($attempt->finalized_at ?? now()) : null,
+            'finalized_by' => $isFinalized ? ($finalizedBy ?: $attempt->finalized_by) : null,
         ]);
 
         return [
@@ -608,7 +616,9 @@ class MarkingController extends Controller
             'score' => round($score, 2),
             'total_marks' => round($totalMarks, 2),
             'pending_manual_count' => $pendingManual,
-            'finalized' => $finalize && $pendingManual === 0,
+            'finalized' => $isFinalized,
+            'finalized_at' => $isFinalized ? ($attempt->fresh()->finalized_at?->toIso8601String()) : null,
+            'finalized_by' => $isFinalized ? ($attempt->fresh()->finalized_by) : null,
         ];
     }
 
