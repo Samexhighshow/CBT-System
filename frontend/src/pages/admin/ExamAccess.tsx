@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { showSuccess, showError } from '../../utils/alerts';
 import useConnectivity from '../../hooks/useConnectivity';
@@ -65,46 +65,7 @@ const ExamAccess: React.FC = () => {
   const [bulkRegNumbers, setBulkRegNumbers] = useState<string>('');
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkResults, setBulkResults] = useState<{ generated: any[]; errors: string[] } | null>(null);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadInitial = async () => {
-      await Promise.all([fetchTodayExams(), fetchGeneratedAccess()]);
-    };
-
-    loadInitial();
-
-    const delayedRefresh = window.setTimeout(() => {
-      if (!isActive) return;
-      loadInitial();
-    }, 1500);
-
-    return () => {
-      isActive = false;
-      window.clearTimeout(delayedRefresh);
-    };
-  }, [connectivity.status]);
-
-  useEffect(() => {
-    const loadAssessmentLabels = async () => {
-      const config = await fetchAssessmentDisplayConfig();
-      setAssessmentLabels(config.labels);
-    };
-
-    loadAssessmentLabels();
-  }, [connectivity.status]);
-
-  useEffect(() => {
-    const refreshPending = async () => {
-      const pending = await syncService.pendingCount();
-      setPendingSyncCount(pending);
-    };
-
-    refreshPending();
-    const timer = window.setInterval(refreshPending, 5000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const [bulkAccessCodeLimit, setBulkAccessCodeLimit] = useState(2000);
 
   const toExamOption = (row: any): Exam => ({
     id: Number(row.id ?? row.examId),
@@ -115,7 +76,7 @@ const ExamAccess: React.FC = () => {
     end_time: String(row.end_time || row.endsAt || ''),
   });
 
-  const loadLocalAccessHistory = async () => {
+  const loadLocalAccessHistory = useCallback(async () => {
     const [codes, students, examRows] = await Promise.all([
       offlineDB.accessCodes.orderBy('updatedAt').reverse().toArray(),
       offlineDB.students.toArray(),
@@ -143,9 +104,9 @@ const ExamAccess: React.FC = () => {
     });
 
     setGeneratedAccess(mapped);
-  };
+  }, []);
 
-  const fetchTodayExams = async () => {
+  const fetchTodayExams = useCallback(async () => {
     try {
       if (connectivity.status !== 'OFFLINE') {
         await syncService.syncDown();
@@ -164,9 +125,9 @@ const ExamAccess: React.FC = () => {
       const localExams = await offlineDB.exams.toArray();
       setExams(localExams.map(toExamOption));
     }
-  };
+  }, [connectivity.status]);
 
-  const fetchGeneratedAccess = async () => {
+  const fetchGeneratedAccess = useCallback(async () => {
     try {
       if (connectivity.status !== 'OFFLINE') {
         const response = await runWithRetry(() =>
@@ -199,7 +160,67 @@ const ExamAccess: React.FC = () => {
     } finally {
       await loadLocalAccessHistory();
     }
-  };
+  }, [connectivity.status, loadLocalAccessHistory]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadInitial = async () => {
+      await Promise.all([fetchTodayExams(), fetchGeneratedAccess()]);
+    };
+
+    loadInitial();
+
+    const delayedRefresh = window.setTimeout(() => {
+      if (!isActive) return;
+      loadInitial();
+    }, 1500);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(delayedRefresh);
+    };
+  }, [connectivity.status, fetchGeneratedAccess, fetchTodayExams]);
+
+  useEffect(() => {
+    const loadAssessmentLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentLabels(config.labels);
+    };
+
+    loadAssessmentLabels();
+  }, [connectivity.status]);
+
+  useEffect(() => {
+    const fetchBulkLimit = async () => {
+      try {
+        const res = await api.get('/settings');
+        const settings = res.data || [];
+        const limitSetting = settings.find((s: any) => s.key === 'bulk_access_code_limit');
+        if (limitSetting) {
+          const limit = parseInt(limitSetting.value, 10);
+          if (!isNaN(limit) && limit > 0) {
+            setBulkAccessCodeLimit(limit);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch bulk access code limit:', err);
+      }
+    };
+
+    fetchBulkLimit();
+  }, []);
+
+  useEffect(() => {
+    const refreshPending = async () => {
+      const pending = await syncService.pendingCount();
+      setPendingSyncCount(pending);
+    };
+
+    refreshPending();
+    const timer = window.setInterval(refreshPending, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleSearchStudent = async () => {
     if (!regNumber.trim()) {
@@ -580,8 +601,8 @@ const ExamAccess: React.FC = () => {
       return;
     }
 
-    if (regNumbersArray.length > 2000) {
-      showError('Maximum 2000 codes can be generated at once');
+    if (regNumbersArray.length > bulkAccessCodeLimit) {
+      showError(`Maximum ${bulkAccessCodeLimit} codes can be generated at once`);
       return;
     }
 
@@ -667,7 +688,7 @@ const ExamAccess: React.FC = () => {
     }
   };
 
-  const downloadAccessCodesCSV = (data: GeneratedAccess[]) => {
+  const downloadAccessCodesCSV = (data: any[]) => {
     const csvHeader = 'Registration Number,Student Name,Exam Title,Access Code,Status,Generated At,Used,Used At\n';
     const csvRows = data.map((item) => {
       return [
@@ -732,12 +753,13 @@ const ExamAccess: React.FC = () => {
           </div>
           <div className="mt-4">
             <button
+              type="button"
               onClick={() => setShowBulkModal(true)}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center space-x-2"
               title="Bulk generate access codes"
             >
               <i className="bx bx-list-plus"></i>
-              <span>Bulk Generate (Up to 2000 codes)</span>
+              <span>Generate Bulk Codes</span>
             </button>
           </div>
         </div>
@@ -1086,7 +1108,7 @@ const ExamAccess: React.FC = () => {
                       Bulk Generate Access Codes
                     </h2>
                     <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                      Generate up to 2000 access codes at once
+                      Generate up to {bulkAccessCodeLimit.toLocaleString()} access codes at once
                     </p>
                   </div>
                   <button
