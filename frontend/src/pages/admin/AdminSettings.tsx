@@ -3,6 +3,7 @@ import api from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
 import { useTheme } from '../../hooks/useTheme';
 import useAuthStore from '../../store/authStore';
+import { buildAdminNavLinks } from '../../config/adminNav';
 
 interface Setting {
   id: number;
@@ -565,20 +566,26 @@ const AdminSettings: React.FC = () => {
     }
 
     if (activeTab === 'coming-soon') {
-      const availablePages = [
-        'exam-analytics',
-        'student-progress-reports',
-        'advanced-question-bank',
-        'performance-analytics',
-        'question-randomization',
-        'certificate-builder',
-        'custom-reports',
-      ];
+      // Get all pages from navigation
+      const navLinks = buildAdminNavLinks();
+      const availablePages: { path: string; name: string }[] = [];
+      
+      // Flatten navigation to get all pages
+      const flattenNav = (links: any[]) => {
+        links.forEach(link => {
+          availablePages.push({ path: link.path, name: link.name });
+          if (link.subItems) {
+            flattenNav(link.subItems);
+          }
+        });
+      };
+      
+      flattenNav(navLinks);
 
-      const toggleComingSoonPage = (page: string) => {
-        const updated = comingSoonPages.includes(page)
-          ? comingSoonPages.filter(p => p !== page)
-          : [...comingSoonPages, page];
+      const toggleComingSoonPage = (pagePath: string) => {
+        const updated = comingSoonPages.includes(pagePath)
+          ? comingSoonPages.filter(p => p !== pagePath)
+          : [...comingSoonPages, pagePath];
         setComingSoonPages(updated);
       };
 
@@ -594,50 +601,62 @@ const AdminSettings: React.FC = () => {
 
       return (
         <div className={cardClass}>
-          <h2 className="font-semibold mb-4 dark:text-white text-lg">Manage Coming Soon Features</h2>
+          <h2 className="font-semibold mb-4 dark:text-white text-lg">Manage Coming Soon Pages</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-            Select the pages/features that should display a "Coming Soon" banner to users instead of being fully functional.
+            Select the pages/modules that should display a "Coming Soon" banner to users instead of being fully accessible.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {availablePages.map(page => (
-              <label 
-                key={page} 
+              <label
+                key={page.path}
                 className="flex items-center gap-3 border border-gray-200 dark:border-gray-700 rounded px-4 py-3 cursor-pointer bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition"
               >
                 <input
                   type="checkbox"
-                  checked={comingSoonPages.includes(page)}
-                  onChange={() => toggleComingSoonPage(page)}
+                  checked={comingSoonPages.includes(page.path)}
+                  onChange={() => toggleComingSoonPage(page.path)}
                   className="w-4 h-4 cursor-pointer accent-blue-600"
                 />
-                <span className="text-sm dark:text-gray-100 font-medium text-gray-900">
-                  {page.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                </span>
+                <div className="flex-1">
+                  <span className="text-sm dark:text-gray-100 font-medium text-gray-900 block">
+                    {page.name}
+                  </span>
+                  <span className="text-xs dark:text-gray-400 text-gray-500">
+                    {page.path}
+                  </span>
+                </div>
               </label>
             ))}
           </div>
 
+          {availablePages.length === 0 && (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <i className="bx bx-inbox text-3xl mb-2"></i>
+              <p>No pages available</p>
+            </div>
+          )}
+
           <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
             <p className="text-sm text-blue-800 dark:text-blue-200 flex items-start gap-2">
               <i className="bx bx-info-circle text-base mt-0.5 flex-shrink-0"></i>
-              <span>Users accessing coming soon pages will see a message indicating the feature is under development.</span>
+              <span>Users trying to access Coming Soon pages will see a message indicating the feature is under development.</span>
             </p>
           </div>
 
           <div className="mt-6 flex justify-end gap-3">
-            <button 
+            <button
               type="button"
               onClick={() => {
                 setComingSoonPages([]);
-              }} 
+              }}
               className="px-4 py-2 rounded bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white text-sm hover:bg-gray-400 dark:hover:bg-gray-700 transition"
             >
               Clear All
             </button>
-            <button 
+            <button
               type="button"
-              onClick={saveComingSoonPages} 
+              onClick={saveComingSoonPages}
               className="px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 transition"
             >
               Save Coming Soon Pages
