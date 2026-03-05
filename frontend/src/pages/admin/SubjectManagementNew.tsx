@@ -162,16 +162,24 @@ const SubjectManagementNew: React.FC = () => {
   const loadAllData = async () => {
     try {
       setLoading(true);
-      const [deptRes, classRes, subjectRes] = await Promise.all([
+      
+      // Load data with individual error handling to allow partial success
+      const results = await Promise.allSettled([
         api.get(`/departments?limit=1000${deptShowAll ? '&show_all=1' : ''}`),
         api.get(`/staff/classes?limit=1000${classShowAll ? '&show_all=1' : ''}`),
         api.get(`/subjects?limit=1000${subjectLevelFilter ? `&class_level=${encodeURIComponent(subjectLevelFilter)}` : ''}${subjectShowAll ? `&show_all=1` : ''}`),
       ]);
       
-      // Extract data from paginated response
-      const deptData = deptRes.data.data || deptRes.data || [];
-      const classData = classRes.data.data || classRes.data || [];
-      const subjectData = subjectRes.data.data || subjectRes.data || [];
+      // Extract data from successful responses, default to empty array on failure
+      const deptData = results[0].status === 'fulfilled' 
+        ? (results[0].value.data.data || results[0].value.data || [])
+        : [];
+      const classData = results[1].status === 'fulfilled'
+        ? (results[1].value.data.data || results[1].value.data || [])
+        : [];
+      const subjectData = results[2].status === 'fulfilled'
+        ? (results[2].value.data.data || results[2].value.data || [])
+        : [];
       
       console.log('Loaded data:', { 
         departments: deptData.length, 
@@ -182,16 +190,23 @@ const SubjectManagementNew: React.FC = () => {
       setDepartments(Array.isArray(deptData) ? deptData : []);
       setClasses(Array.isArray(classData) ? classData : []);
       setSubjects(Array.isArray(subjectData) ? subjectData : []);
-    } catch (error: any) {
-      console.error('Failed to load data:', error);
-      console.error('Error details:', {
-        message: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url
+      
+      // Log failures but don't block the page
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          const names = ['departments', 'classes', 'subjects'];
+          console.warn(`Failed to load ${names[index]}:`, result.reason);
+        }
       });
-      showError('Failed to load data. Check console for details.');
+      
+      // Only show error if ALL requests failed
+      const allFailed = results.every(r => r.status === 'rejected');
+      if (allFailed) {
+        showError('Failed to load academic data. Please check your connection and try again.');
+      }
+    } catch (error: any) {
+      console.error('Unexpected error loading data:', error);
+      showError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
