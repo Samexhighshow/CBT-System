@@ -25,6 +25,7 @@ export const buildAdminNavLinks = (
         { name: 'Questions', permissionName: 'Questions', path: '/admin/questions', icon: 'bx-edit-alt' },
         { name: assessmentPlural, permissionName: 'Exams', path: '/admin/exams', icon: 'bx-book-content' },
         { name: accessLabel, permissionName: 'Exam Access', path: '/admin/exam-access', icon: 'bx-key' },
+        { name: 'Generate Access Codes', path: '/access-code-generator', icon: 'bx-qr-scan' },
       ],
     },
     {

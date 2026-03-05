@@ -569,7 +569,7 @@ const AdminSettings: React.FC = () => {
       // Get all pages from navigation
       const navLinks = buildAdminNavLinks();
       const availablePages: { path: string; name: string }[] = [];
-      
+
       // Flatten navigation to get all pages
       const flattenNav = (links: any[]) => {
         links.forEach(link => {
@@ -579,7 +579,7 @@ const AdminSettings: React.FC = () => {
           }
         });
       };
-      
+
       flattenNav(navLinks);
 
       const toggleComingSoonPage = (pagePath: string) => {

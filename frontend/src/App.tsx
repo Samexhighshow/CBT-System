@@ -23,6 +23,7 @@ import AdminSettings from './pages/admin/AdminSettings';
 import Profile from './pages/Profile';
 import SubjectSelection from './pages/SubjectSelection.tsx';
 import QuestionBank from './pages/admin/QuestionBank';
+import AccessCodeGenerator from './pages/AccessCodeGenerator';
 import RequireAuth from './middleware/RequireAuth';
 import RequireRole from './middleware/RequireRole';
 import CbtInterfaceApp from './cbt-interface/CbtInterfaceApp';
@@ -133,13 +134,22 @@ const App: React.FC = () => {
           }
         />
         
-        <Route
-          path="/admin/question-entry"
+        <Route path="/admin/question-entry" 
           element={
             <RequireAuth>
               <RequireRole roles={["Admin","Main Admin","Teacher"]}>
                 <QuestionBank />
               </RequireRole>
+            </RequireAuth>
+          }
+        />
+
+        {/* Access Code Generator - Standalone Interface */}
+        <Route
+          path="/access-code-generator"
+          element={
+            <RequireAuth>
+              <AccessCodeGenerator />
             </RequireAuth>
           }
         />
