@@ -41,7 +41,7 @@ const App: React.FC = () => {
           <GlobalLoadingOverlay />
           {/* Global Keyboard Shortcuts Help */}
           <KeyboardShortcutsHelp />
-          
+
           {/* Offline Route Handler - Manages offline routing */}
           <OfflineRouteHandler>
             <Routes>
@@ -58,7 +58,7 @@ const App: React.FC = () => {
         <Route path="/reset-password-otp" element={<PasswordOtpReset />} />
         <Route path="/admin/signup" element={<AdminSignup />} />
         <Route path="/cbt/*" element={<CbtInterfaceApp />} />
-        
+
         {/* Profile Route (All authenticated users) */}
         <Route
           path="/profile"
@@ -68,7 +68,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-        
+
         {/* Subject Selection (Students after registration) */}
         <Route
           path="/select-subjects"
@@ -78,7 +78,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-        
+
         {/* Student Routes */}
         <Route
           path="/student/*"
@@ -110,7 +110,7 @@ const App: React.FC = () => {
           path="/offline-exam/:examId"
           element={<OfflineExamPortal />}
         />
-        
+
         {/* Admin Routes */}
         <Route
           path="/admin/*"
@@ -122,7 +122,7 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-        
+
         <Route
           path="/admin/settings"
           element={
@@ -133,8 +133,8 @@ const App: React.FC = () => {
             </RequireAuth>
           }
         />
-        
-        <Route path="/admin/question-entry" 
+
+        <Route path="/admin/question-entry"
           element={
             <RequireAuth>
               <RequireRole roles={["Admin","Main Admin","Teacher"]}>
@@ -155,7 +155,7 @@ const App: React.FC = () => {
         />
 
         {/* Roles management is accessible via existing /admin/users page */}
-        
+
         {/* Default Route */}
         <Route path="*" element={<LandingPage />} />
       </Routes>
