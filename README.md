@@ -151,15 +151,15 @@ CBT-System/
 
 ## Technology Stack
 
-| Layer | Technology |
-|---|---|
-| Backend | Laravel 11, PHP 8.2+, Sanctum |
-| Auth/RBAC | Sanctum + Spatie Laravel Permission |
-| Frontend | React 18, TypeScript, TailwindCSS, React Router |
-| State/Utilities | Zustand, Axios, Dexie (IndexedDB), Workbox window |
-| Database | MySQL |
-| Exports | Laravel Excel, DomPDF |
-| Security extensions | Google2FA package integration |
+| Layer               | Technology                                        |
+| ------------------- | ------------------------------------------------- |
+| Backend             | Laravel 11, PHP 8.2+, Sanctum                     |
+| Auth/RBAC           | Sanctum + Spatie Laravel Permission               |
+| Frontend            | React 18, TypeScript, TailwindCSS, React Router   |
+| State/Utilities     | Zustand, Axios, Dexie (IndexedDB), Workbox window |
+| Database            | MySQL                                             |
+| Exports             | Laravel Excel, DomPDF                             |
+| Security extensions | Google2FA package integration                     |
 
 ---
 
@@ -373,14 +373,14 @@ This design supports unstable network environments without breaking exam continu
 
 ## Troubleshooting
 
-| Issue | Action |
-|---|---|
-| `php` not found | Use full path `C:\xampp\php\php.exe` in commands |
-| `composer` not found | Use `composer.phar` with XAMPP PHP |
-| Migration errors | Verify MySQL credentials/database in `backend/.env` |
-| Frontend cannot reach API | Set `REACT_APP_API_URL` to backend URL/port |
+| Issue                                   | Action                                                         |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `php` not found                         | Use full path `C:\xampp\php\php.exe` in commands               |
+| `composer` not found                    | Use `composer.phar` with XAMPP PHP                             |
+| Migration errors                        | Verify MySQL credentials/database in `backend/.env`            |
+| Frontend cannot reach API               | Set `REACT_APP_API_URL` to backend URL/port                    |
 | Package install fails on PHP extensions | Enable required extensions (commonly `gd`, `zip`) in `php.ini` |
-| Auth/session issues | Check Sanctum/session domain values and CORS-related config |
+| Auth/session issues                     | Check Sanctum/session domain values and CORS-related config    |
 
 ---
 
@@ -395,6 +395,98 @@ Primary docs to consult:
 - `CBT_SYSTEM_COMPLETE_FEATURES.md`
 
 > Some older docs still describe an earlier Node/Express scaffold. Use Laravel code (`backend/routes`, controllers, migrations) as the authoritative implementation reference.
+
+---
+
+## Production Deployment
+
+### Recommended topology
+
+- **Frontend**: static build (`frontend/build`) served by Nginx/Apache or CDN
+- **Backend**: Laravel app on PHP-FPM/Apache
+- **Database**: MySQL (managed or self-hosted)
+- **Background jobs**: Laravel queue worker (Supervisor/PM2 service equivalent)
+- **Scheduler**: system cron invoking `artisan schedule:run`
+
+### Build and publish steps
+
+1. Build frontend:
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+2. Prepare backend:
+
+```bash
+cd backend
+composer install --no-dev --optimize-autoloader
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan migrate --force
+```
+
+3. Set file permissions for writable paths:
+
+- `backend/storage/`
+- `backend/bootstrap/cache/`
+
+4. Run queue worker (example):
+
+```bash
+php artisan queue:work --tries=3 --timeout=120
+```
+
+5. Configure scheduler (cron):
+
+```cron
+* * * * * cd /path/to/CBT-System/backend && php artisan schedule:run >> /dev/null 2>&1
+```
+
+### Environment checklist (backend)
+
+- `APP_ENV=production`
+- `APP_DEBUG=false`
+- `APP_URL` set to production API URL
+- Correct production DB credentials
+- Mail credentials for password/OTP workflows
+- Sanctum/session/cors domains aligned with frontend domain
+- Queue connection configured (`database`, `redis`, etc.)
+
+### Web server notes
+
+- Point backend web root to `backend/public`
+- Enforce HTTPS
+- Add gzip/brotli and static cache headers for frontend assets
+- Ensure API reverse proxy preserves `Authorization` header
+
+### Zero-downtime release pattern (recommended)
+
+- Deploy to new release directory
+- Install dependencies and build assets in release directory
+- Run `php artisan migrate --force`
+- Warm caches (`config`, `route`, `view`)
+- Switch symlink/current release
+- Restart PHP-FPM and queue workers gracefully
+
+### Post-deploy validation
+
+- `GET /api/health` returns healthy/degraded JSON response
+- Admin login works
+- Student exam access verify works
+- CBT runtime endpoints respond (`/api/cbt/*`)
+- Offline sync endpoints respond (`/api/sync/*`)
+
+### Security hardening quick list
+
+- Use strong secrets for app/mail/database
+- Restrict database network access
+- Disable directory listing
+- Keep PHP/Laravel dependencies patched
+- Enable central logs/monitoring and alerting for failed jobs
 
 ---
 
