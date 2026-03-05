@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../hooks/useTheme';
-import { useAuthStore } from '../stores/authStore';
+import { useAuthStore } from '../store/authStore';
 import { showSuccess, showError } from '../utils/alerts';
 import { api } from '../services/api';
 
