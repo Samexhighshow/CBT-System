@@ -381,9 +381,9 @@ const TeacherSubjectAssignmentModal: React.FC<TeacherSubjectAssignmentModalProps
             <Button variant="outline" onClick={onClose} disabled={submitting}>
               Skip for Now
             </Button>
-            <Button 
-              onClick={handleSubmit} 
-              disabled={assignments.length === 0 || requestReason.trim().length < 5 || submitting} 
+            <Button
+              onClick={handleSubmit}
+              disabled={assignments.length === 0 || requestReason.trim().length < 5 || submitting}
               loading={submitting}
             >
               Submit for Approval ({totalPairs} assignment{totalPairs !== 1 ? 's' : ''})

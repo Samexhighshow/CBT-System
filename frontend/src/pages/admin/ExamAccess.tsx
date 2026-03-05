@@ -32,7 +32,7 @@ interface GeneratedAccess {
   status?: 'NEW' | 'USED' | 'VOID';
   generated_at: string;
   used: boolean;
-  used_at: string | null; 
+  used_at: string | null;
 }
 
 const ACCESS_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -59,7 +59,7 @@ const ExamAccess: React.FC = () => {
   const [filterUsed, setFilterUsed] = useState<'all' | 'used' | 'unused'>('all');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
-  
+
   // Bulk generation states
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkRegNumbers, setBulkRegNumbers] = useState<string>('');
@@ -483,23 +483,23 @@ const ExamAccess: React.FC = () => {
               <div class="title">CBT System</div>
               <div class="title">${assessmentLabels.accessCodeLabel}</div>
             </div>
-            
+
             <div class="exam-info">
               <strong>${generatedCode.exam_title}</strong>
             </div>
-            
+
             <div class="student-info">
               <div class="student-label">Registration Number:</div>
               <div class="student-value">${generatedCode.student_reg_number}</div>
               <div class="student-label">Student Name:</div>
               <div class="student-value">${generatedCode.student_name}</div>
             </div>
-            
+
             <div class="code-section">
               <div class="code-label">Your One-Time ${assessmentLabels.accessCodeLabel}:</div>
               <div class="access-code">${generatedCode.access_code}</div>
             </div>
-            
+
             <div class="instructions">
               <strong>Instructions:</strong>
               <ul>
@@ -511,7 +511,7 @@ const ExamAccess: React.FC = () => {
                 <li>Do not share with other students</li>
               </ul>
             </div>
-            
+
             <div class="footer">
               Generated on: ${new Date().toLocaleString()}
             </div>
@@ -604,11 +604,11 @@ const ExamAccess: React.FC = () => {
       const errors = result.errors || [];
 
       setBulkResults({ generated, errors });
-      
+
       if (generated.length > 0) {
         showSuccess(`${generated.length} access codes generated successfully!`);
         await fetchGeneratedAccess();
-        
+
         // Sync to offline DB
         const now = new Date().toISOString();
         const batchId = crypto.randomUUID();
@@ -686,24 +686,24 @@ const ExamAccess: React.FC = () => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
-    
+
     link.setAttribute('href', url);
     link.setAttribute('download', `access_codes_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     showSuccess(`Downloaded ${data.length} access codes`);
   };
 
   const filteredAccess = generatedAccess.filter(access => {
-    const matchesSearch = 
+    const matchesSearch =
       access.student_reg_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       access.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       access.exam_title.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesFilter = 
+    const matchesFilter =
       filterUsed === 'all' ||
       (filterUsed === 'used' && access.used) ||
       (filterUsed === 'unused' && !access.used);
