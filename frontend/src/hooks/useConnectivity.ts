@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
-import { checkReachability, ReachabilityResult, ConnectivityStatus } from '../services/reachability';
+import { useEffect, useState } from "react";
+import {
+  checkReachability,
+  ReachabilityResult,
+  ConnectivityStatus,
+} from "../services/reachability";
 
 const DEFAULT_STATUS: ReachabilityResult = {
-  status: 'OFFLINE',
+  status: "OFFLINE",
   canReachLocal: false,
   canReachCloud: false,
   reason: undefined,
 };
 
-type StableConnectivityStatus = ConnectivityStatus | 'CHECKING';
+type StableConnectivityStatus = ConnectivityStatus | "CHECKING";
 
 type ConnectivityState = ReachabilityResult & {
   status: StableConnectivityStatus;
@@ -26,12 +30,12 @@ const EXAM_INTERVAL_MS = 45000;
 const OFFLINE_INTERVAL_MS = 45000;
 const MIN_INTERVAL_MS = 10000;
 const ONLINE_CONFIRMATION_COUNT = 2;
-const OFFLINE_CONFIRMATION_COUNT = 2;
+const OFFLINE_CONFIRMATION_COUNT = 3; // Require 3 consecutive failures before showing offline
 const OFFLINE_TRANSITION_GRACE_MS = 25000;
 
 let sharedState: ConnectivityState = {
   ...DEFAULT_STATUS,
-  status: 'CHECKING',
+  status: "CHECKING",
   checking: false,
   initialized: false,
   lastCheckedAt: null,
@@ -54,18 +58,18 @@ const notifyAll = () => {
 const isExamRoute = (): boolean => {
   const path = window.location.pathname;
   return (
-    path.startsWith('/cbt/attempt/') ||
-    path.startsWith('/offline-exam/') ||
-    path.startsWith('/exam/')
+    path.startsWith("/cbt/attempt/") ||
+    path.startsWith("/offline-exam/") ||
+    path.startsWith("/exam/")
   );
 };
 
 const isStableReachable = (status: StableConnectivityStatus): boolean =>
-  status === 'ONLINE' || status === 'LAN_ONLY';
+  status === "ONLINE" || status === "LAN_ONLY";
 
 const computePollInterval = () => {
   if (isExamRoute()) return EXAM_INTERVAL_MS;
-  if (sharedState.status === 'OFFLINE') return OFFLINE_INTERVAL_MS;
+  if (sharedState.status === "OFFLINE") return OFFLINE_INTERVAL_MS;
   return NORMAL_INTERVAL_MS;
 };
 
@@ -87,9 +91,9 @@ const restartPolling = (nextIntervalMs?: number) => {
 
 const resolveStabilizedStatus = (
   probe: ReachabilityResult,
-  force: boolean
+  force: boolean,
 ): StableConnectivityStatus => {
-  const candidateReachable = probe.status !== 'OFFLINE';
+  const candidateReachable = probe.status !== "OFFLINE";
 
   if (candidateReachable) {
     sharedState.successStreak += 1;
@@ -100,18 +104,24 @@ const resolveStabilizedStatus = (
     sharedState.successStreak = 0;
     sharedState.reconnectPending = false;
 
-    const withinGracePeriod = !!sharedState.lastReachableAt
-      && (Date.now() - sharedState.lastReachableAt) < OFFLINE_TRANSITION_GRACE_MS;
+    const withinGracePeriod =
+      !!sharedState.lastReachableAt &&
+      Date.now() - sharedState.lastReachableAt < OFFLINE_TRANSITION_GRACE_MS;
     if (!force && withinGracePeriod) {
-      return sharedState.initialized ? sharedState.status : 'CHECKING';
+      return sharedState.initialized ? sharedState.status : "CHECKING";
     }
   }
 
   // Offline lock during active attempts:
   // if exam route is active and we are already offline, keep offline until manual retry.
-  if (!force && isExamRoute() && sharedState.status === 'OFFLINE' && candidateReachable) {
+  if (
+    !force &&
+    isExamRoute() &&
+    sharedState.status === "OFFLINE" &&
+    candidateReachable
+  ) {
     sharedState.reconnectPending = true;
-    return 'OFFLINE';
+    return "OFFLINE";
   }
 
   if (candidateReachable) {
@@ -119,14 +129,14 @@ const resolveStabilizedStatus = (
     if (sharedState.successStreak >= ONLINE_CONFIRMATION_COUNT) {
       return probe.status;
     }
-    return sharedState.initialized ? sharedState.status : 'CHECKING';
+    return sharedState.initialized ? sharedState.status : "CHECKING";
   }
 
   if (sharedState.failureStreak >= OFFLINE_CONFIRMATION_COUNT) {
-    return 'OFFLINE';
+    return "OFFLINE";
   }
 
-  return sharedState.initialized ? sharedState.status : 'CHECKING';
+  return sharedState.initialized ? sharedState.status : "CHECKING";
 };
 
 const runCheck = async (force = false): Promise<void> => {
@@ -151,22 +161,28 @@ const runCheck = async (force = false): Promise<void> => {
       checking: false,
       initialized: true,
       lastCheckedAt: Date.now(),
-      reason: stabilizedStatus === 'OFFLINE' ? (next.reason || sharedState.reason || 'health_check_failed') : undefined,
+      reason:
+        stabilizedStatus === "OFFLINE"
+          ? next.reason || sharedState.reason || "health_check_failed"
+          : undefined,
     };
   } catch {
-    const stabilizedStatus = resolveStabilizedStatus({
-      status: 'OFFLINE',
-      canReachLocal: false,
-      canReachCloud: false,
-      reason: 'health_check_failed',
-    }, force);
+    const stabilizedStatus = resolveStabilizedStatus(
+      {
+        status: "OFFLINE",
+        canReachLocal: false,
+        canReachCloud: false,
+        reason: "health_check_failed",
+      },
+      force,
+    );
 
     sharedState = {
       ...sharedState,
       status: stabilizedStatus,
       canReachLocal: false,
       canReachCloud: false,
-      reason: 'health_check_failed',
+      reason: "health_check_failed",
       checking: false,
       initialized: true,
       lastCheckedAt: Date.now(),
@@ -190,9 +206,9 @@ const bindBrowserEvents = () => {
     return;
   }
 
-  window.addEventListener('online', handleNetworkSignal);
-  window.addEventListener('offline', handleNetworkSignal);
-  window.addEventListener('focus', handleNetworkSignal);
+  window.addEventListener("online", handleNetworkSignal);
+  window.addEventListener("offline", handleNetworkSignal);
+  window.addEventListener("focus", handleNetworkSignal);
   browserEventsBound = true;
 };
 
@@ -201,9 +217,9 @@ const unbindBrowserEvents = () => {
     return;
   }
 
-  window.removeEventListener('online', handleNetworkSignal);
-  window.removeEventListener('offline', handleNetworkSignal);
-  window.removeEventListener('focus', handleNetworkSignal);
+  window.removeEventListener("online", handleNetworkSignal);
+  window.removeEventListener("offline", handleNetworkSignal);
+  window.removeEventListener("focus", handleNetworkSignal);
   browserEventsBound = false;
 };
 
@@ -214,7 +230,7 @@ const startMonitor = () => {
   if (!monitorStarted) {
     monitorStarted = true;
     void runCheck(true).then(() => {
-      if (sharedState.status === 'CHECKING') {
+      if (sharedState.status === "CHECKING") {
         window.setTimeout(() => {
           void runCheck(true);
         }, 1200);

@@ -34,7 +34,7 @@ interface Subject {
 const SubjectManagementNew: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'departments' | 'classes' | 'subjects'>('departments');
-  
+
   // Data states
   const [departments, setDepartments] = useState<Department[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -49,18 +49,18 @@ const SubjectManagementNew: React.FC = () => {
   const [subjectLevelFilter, setSubjectLevelFilter] = useState<string>('');
   const [subjectSearch, setSubjectSearch] = useState<string>('');
   const [subjectSort, setSubjectSort] = useState<'name-asc'|'name-desc'|'code-asc'|'code-desc'|'status'|'recent'>('name-asc');
-  
+
   // Pagination states
   const [deptPage, setDeptPage] = useState(1);
   const [classPage, setClassPage] = useState(1);
   const [subjectPage, setSubjectPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  
+
   // Modal states
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [showClassModal, setShowClassModal] = useState(false);
   const [showSubjectModal, setShowSubjectModal] = useState(false);
-  
+
   // Form states
   const [deptForm, setDeptForm] = useState({
     name: '',
@@ -68,7 +68,7 @@ const SubjectManagementNew: React.FC = () => {
     description: '',
     class_level: ''
   });
-  
+
   const [classForm, setClassForm] = useState<{ name: string; description: string; capacity: number; is_active: boolean; department_id?: string | number }>({
     name: '',
     description: '',
@@ -76,7 +76,7 @@ const SubjectManagementNew: React.FC = () => {
     is_active: true,
     department_id: ''
   });
-  
+
   const [subjectForm, setSubjectForm] = useState({
     name: '',
     code: '',
@@ -86,17 +86,17 @@ const SubjectManagementNew: React.FC = () => {
     is_compulsory: true
   });
 
-  
+
   // Selection states for bulk operations
   const [selectedDepts, setSelectedDepts] = useState<number[]>([]);
   const [selectedClasses, setSelectedClasses] = useState<number[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
-  
+
   // Edit states
   const [editingDept, setEditingDept] = useState<Department | null>(null);
   const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
-  
+
   // Upload states
   const [uploadModal, setUploadModal] = useState<'departments' | 'classes' | 'subjects' | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -162,36 +162,51 @@ const SubjectManagementNew: React.FC = () => {
   const loadAllData = async () => {
     try {
       setLoading(true);
-      const [deptRes, classRes, subjectRes] = await Promise.all([
+
+      // Load data with individual error handling to allow partial success
+      const results = await Promise.allSettled([
         api.get(`/departments?limit=1000${deptShowAll ? '&show_all=1' : ''}`),
         api.get(`/staff/classes?limit=1000${classShowAll ? '&show_all=1' : ''}`),
         api.get(`/subjects?limit=1000${subjectLevelFilter ? `&class_level=${encodeURIComponent(subjectLevelFilter)}` : ''}${subjectShowAll ? `&show_all=1` : ''}`),
       ]);
-      
-      // Extract data from paginated response
-      const deptData = deptRes.data.data || deptRes.data || [];
-      const classData = classRes.data.data || classRes.data || [];
-      const subjectData = subjectRes.data.data || subjectRes.data || [];
-      
-      console.log('Loaded data:', { 
-        departments: deptData.length, 
-        classes: classData.length, 
-        subjects: subjectData.length 
+
+      // Extract data from successful responses, default to empty array on failure
+      const deptData = results[0].status === 'fulfilled'
+        ? (results[0].value.data.data || results[0].value.data || [])
+        : [];
+      const classData = results[1].status === 'fulfilled'
+        ? (results[1].value.data.data || results[1].value.data || [])
+        : [];
+      const subjectData = results[2].status === 'fulfilled'
+        ? (results[2].value.data.data || results[2].value.data || [])
+        : [];
+
+      console.log('Loaded data:', {
+        departments: deptData.length,
+        classes: classData.length,
+        subjects: subjectData.length
       });
-      
+
       setDepartments(Array.isArray(deptData) ? deptData : []);
       setClasses(Array.isArray(classData) ? classData : []);
       setSubjects(Array.isArray(subjectData) ? subjectData : []);
-    } catch (error: any) {
-      console.error('Failed to load data:', error);
-      console.error('Error details:', {
-        message: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url
+
+      // Log failures but don't block the page
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          const names = ['departments', 'classes', 'subjects'];
+          console.warn(`Failed to load ${names[index]}:`, result.reason);
+        }
       });
-      showError('Failed to load data. Check console for details.');
+
+      // Only show error if ALL requests failed
+      const allFailed = results.every(r => r.status === 'rejected');
+      if (allFailed) {
+        showError('Failed to load academic data. Please check your connection and try again.');
+      }
+    } catch (error: any) {
+      console.error('Unexpected error loading data:', error);
+      showError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -255,11 +270,11 @@ const SubjectManagementNew: React.FC = () => {
     const startIndex = (page - 1) * itemsPerPage;
     return data.slice(startIndex, startIndex + itemsPerPage);
   };
-  
+
   const getTotalPages = (totalItems: number) => {
     return Math.max(1, Math.ceil(totalItems / itemsPerPage));
   };
-  
+
   const getPageNumbers = (currentPage: number, totalPages: number) => {
     const pages = [];
     const maxPagesToShow = 5;
@@ -273,7 +288,7 @@ const SubjectManagementNew: React.FC = () => {
     }
     return pages;
   };
-  
+
   const filteredDepartments = useMemo(() => {
     return [...departments]
       .filter((d: any) =>
@@ -350,7 +365,7 @@ const SubjectManagementNew: React.FC = () => {
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ensureAcademicWriteAccess()) return;
-    
+
     if (!deptForm.name || !deptForm.code) {
       showError('Please fill in all required fields');
       return;
@@ -405,7 +420,7 @@ const SubjectManagementNew: React.FC = () => {
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ensureAcademicWriteAccess()) return;
-    
+
     if (!classForm.name) {
       showError('Please fill in all required fields');
       return;
@@ -475,7 +490,7 @@ const SubjectManagementNew: React.FC = () => {
   const handleCreateSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ensureAcademicWriteAccess()) return;
-    
+
     if (!subjectForm.name || !subjectForm.code || !subjectForm.class_level) {
       showError('Please fill in all required fields');
       return;
@@ -486,7 +501,7 @@ const SubjectManagementNew: React.FC = () => {
         ...subjectForm,
         is_compulsory: subjectForm.subject_type === 'core'
       };
-      
+
       if (editingSubject) {
         await api.put(`/subjects/${editingSubject.id}`, payload);
         showSuccess('Subject updated successfully');
@@ -809,11 +824,11 @@ const SubjectManagementNew: React.FC = () => {
       const endpoint = type === 'departments' ? '/departments/bulk-upload' :
                       type === 'classes' ? '/staff/classes/bulk-upload' :
                       '/subjects/bulk-upload';
-      
+
       const response = await api.post(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
+
       showSuccess(`${response.data.inserted || 0} items imported successfully`);
       setUploadModal(null);
       setUploadFile(null);
@@ -828,7 +843,7 @@ const SubjectManagementNew: React.FC = () => {
   const handleDownloadSampleCSV = (type: 'departments' | 'classes' | 'subjects') => {
     let csvContent = '';
     let filename = '';
-    
+
     if (type === 'departments') {
       csvContent = 'name,code,description,class_level,is_active\n' +
            'Science,SCI,Science Department,SSS 1,1\n' +
@@ -849,7 +864,7 @@ const SubjectManagementNew: React.FC = () => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
-    
+
     link.setAttribute('href', url);
     link.setAttribute('download', filename);
     link.style.visibility = 'hidden';
@@ -898,8 +913,8 @@ const SubjectManagementNew: React.FC = () => {
                 }`}
               >
                 <i className={`bx ${
-                  tab === 'departments' ? 'bx-building' : 
-                  tab === 'classes' ? 'bx-group' : 
+                  tab === 'departments' ? 'bx-building' :
+                  tab === 'classes' ? 'bx-group' :
                   'bx-book'
                 } mr-1 text-sm md:text-base`}></i>
                 <span className="hidden md:inline">{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
@@ -938,7 +953,7 @@ const SubjectManagementNew: React.FC = () => {
             {canManageAcademic ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {/* Upload CSV Card */}
-              <div 
+              <div
                 onClick={() => setUploadModal('departments')}
                 className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
               >
@@ -952,7 +967,7 @@ const SubjectManagementNew: React.FC = () => {
               </div>
 
               {/* Upload Excel Card */}
-              <div 
+              <div
                 onClick={() => handleDownloadSampleCSV('departments')}
                 className="border-2 border-dashed border-green-500 rounded-lg p-8 text-center cursor-pointer hover:border-green-600 hover:bg-green-50 transition-all duration-200"
               >
@@ -966,7 +981,7 @@ const SubjectManagementNew: React.FC = () => {
               </div>
 
               {/* Manual Entry Card */}
-              <div 
+              <div
                 onClick={() => setShowDeptModal(true)}
                 className="border-2 border-dashed border-purple-500 rounded-lg p-8 text-center cursor-pointer hover:border-purple-600 hover:bg-purple-50 transition-all duration-200"
               >
@@ -1250,8 +1265,8 @@ const SubjectManagementNew: React.FC = () => {
                 <div>
                   <h2 className="text-2xl font-bold text-gray-800 mb-2">Classes</h2>
                   <p className="text-sm text-gray-600">
-                    {departments.length === 0 
-                      ? 'âš ï¸ Create departments first for SSS classes' 
+                    {departments.length === 0
+                      ? 'âš ï¸ Create departments first for SSS classes'
                       : `SSS classes must be linked to a department â€¢ ${classes.length} total`
                     }
                   </p>
@@ -1274,7 +1289,7 @@ const SubjectManagementNew: React.FC = () => {
             {canManageAcademic ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {/* Upload CSV Card */}
-              <div 
+              <div
                 onClick={() => setUploadModal('classes')}
                 className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
               >
@@ -1288,7 +1303,7 @@ const SubjectManagementNew: React.FC = () => {
               </div>
 
               {/* Upload Excel Card */}
-              <div 
+              <div
                 onClick={() => handleDownloadSampleCSV('classes')}
                 className="border-2 border-dashed border-green-500 rounded-lg p-8 text-center cursor-pointer hover:border-green-600 hover:bg-green-50 transition-all duration-200"
               >
@@ -1302,7 +1317,7 @@ const SubjectManagementNew: React.FC = () => {
               </div>
 
               {/* Manual Entry Card */}
-              <div 
+              <div
                 onClick={() => setShowClassModal(true)}
                 className="border-2 border-dashed border-purple-500 rounded-lg p-8 text-center cursor-pointer hover:border-purple-600 hover:bg-purple-50 transition-all duration-200"
               >
@@ -1643,8 +1658,8 @@ const SubjectManagementNew: React.FC = () => {
                 <div>
                   <h2 className="text-2xl font-bold text-gray-800 mb-2">Subjects</h2>
                   <p className="text-sm text-gray-600">
-                    {classes.length === 0 
-                      ? 'âš ï¸ Create classes first' 
+                    {classes.length === 0
+                      ? 'âš ï¸ Create classes first'
                       : `Add subjects to your curriculum â€¢ ${subjects.length} total`
                     }
                   </p>
@@ -1667,7 +1682,7 @@ const SubjectManagementNew: React.FC = () => {
             {canManageAcademic ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {/* Upload CSV Card */}
-              <div 
+              <div
                 onClick={() => setUploadModal('subjects')}
                 className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
               >
@@ -1681,10 +1696,10 @@ const SubjectManagementNew: React.FC = () => {
               </div>
 
               {/* Add Manual Card */}
-              <div 
+              <div
                 onClick={() => classes.length > 0 && handleDownloadSampleCSV('subjects')}
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
-                  classes.length === 0 
+                  classes.length === 0
                     ? 'border-gray-300 bg-gray-50 cursor-not-allowed opacity-50'
                     : 'border-green-500 hover:border-green-600 hover:bg-green-50 cursor-pointer'
                 }`}
@@ -1699,10 +1714,10 @@ const SubjectManagementNew: React.FC = () => {
               </div>
 
               {/* Manual Entry Card */}
-              <div 
+              <div
                 onClick={() => classes.length > 0 && setShowSubjectModal(true)}
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
-                  classes.length === 0 
+                  classes.length === 0
                     ? 'border-gray-300 bg-gray-50 cursor-not-allowed opacity-50'
                     : 'border-purple-500 hover:border-purple-600 hover:bg-purple-50 cursor-pointer'
                 }`}
@@ -2049,7 +2064,7 @@ const SubjectManagementNew: React.FC = () => {
                   <strong>Note:</strong> Departments are required for SSS classes (e.g., Science, Art, Commercial). Create them first before setting up SSS class levels.
                 </p>
               </div>
-              
+
               <form onSubmit={handleCreateDepartment} className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -2145,7 +2160,7 @@ const SubjectManagementNew: React.FC = () => {
                   <li>Capacity sets the maximum number of students per class</li>
                 </ul>
               </div>
-              
+
               <form onSubmit={handleCreateClass} className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -2255,7 +2270,7 @@ const SubjectManagementNew: React.FC = () => {
                   <i className='bx bx-x'></i>
                 </button>
               </div>
-              
+
               <form onSubmit={handleCreateSubject} className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -2349,7 +2364,7 @@ const SubjectManagementNew: React.FC = () => {
                     </button>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {subjectForm.subject_type === 'core' 
+                    {subjectForm.subject_type === 'core'
                       ? 'Core subjects are compulsory for all students'
                       : 'Elective subjects are optional'
                     }
@@ -2500,4 +2515,3 @@ const SubjectManagementNew: React.FC = () => {
 };
 
 export default SubjectManagementNew;
-

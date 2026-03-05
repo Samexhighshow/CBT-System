@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
 import { useTheme } from '../../hooks/useTheme';
+import useAuthStore from '../../store/authStore';
+import { buildAdminNavLinks } from '../../config/adminNav';
 
 interface Setting {
   id: number;
@@ -32,7 +34,7 @@ interface PositionScaleRow {
   min: number;
 }
 
-type SettingsTab = 'general' | 'registration' | 'security' | 'modules' | 'appearance' | 'grading' | 'results';
+type SettingsTab = 'general' | 'registration' | 'security' | 'modules' | 'appearance' | 'grading' | 'results' | 'coming-soon';
 type GradingScheme = 'waec' | 'letter' | 'position';
 type Term = 'First Term' | 'Second Term' | 'Third Term';
 type AssessmentDisplayMode = 'exam' | 'ca_test' | 'auto';
@@ -109,6 +111,7 @@ const tabs: Array<{ key: SettingsTab; label: string; icon: string }> = [
   { key: 'appearance', label: 'Appearance', icon: 'bx-palette' },
   { key: 'grading', label: 'Grading', icon: 'bx-bar-chart-alt-2' },
   { key: 'results', label: 'CR / Terms', icon: 'bx-line-chart' },
+  { key: 'coming-soon', label: 'Coming Soon', icon: 'bx-time' },
 ];
 
 const cardClass = 'border dark:border-gray-700 rounded p-4 bg-white dark:bg-gray-800';
@@ -117,9 +120,17 @@ const notifyAssessmentDisplayChanged = () => {
 };
 
 const AdminSettings: React.FC = () => {
+  const { user } = useAuthStore();
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+
+  // Check if user is Main Admin
+  const isMainAdmin = useMemo(() => {
+    return user?.roles?.some((role: any) =>
+      String(role?.name || role).toLowerCase() === 'main admin'
+    ) ?? false;
+  }, [user]);
 
   const [systemName, setSystemName] = useState('');
   const [assessmentDisplayMode, setAssessmentDisplayMode] = useState<AssessmentDisplayMode>('auto');
@@ -129,6 +140,7 @@ const AdminSettings: React.FC = () => {
   const [letterScale, setLetterScale] = useState<GradeScaleRow[]>(fixedLetterScale);
   const [positionScale, setPositionScale] = useState<PositionScaleRow[]>(fixedPositionScale);
   const [passMarkPercentage, setPassMarkPercentage] = useState('50');
+  const [bulkAccessCodeLimit, setBulkAccessCodeLimit] = useState('2000');
 
   const [currentAcademicSession, setCurrentAcademicSession] = useState('');
   const [currentTerm, setCurrentTerm] = useState<Term>('First Term');
@@ -137,6 +149,8 @@ const AdminSettings: React.FC = () => {
   const [defaultCaWeight, setDefaultCaWeight] = useState('40');
   const [defaultExamWeight, setDefaultExamWeight] = useState('60');
   const [useAssessmentWeight, setUseAssessmentWeight] = useState(true);
+  const [showPercentageInResults, setShowPercentageInResults] = useState(false);
+  const [comingSoonPages, setComingSoonPages] = useState<string[]>([]);
 
   const { theme, changeTheme } = useTheme();
 
@@ -207,6 +221,7 @@ const AdminSettings: React.FC = () => {
       setLetterScale(normalizeScale(findSettingValue('grading_scale_letter', rows), fixedLetterScale));
       setPositionScale(normalizePosition(findSettingValue('position_grading_scale', rows), fixedPositionScale));
       setPassMarkPercentage(String(findSettingValue('pass_mark_percentage', rows) || '50'));
+      setBulkAccessCodeLimit(String(findSettingValue('bulk_access_code_limit', rows) || '2000'));
 
       const year = new Date().getFullYear();
       setCurrentAcademicSession(String(findSettingValue('current_academic_session', rows) || `${year}/${year + 1}`));
@@ -216,6 +231,8 @@ const AdminSettings: React.FC = () => {
       setDefaultCaWeight(String(findSettingValue('default_ca_weight', rows) || '40'));
       setDefaultExamWeight(String(findSettingValue('default_exam_weight', rows) || '60'));
       setUseAssessmentWeight(asBoolean(findSettingValue('use_exam_assessment_weight', rows), true));
+      setShowPercentageInResults(asBoolean(findSettingValue('show_percentage_in_results', rows), false));
+      setComingSoonPages(parseJson(findSettingValue('coming_soon_pages', rows), []) || []);
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to load settings');
     } finally {
@@ -234,6 +251,7 @@ const AdminSettings: React.FC = () => {
           { key: 'grading_scale_letter', value: letterScale, type: 'json' },
           { key: 'position_grading_scale', value: positionScale, type: 'json' },
           { key: 'pass_mark_percentage', value: String(clamp(passMarkPercentage, 50)), type: 'string' },
+          { key: 'show_percentage_in_results', value: showPercentageInResults, type: 'boolean' },
         ],
       });
       showSuccess('Grading settings updated');
@@ -285,6 +303,22 @@ const AdminSettings: React.FC = () => {
   }`;
 
   const renderTab = () => {
+    // Restrict certain tabs to Main Admin only
+    const restrictedTabs: SettingsTab[] = ['registration', 'security', 'modules'];
+    if (!isMainAdmin && restrictedTabs.includes(activeTab)) {
+      return (
+        <div className={cardClass}>
+          <div className="text-center py-8">
+            <i className="bx bx-lock-alt text-4xl text-gray-400 mb-2"></i>
+            <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Access Restricted</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              This section is only accessible to Main Admin users.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     if (activeTab === 'general') {
       return (
         <div className={cardClass}>
@@ -316,7 +350,22 @@ const AdminSettings: React.FC = () => {
               <option value="ca_test">CA Test Mode Labels</option>
             </select>
           </div>
-        </div>
+          <div className="mt-4">
+            <h3 className="font-semibold mb-2 dark:text-white">Bulk Access Code Generation Limit</h3>
+            <p className="text-xs text-slate-500 mb-2">
+              Maximum number of access codes that can be generated at once
+            </p>
+            <input
+              type="number"
+              value={bulkAccessCodeLimit}
+              onChange={(e) => setBulkAccessCodeLimit(e.target.value)}
+              onBlur={(e) => updateSetting('bulk_access_code_limit', e.target.value)}
+              min="100"
+              max="50000"
+              className="border dark:border-gray-600 rounded px-3 py-2 w-full bg-white dark:bg-gray-700 dark:text-white"
+            />
+            <p className="text-xs text-gray-500 mt-1">Range: 100 - 50,000 codes</p>
+          </div>        </div>
       );
     }
 
@@ -493,8 +542,125 @@ const AdminSettings: React.FC = () => {
             </div>
           )}
 
+          <div className="mt-4 border border-gray-200 dark:border-gray-700 rounded p-3">
+            <h3 className="text-sm font-semibold mb-2 dark:text-white">Overall Classification Display</h3>
+            <label className="flex items-center gap-2 text-sm dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={showPercentageInResults}
+                onChange={(e) => setShowPercentageInResults(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <span>Show percentage alongside grade in student results</span>
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              When enabled, students will see both their grade (e.g., A1) and percentage (e.g., 85%) in results
+            </p>
+          </div>
+
           <div className="mt-4 flex justify-end">
             <button onClick={saveGradingSettings} className="px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700">Save Grading Settings</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === 'coming-soon') {
+      // Get all pages from navigation
+      const navLinks = buildAdminNavLinks();
+      const availablePages: { path: string; name: string }[] = [];
+
+      // Flatten navigation to get all pages
+      const flattenNav = (links: any[]) => {
+        links.forEach(link => {
+          availablePages.push({ path: link.path, name: link.name });
+          if (link.subItems) {
+            flattenNav(link.subItems);
+          }
+        });
+      };
+
+      flattenNav(navLinks);
+
+      const toggleComingSoonPage = (pagePath: string) => {
+        const updated = comingSoonPages.includes(pagePath)
+          ? comingSoonPages.filter(p => p !== pagePath)
+          : [...comingSoonPages, pagePath];
+        setComingSoonPages(updated);
+      };
+
+      const saveComingSoonPages = async () => {
+        try {
+          await updateSetting('coming_soon_pages', comingSoonPages, 'json');
+          showSuccess('Coming Soon pages updated');
+          await fetchSettings();
+        } catch (err: any) {
+          showError(err?.response?.data?.message || 'Failed to save coming soon pages');
+        }
+      };
+
+      return (
+        <div className={cardClass}>
+          <h2 className="font-semibold mb-4 dark:text-white text-lg">Manage Coming Soon Pages</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+            Select the pages/modules that should display a "Coming Soon" banner to users instead of being fully accessible.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {availablePages.map(page => (
+              <label
+                key={page.path}
+                className="flex items-center gap-3 border border-gray-200 dark:border-gray-700 rounded px-4 py-3 cursor-pointer bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition"
+              >
+                <input
+                  type="checkbox"
+                  checked={comingSoonPages.includes(page.path)}
+                  onChange={() => toggleComingSoonPage(page.path)}
+                  className="w-4 h-4 cursor-pointer accent-blue-600"
+                />
+                <div className="flex-1">
+                  <span className="text-sm dark:text-gray-100 font-medium text-gray-900 block">
+                    {page.name}
+                  </span>
+                  <span className="text-xs dark:text-gray-400 text-gray-500">
+                    {page.path}
+                  </span>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {availablePages.length === 0 && (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <i className="bx bx-inbox text-3xl mb-2"></i>
+              <p>No pages available</p>
+            </div>
+          )}
+
+          <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-800 dark:text-blue-200 flex items-start gap-2">
+              <i className="bx bx-info-circle text-base mt-0.5 flex-shrink-0"></i>
+              <span>Users trying to access Coming Soon pages will see a message indicating the feature is under development.</span>
+            </p>
+          </div>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setComingSoonPages([]);
+              }}
+              className="px-4 py-2 rounded bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white text-sm hover:bg-gray-400 dark:hover:bg-gray-700 transition"
+            >
+              Clear All
+            </button>
+            <button
+              type="button"
+              onClick={saveComingSoonPages}
+              className="px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 transition"
+            >
+              Save Coming Soon Pages
+            </button>
           </div>
         </div>
       );
@@ -503,23 +669,23 @@ const AdminSettings: React.FC = () => {
     return (
       <div className={cardClass}>
         <h2 className="font-semibold mb-2 dark:text-white">Cumulative Results (CR) & Term Compilation</h2>
-        <p className="text-xs text-gray-500 mb-4">Second term CR = (First + Second) / 2. Third term CR = (First + Second + Third) / 3.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Second term CR = (First + Second) / 2. Third term CR = (First + Second + Third) / 3.</p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input type="text" value={currentAcademicSession} onChange={(e) => setCurrentAcademicSession(e.target.value)} placeholder="Academic session (e.g. 2025/2026)" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white" />
-          <select value={currentTerm} onChange={(e) => setCurrentTerm(normalizeTerm(e.target.value))} className="border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white">
+          <input type="text" value={currentAcademicSession} onChange={(e) => setCurrentAcademicSession(e.target.value)} placeholder="Academic session (e.g. 2025/2026)" className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white text-gray-900" />
+          <select value={currentTerm} onChange={(e) => setCurrentTerm(normalizeTerm(e.target.value))} className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white text-gray-900">
             <option value="First Term">First Term</option>
             <option value="Second Term">Second Term</option>
             <option value="Third Term">Third Term</option>
           </select>
-          <input type="number" min={0} max={100} value={defaultCaWeight} onChange={(e) => setDefaultCaWeight(e.target.value)} placeholder="Default CA Weight" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white" />
-          <input type="number" min={0} max={100} value={defaultExamWeight} onChange={(e) => setDefaultExamWeight(e.target.value)} placeholder="Default Exam Weight" className="border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white" />
+          <input type="number" min={0} max={100} value={defaultCaWeight} onChange={(e) => setDefaultCaWeight(e.target.value)} placeholder="Default CA Weight" className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white text-gray-900" />
+          <input type="number" min={0} max={100} value={defaultExamWeight} onChange={(e) => setDefaultExamWeight(e.target.value)} placeholder="Default Exam Weight" className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white text-gray-900" />
         </div>
 
         <div className="space-y-2 mt-4 text-sm">
-          <label className="flex items-center gap-2"><input type="checkbox" checked={enableTermCompilation} onChange={(e) => setEnableTermCompilation(e.target.checked)} /> Enable term result compilation (CA + Exam)</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={enableCumulativeResults} onChange={(e) => setEnableCumulativeResults(e.target.checked)} /> Enable cumulative result (CR) across terms</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={useAssessmentWeight} onChange={(e) => setUseAssessmentWeight(e.target.checked)} /> Use per-exam assessment weight when available</label>
+          <label className="flex items-center gap-2 dark:text-gray-200"><input type="checkbox" checked={enableTermCompilation} onChange={(e) => setEnableTermCompilation(e.target.checked)} /> Enable term result compilation (CA + Exam)</label>
+          <label className="flex items-center gap-2 dark:text-gray-200"><input type="checkbox" checked={enableCumulativeResults} onChange={(e) => setEnableCumulativeResults(e.target.checked)} /> Enable cumulative result (CR) across terms</label>
+          <label className="flex items-center gap-2 dark:text-gray-200"><input type="checkbox" checked={useAssessmentWeight} onChange={(e) => setUseAssessmentWeight(e.target.checked)} /> Use per-exam assessment weight when available</label>
         </div>
 
         <div className="mt-4 flex justify-end">
@@ -529,16 +695,35 @@ const AdminSettings: React.FC = () => {
     );
   };
 
+  // Filter tabs based on role - only Main Admin sees all tabs
+  const visibleTabs = useMemo(() => {
+    if (isMainAdmin) {
+      return tabs; // Main Admin sees all tabs
+    }
+    // Non-Main Admin users see limited tabs
+    return tabs.filter(tab =>
+      ['general', 'appearance', 'grading', 'results'].includes(tab.key)
+    );
+  }, [isMainAdmin]);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-2xl font-semibold mb-4 dark:text-white">System Settings</h1>
+        {!isMainAdmin && (
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              <i className="bx bx-info-circle mr-1"></i>
+              Limited access: Some settings are restricted to Main Admin only.
+            </p>
+          </div>
+        )}
         {loading ? (
           <p className="dark:text-gray-300">Loading...</p>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6">
             <aside className="space-y-2">
-              {tabs.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <button key={tab.key} type="button" className={sidebarButtonClass(tab.key)} onClick={() => setActiveTab(tab.key)}>
                   <i className={`bx ${tab.icon} text-base`} />
                   <span>{tab.label}</span>

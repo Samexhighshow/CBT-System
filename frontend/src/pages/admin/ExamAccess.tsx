@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { showSuccess, showError } from '../../utils/alerts';
 import useConnectivity from '../../hooks/useConnectivity';
@@ -32,7 +32,7 @@ interface GeneratedAccess {
   status?: 'NEW' | 'USED' | 'VOID';
   generated_at: string;
   used: boolean;
-  used_at: string | null; 
+  used_at: string | null;
 }
 
 const ACCESS_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -60,45 +60,12 @@ const ExamAccess: React.FC = () => {
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
 
-  useEffect(() => {
-    let isActive = true;
-
-    const loadInitial = async () => {
-      await Promise.all([fetchTodayExams(), fetchGeneratedAccess()]);
-    };
-
-    loadInitial();
-
-    const delayedRefresh = window.setTimeout(() => {
-      if (!isActive) return;
-      loadInitial();
-    }, 1500);
-
-    return () => {
-      isActive = false;
-      window.clearTimeout(delayedRefresh);
-    };
-  }, [connectivity.status]);
-
-  useEffect(() => {
-    const loadAssessmentLabels = async () => {
-      const config = await fetchAssessmentDisplayConfig();
-      setAssessmentLabels(config.labels);
-    };
-
-    loadAssessmentLabels();
-  }, [connectivity.status]);
-
-  useEffect(() => {
-    const refreshPending = async () => {
-      const pending = await syncService.pendingCount();
-      setPendingSyncCount(pending);
-    };
-
-    refreshPending();
-    const timer = window.setInterval(refreshPending, 5000);
-    return () => window.clearInterval(timer);
-  }, []);
+  // Bulk generation states
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkRegNumbers, setBulkRegNumbers] = useState<string>('');
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkResults, setBulkResults] = useState<{ generated: any[]; errors: string[] } | null>(null);
+  const [bulkAccessCodeLimit, setBulkAccessCodeLimit] = useState(2000);
 
   const toExamOption = (row: any): Exam => ({
     id: Number(row.id ?? row.examId),
@@ -109,7 +76,7 @@ const ExamAccess: React.FC = () => {
     end_time: String(row.end_time || row.endsAt || ''),
   });
 
-  const loadLocalAccessHistory = async () => {
+  const loadLocalAccessHistory = useCallback(async () => {
     const [codes, students, examRows] = await Promise.all([
       offlineDB.accessCodes.orderBy('updatedAt').reverse().toArray(),
       offlineDB.students.toArray(),
@@ -137,9 +104,9 @@ const ExamAccess: React.FC = () => {
     });
 
     setGeneratedAccess(mapped);
-  };
+  }, []);
 
-  const fetchTodayExams = async () => {
+  const fetchTodayExams = useCallback(async () => {
     try {
       if (connectivity.status !== 'OFFLINE') {
         await syncService.syncDown();
@@ -158,9 +125,9 @@ const ExamAccess: React.FC = () => {
       const localExams = await offlineDB.exams.toArray();
       setExams(localExams.map(toExamOption));
     }
-  };
+  }, [connectivity.status]);
 
-  const fetchGeneratedAccess = async () => {
+  const fetchGeneratedAccess = useCallback(async () => {
     try {
       if (connectivity.status !== 'OFFLINE') {
         const response = await runWithRetry(() =>
@@ -193,7 +160,67 @@ const ExamAccess: React.FC = () => {
     } finally {
       await loadLocalAccessHistory();
     }
-  };
+  }, [connectivity.status, loadLocalAccessHistory]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadInitial = async () => {
+      await Promise.all([fetchTodayExams(), fetchGeneratedAccess()]);
+    };
+
+    loadInitial();
+
+    const delayedRefresh = window.setTimeout(() => {
+      if (!isActive) return;
+      loadInitial();
+    }, 1500);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(delayedRefresh);
+    };
+  }, [connectivity.status, fetchGeneratedAccess, fetchTodayExams]);
+
+  useEffect(() => {
+    const loadAssessmentLabels = async () => {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentLabels(config.labels);
+    };
+
+    loadAssessmentLabels();
+  }, [connectivity.status]);
+
+  useEffect(() => {
+    const fetchBulkLimit = async () => {
+      try {
+        const res = await api.get('/settings');
+        const settings = res.data || [];
+        const limitSetting = settings.find((s: any) => s.key === 'bulk_access_code_limit');
+        if (limitSetting) {
+          const limit = parseInt(limitSetting.value, 10);
+          if (!isNaN(limit) && limit > 0) {
+            setBulkAccessCodeLimit(limit);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch bulk access code limit:', err);
+      }
+    };
+
+    fetchBulkLimit();
+  }, []);
+
+  useEffect(() => {
+    const refreshPending = async () => {
+      const pending = await syncService.pendingCount();
+      setPendingSyncCount(pending);
+    };
+
+    refreshPending();
+    const timer = window.setInterval(refreshPending, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleSearchStudent = async () => {
     if (!regNumber.trim()) {
@@ -477,23 +504,23 @@ const ExamAccess: React.FC = () => {
               <div class="title">CBT System</div>
               <div class="title">${assessmentLabels.accessCodeLabel}</div>
             </div>
-            
+
             <div class="exam-info">
               <strong>${generatedCode.exam_title}</strong>
             </div>
-            
+
             <div class="student-info">
               <div class="student-label">Registration Number:</div>
               <div class="student-value">${generatedCode.student_reg_number}</div>
               <div class="student-label">Student Name:</div>
               <div class="student-value">${generatedCode.student_name}</div>
             </div>
-            
+
             <div class="code-section">
               <div class="code-label">Your One-Time ${assessmentLabels.accessCodeLabel}:</div>
               <div class="access-code">${generatedCode.access_code}</div>
             </div>
-            
+
             <div class="instructions">
               <strong>Instructions:</strong>
               <ul>
@@ -505,7 +532,7 @@ const ExamAccess: React.FC = () => {
                 <li>Do not share with other students</li>
               </ul>
             </div>
-            
+
             <div class="footer">
               Generated on: ${new Date().toLocaleString()}
             </div>
@@ -558,13 +585,146 @@ const ExamAccess: React.FC = () => {
     showSuccess('Copied to clipboard');
   };
 
+  const handleBulkGenerate = async () => {
+    if (!selectedExam) {
+      showError('Please select an exam first');
+      return;
+    }
+
+    const regNumbersArray = bulkRegNumbers
+      .split(/[\n,]/)
+      .map((r) => r.trim().toUpperCase())
+      .filter((r) => r.length > 0);
+
+    if (regNumbersArray.length === 0) {
+      showError('Please enter at least one registration number');
+      return;
+    }
+
+    if (regNumbersArray.length > bulkAccessCodeLimit) {
+      showError(`Maximum ${bulkAccessCodeLimit} codes can be generated at once`);
+      return;
+    }
+
+    setBulkGenerating(true);
+    setBulkResults(null);
+
+    try {
+      if (connectivity.status === 'OFFLINE') {
+        showError('Bulk generation requires online connection. Please reconnect and try again.');
+        return;
+      }
+
+      const response = await api.post('/admin/exam-access/generate', {
+        exam_id: selectedExam,
+        reg_numbers: regNumbersArray,
+      });
+
+      const result = response.data?.data || {};
+      const generated = result.generated || [];
+      const errors = result.errors || [];
+
+      setBulkResults({ generated, errors });
+
+      if (generated.length > 0) {
+        showSuccess(`${generated.length} access codes generated successfully!`);
+        await fetchGeneratedAccess();
+
+        // Sync to offline DB
+        const now = new Date().toISOString();
+        const batchId = crypto.randomUUID();
+        const examId = Number(selectedExam);
+
+        for (const item of generated) {
+          await offlineDB.accessCodes.put({
+            codeId: crypto.randomUUID(),
+            examId,
+            studentId: 0, // Will be updated when we have student info
+            code: String(item.access_code).toUpperCase(),
+            status: 'NEW',
+            issuedAt: now,
+            updatedAt: now,
+            usedAt: null,
+            attemptId: null,
+            usedByDeviceId: null,
+            batchId,
+          });
+        }
+      }
+
+      if (errors.length > 0) {
+        showError(`${errors.length} errors occurred during generation`);
+      }
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Failed to generate bulk access codes');
+    } finally {
+      setBulkGenerating(false);
+    }
+  };
+
+  const handleDownloadCSV = () => {
+    if (!bulkResults || bulkResults.generated.length === 0) {
+      if (filteredAccess.length === 0) {
+        showError('No access codes to download');
+        return;
+      }
+      // Download from filtered list
+      downloadAccessCodesCSV(filteredAccess);
+    } else {
+      // Download from bulk results
+      const dataToDownload = bulkResults.generated.map((item) => ({
+        id: Date.now() + Math.random(),
+        local_code_id: '',
+        student_reg_number: item.reg_number,
+        student_name: item.student_name,
+        exam_title: exams.find((e) => e.id === selectedExam)?.title || '',
+        access_code: item.access_code,
+        status: 'NEW',
+        generated_at: new Date().toISOString(),
+        used: false,
+        used_at: null,
+      }));
+      downloadAccessCodesCSV(dataToDownload);
+    }
+  };
+
+  const downloadAccessCodesCSV = (data: any[]) => {
+    const csvHeader = 'Registration Number,Student Name,Exam Title,Access Code,Status,Generated At,Used,Used At\n';
+    const csvRows = data.map((item) => {
+      return [
+        item.student_reg_number,
+        item.student_name,
+        item.exam_title.replace(/,/g, ';'),
+        item.access_code,
+        item.status || (item.used ? 'USED' : 'NEW'),
+        item.generated_at,
+        item.used ? 'Yes' : 'No',
+        item.used_at || '-',
+      ].join(',');
+    });
+
+    const csvContent = csvHeader + csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', `access_codes_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showSuccess(`Downloaded ${data.length} access codes`);
+  };
+
   const filteredAccess = generatedAccess.filter(access => {
-    const matchesSearch = 
+    const matchesSearch =
       access.student_reg_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       access.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       access.exam_title.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesFilter = 
+    const matchesFilter =
       filterUsed === 'all' ||
       (filterUsed === 'used' && access.used) ||
       (filterUsed === 'unused' && !access.used);
@@ -590,6 +750,17 @@ const ExamAccess: React.FC = () => {
             <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-700">
               Pending sync: {pendingSyncCount}
             </span>
+          </div>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setShowBulkModal(true)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center space-x-2"
+              title="Bulk generate access codes"
+            >
+              <i className="bx bx-list-plus"></i>
+              <span>Generate Bulk Codes</span>
+            </button>
           </div>
         </div>
 
@@ -924,6 +1095,184 @@ const ExamAccess: React.FC = () => {
             </table>
           </div>
         </div>
+
+        {/* Bulk Generation Modal */}
+        {showBulkModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              {/* Modal Header */}
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                      Bulk Generate Access Codes
+                    </h2>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      Generate up to {bulkAccessCodeLimit.toLocaleString()} access codes at once
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowBulkModal(false);
+                      setBulkRegNumbers('');
+                      setBulkResults(null);
+                    }}
+                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    disabled={bulkGenerating}
+                  >
+                    <i className="bx bx-x text-2xl"></i>
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4">
+                {/* Exam Selection for Bulk */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Select {assessmentLabels.assessmentNoun} (Required)
+                  </label>
+                  <select
+                    value={selectedExam || ''}
+                    onChange={(e) => setSelectedExam(Number(e.target.value) || null)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    disabled={bulkGenerating}
+                  >
+                    <option value="">-- Select a {assessmentLabels.assessmentNoun.toLowerCase()} --</option>
+                    {exams.map((exam) => (
+                      <option key={exam.id} value={exam.id}>
+                        {exam.title} - {exam.subject_name} ({exam.start_time} - {exam.end_time})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Registration Numbers Input */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Registration Numbers (one per line or comma-separated)
+                  </label>
+                  <textarea
+                    value={bulkRegNumbers}
+                    onChange={(e) => setBulkRegNumbers(e.target.value)}
+                    placeholder="REG001&#10;REG002&#10;REG003&#10;or REG001, REG002, REG003"
+                    rows={10}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono text-sm"
+                    disabled={bulkGenerating}
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {bulkRegNumbers.split(/[\n,]+/).filter(r => r.trim()).length} registration numbers entered
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleBulkGenerate}
+                    disabled={bulkGenerating || !selectedExam || !bulkRegNumbers.trim()}
+                    className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center space-x-2 font-medium"
+                  >
+                    {bulkGenerating ? (
+                      <>
+                        <i className="bx bx-loader-alt animate-spin"></i>
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <i className="bx bx-key"></i>
+                        <span>Generate All Codes</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBulkModal(false);
+                      setBulkRegNumbers('');
+                      setBulkResults(null);
+                    }}
+                    disabled={bulkGenerating}
+                    className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                {/* Results Display */}
+                {bulkResults && (
+                  <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    {/* Success Summary */}
+                    {bulkResults.generated && bulkResults.generated.length > 0 && (
+                      <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <i className="bx bx-check-circle text-green-600 dark:text-green-400 text-xl"></i>
+                          <span className="font-semibold text-green-800 dark:text-green-300">
+                            Successfully Generated: {bulkResults.generated.length} codes
+                          </span>
+                        </div>
+                        <button
+                          onClick={handleDownloadCSV}
+                          className="mt-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center space-x-2"
+                        >
+                          <i className="bx bx-download"></i>
+                          <span>Download CSV</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Errors Display */}
+                    {bulkResults.errors && bulkResults.errors.length > 0 && (
+                      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <i className="bx bx-error-circle text-red-600 dark:text-red-400 text-xl"></i>
+                          <span className="font-semibold text-red-800 dark:text-red-300">
+                            Failed: {bulkResults.errors.length} codes
+                          </span>
+                        </div>
+                        <div className="mt-2 max-h-40 overflow-y-auto">
+                          <ul className="text-sm text-red-700 dark:text-red-400 space-y-1">
+                            {bulkResults.errors.map((error, idx) => (
+                              <li key={idx} className="flex items-start space-x-2">
+                                <span className="text-red-500">•</span>
+                                <span>{error}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Generated Codes Preview (First 10) */}
+                    {bulkResults.generated && bulkResults.generated.length > 0 && (
+                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">
+                          Preview (first 10 codes)
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                          {bulkResults.generated.slice(0, 10).map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded">
+                              <div>
+                                <span className="font-medium text-gray-900 dark:text-white">{item.reg_number}</span>
+                                <span className="text-gray-600 dark:text-gray-400 ml-2">- {item.student_name}</span>
+                              </div>
+                              <code className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400 rounded font-mono">
+                                {item.access_code}
+                              </code>
+                            </div>
+                          ))}
+                          {bulkResults.generated.length > 10 && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                              ... and {bulkResults.generated.length - 10} more codes
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
