@@ -75,19 +75,665 @@ This guide explains how to host the CBT System on a Local Area Network (LAN) wit
 
 ---
 
+## Multiple Concurrent Users & Multi-Server Setup
+
+### How Many People Can Connect Simultaneously?
+
+The number of concurrent users your system can handle depends on server specs:
+
+| Server Specs | Concurrent Users | Notes |
+|---|---|---|
+| **i5 + 8GB RAM** | 20-30 users | Light usage (browsing results) |
+| **i7 + 16GB RAM** | 50-100 users | Typical exam-taking with some idle time |
+| **i9/Xeon + 32GB RAM** | 100-200+ users | Heavy usage, all students taking exams simultaneously |
+
+**Real-World Example:**
+- If your school has **500 students** but exams are **staggered by class**, you might have:
+  - JSS1: 50 Students taking exam at 8am
+  - JSS2: 50 Students taking exam at 9am
+  - JSS3: 50 Students taking exam at 10am
+  - Maximum concurrent = 50 users (not 500!)
+
+**How connections work:**
+1. Each student's device = **1 connection** to server
+2. Server handles 50-100 simultaneous connections easily with standard hardware
+3. Database allows 500-1000 concurrent MySQL connections (plenty)
+4. **No additional licensing needed** - each person just accesses the shared server
+
+---
+
+### What If You Have Multiple Server PCs? (Branch Offices/Large Schools)
+
+**Scenario A: Multiple Exam Centers at Same Location**
+
+If your school has **multiple exam halls** on same LAN:
+
+```
+┌─────────────────────────────────────────────────────┐
+│            School Network (Single Router)           │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│    MAIN/HUB SERVER              SECONDARY SERVER   │
+│    (Lab 1 - 50 users)          (Lab 2 - 50 users) │
+│    [Primary Database]          [Read Replica DB]   │
+│    192.168.1.100               192.168.1.101      │
+│                                                     │
+│    ┌─────────────┐              ┌──────────────┐  │
+│    │ Admin PC    │              │ Teacher PC   │  │
+│    └─────────────┘              └──────────────┘  │
+│                                                     │
+│    ┌──────────┐  ┌──────────┐   ┌──────────┐      │
+│    │Student1  │  │Student2  │   │Student50 │      │
+│    └──────────┘  └──────────┘   └──────────┘      │
+│                                    All using        │
+│                                  Primary Server    │
+│                                  API (Load Balanced)│
+└─────────────────────────────────────────────────────┘
+```
+
+**Setup for Multiple Servers:**
+
+```powershell
+# SERVER 1 (Primary - HUB)
+IP: 192.168.1.100
+Roles:
+  - Main API endpoint (all clients connect here)
+  - MySQL Database (master)
+  - All exam data stored here
+
+# SERVER 2 (Secondary - Optional)
+IP: 192.168.1.101
+Roles:
+  - API Failover (if Server 1 goes down)
+  - Static exam file caching
+  - Exam sync processor (offload from primary)
+```
+
+**Configuration for Multi-Server:**
+
+**Primary Server (.env)**:
+```ini
+APP_URL=http://192.168.1.100
+DB_HOST=127.0.0.1
+DB_PORT=3306
+CACHE_HOST=127.0.0.1        # Cache server (if using Redis)
+```
+
+**Secondary Server (.env)**:
+```ini
+APP_URL=http://192.168.1.100  # Still point to PRIMARY for DB
+DB_HOST=192.168.1.100         # Connect to PRIMARY database
+DB_PORT=3306
+READONLY_MODE=true            # Secondary only serves static content
+```
+
+**Client Configuration** - Both servers serve same content:
+```ini
+# Frontend still points to PRIMARY
+REACT_APP_API_URL=http://192.168.1.100:8000/api
+
+# OR use Round-Robin DNS
+REACT_APP_API_URL=http://cbt-server.local/api
+# (DNS resolves to 192.168.1.100 and 192.168.1.101)
+```
+
+---
+
+### Scenario B: Different Branch Offices (Decentralized)
+
+If you have **multiple schools** with separate exam centers:
+
+```
+┌─────────────────────────────┬─────────────────────────────┐
+│     SCHOOL A (Building 1)   │    SCHOOL B (Building 2)    │
+│     IP: 192.168.1.100       │    IP: 192.168.2.100        │
+│                             │                             │
+│  MAIN SERVER A              │   MAIN SERVER B             │
+│  ├─ API                     │   ├─ API                    │
+│  ├─ Database A              │   ├─ Database B             │
+│  └─ 50 Students             │   └─ 75 Students            │
+│                             │                             │
+└─────────────────────────────┴─────────────────────────────┘
+      Local Exam Data              Local Exam Data
+      Local Results                Local Results
+```
+
+**Setup Option 1: Completely Independent** (Recommended)
+
+```powershell
+# Each school has its own server - NO connection needed
+# School A: 192.168.1.100:8000/api
+# School B: 192.168.2.100:8000/api
+
+# Daily sync: Central admin uploads exam to each server separately
+# No network link required between schools
+# Each school works independently
+```
+
+**Setup Option 2: Sync Between Schools** (Advanced)
+
+```powershell
+# If you want to sync results back to central database nightly:
+
+# School A Server
+DB_HOST=192.168.1.100         # Local database
+SYNC_REMOTE_DB=192.168.0.50   # Central office database (for sync)
+
+# School B Server  
+DB_HOST=192.168.2.100         # Local database
+SYNC_REMOTE_DB=192.168.0.50   # Central office database (for sync)
+
+# Nightly sync script fetches results from all schools
+# and aggregates in central office for reporting
+```
+
+---
+
+### Real Example: 500-Student School
+
+**Exam Schedule:**
+```
+08:00-09:30: JSS1 (60 students) - Exam 1
+09:45-11:15: JSS2 (70 students) - Exam 2
+11:30-13:00: JSS3 (80 students) - Exam 3
+14:00-15:30: SSS1 (90 students) - Exam 4
+15:45-17:15: SSS2 (100 students) - Exam 5
+```
+
+**Single Server Solution** (Recommended for 500 students):
+```
+Time    | Users Online | Server Load
+--------|--------------|----------
+08:00   | 60 (JSS1)    | 10% CPU, 2GB RAM
+09:00   | 60 (JSS1)    | 10% CPU, 2GB RAM
+09:45   | 5 + 70       | 15% CPU, 3GB RAM (staggered start)
+10:00   | 70 (JSS2)    | 15% CPU, 3GB RAM
+...
+Peak:   | 100 (SSS2)   | 20% CPU, 4GB RAM
+
+✅ Single i7 + 16GB server handles all 5 exams easily
+✅ NO additional servers needed for staggered exams
+```
+
+**If All 500 Students Took Exam Simultaneously** (Worst case):
+```
+Scenario: Emergency online assessment, all at once
+Max Users: 500
+Timeline:  Need to distribute over 2-3 hours minimum
+
+Solution 1: Single Powerful Server
+- Server: i9 + 32GB RAM + SSD
+- Cost: $3,000-5,000
+- Handles 500 users, 20% CPU usage
+
+Solution 2: Two Servers (Load Balanced)
+- Server 1: i7 + 16GB (250 users)
+- Server 2: i7 + 16GB (250 users)
+- Cost: $2,500-3,500 x2
+- Setup: Nginx load balancer distributes traffic
+```
+
+---
+
+### Network Impact (Won't Affect Regular Workload)
+
+**Bandwidth Per User Taking Exam:**
+- Submit an answer: ~5KB every 30 seconds
+- Download exam questions: ~500KB (one-time)
+- View results: ~100KB
+- **Total per hour per user: ~1-2MB**
+
+**500 Students Taking Exams (Staggered):**
+```
+Peak usage: 100 students × 2MB/hour = 200MB/hour
+Converting: 200MB/hour ÷ 3600 seconds = 55KB/sec
+
+Standard LAN Speed: 1000 Mbps (125 MB/sec)
+Usage Percentage: 55KB/sec ÷ 125MB/sec = 0.04%
+
+✅ Less than 1% of network capacity used
+✅ No impact on other school operations
+✅ Can run email, file sharing, browsing simultaneously
+```
+
+---
+
+### Performance Monitoring for Multi-User Setup
+
+```powershell
+# Check server health during exam period
+# Terminal on Server PC:
+
+# CPU Usage
+Get-Process | Measure-Object -Property CPU -Sum
+
+# RAM Usage
+Get-ComputerInfo | Select-Object CsTotalPhysicalMemory, OsAvailablePhysicalMemory
+
+# Active Database Connections
+# In MySQL:
+SHOW PROCESSLIST;              # Shows all connected users
+SELECT COUNT(*) FROM information_schema.PROCESSLIST;
+
+# Network Traffic
+netsh interface tcp show global          # View connection stats
+```
+
+---
+
+## Centralized Database Architecture (Recommended for Multiple Servers)
+
+This is the **best setup for scaling** - all servers share ONE central database while running separate API/Frontend instances.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    Central Network (School)                      │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────┐     │
+│  │      CENTRAL DATABASE SERVER (Master)                  │     │
+│  │      IP: 192.168.1.50                                 │     │
+│  │      ├─ MySQL Database (Port 3306)                    │     │
+│  │      ├─ Data: All exams, students, results           │     │
+│  │      ├─ Storage: 1TB SSD                              │     │
+│  │      └─ Backup: Daily automated backups              │     │
+│  └────────────────────────────────────────────────────────┘     │
+│             ▲                      ▲                   ▲          │
+│             │                      │                   │          │
+│             │ MySQL Connection     │ MySQL Conn       │ MySQL    │
+│             │ (Network)           │ (Network)        │ Conn     │
+│             │                      │                   │          │
+│  ┌──────────┴──┐         ┌────────┴────┐       ┌──────┴───┐    │
+│  │  API SERVER │         │  API SERVER │       │  API SRV │    │
+│  │  #1 (Main)  │         │  #2 (Lab)   │       │  #3 (Adm)│    │
+│  │ 192.168.1.  │         │ 192.168.1.  │       │ 192.168. │    │
+│  │     100     │         │     101     │       │ 1.102    │    │
+│  │             │         │             │       │          │    │
+│  │ ┌─────────┐ │         │ ┌─────────┐ │       │ ┌──────┐ │    │
+│  │ │Laravel  │ │         │ │Laravel  │ │       │ │Larav │ │    │
+│  │ │API      │ │         │ │API      │ │       │ │el AP │ │    │
+│  │ │8000     │ │         │ │8000     │ │       │ │I:8000│ │    │
+│  │ └─────────┘ │         │ └─────────┘ │       │ └──────┘ │    │
+│  │             │         │             │       │          │    │
+│  │ ┌─────────┐ │         │ ┌─────────┐ │       │ ┌──────┐ │    │
+│  │ │React    │ │         │ │React    │ │       │ │React │ │    │
+│  │ │Frontend │ │         │ │Frontend │ │       │ │FE    │ │    │
+│  │ │3000     │ │         │ │3000     │ │       │ │3000  │ │    │
+│  │ └─────────┘ │         │ └─────────┘ │       │ └──────┘ │    │
+│  │ 50 Students │         │ 75 Students │       │ 25 Admin │    │
+│  └─────────────┘         │             │       │          │    │
+│                          └─────────────┘       └──────────┘    │
+│   Lab 1               Lab 2                Admin Office         │
+│  (Main Hub)          (Extension)          (Management)         │
+│                                                                  │
+│                          All Locations                          │
+│                      Share SAME Database                        │
+│                     Connected via Network                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Key Benefits
+
+✅ **Single Source of Truth**: All exam data in one place
+✅ **Easy Data Sync**: Results from all servers automatically synced
+✅ **Scalability**: Add more API servers without complications
+✅ **Unified Reporting**: All results accessible from everywhere
+✅ **Backup Simplicity**: Backup once, protect all locations
+✅ **User Consistency**: Students see same data everywhere
+
+---
+
+### Hardware Requirements
+
+**Central Database Server:**
+- **CPU**: Intel Xeon / AMD Ryzen 5 (multi-core essential)
+- **RAM**: 16GB-32GB (database loves RAM)
+- **Storage**: 500GB-1TB SSD (fast I/O for database)
+- **Network**: Gigabit Ethernet (dedicated connection)
+- **Redundancy**: RAID 1 (mirrors data across 2 drives)
+- **Power**: UPS with 4-hour backup
+
+**API/Frontend Servers** (Can be modest):
+- **CPU**: i5 or Ryzen 3
+- **RAM**: 8GB
+- **Storage**: 256GB SSD (just app files)
+- **Network**: Gigabit Ethernet
+
+**Example Cost Breakdown:**
+```
+Central DB Server (good quality): $2,500
+API Server #1 (basic): $800
+API Server #2 (basic): $800
+Network Switch: $400
+Total: ~$4,500 for 3-server setup
+```
+
+---
+
+### Network Configuration
+
+**Database Server Network Settings:**
+
+```ini
+IP Address:        192.168.1.50
+Subnet Mask:       255.255.255.0
+Gateway:           192.168.1.1
+DNS:               8.8.8.8, 8.8.4.4
+Static IP:         ✅ YES (critical!)
+Firewall Port:     3306 (allow from 192.168.1.0/24)
+```
+
+**Windows Firewall for Database Server:**
+
+```powershell
+# Allow MySQL from internal network ONLY
+netsh advfirewall firewall add rule name="MySQL Local Only" ^
+    dir=in action=allow protocol=tcp localport=3306 ^
+    remoteip=192.168.1.0/24
+
+# Block MySQL from internet
+netsh advfirewall firewall add rule name="MySQL Block Internet" ^
+    dir=in action=block protocol=tcp localport=3306 ^
+    remoteip=0.0.0.0/0
+```
+
+---
+
+### Setup Steps: Centralized Database
+
+#### Step 1: Prepare Database Server
+
+```powershell
+# On Database Server PC (192.168.1.50):
+
+# Install MySQL Server (standalone, not XAMPP)
+# Download: https://dev.mysql.com/downloads/mysql/
+
+# Post-install:
+cd "C:\Program Files\MySQL\MySQL Server 8.0\bin"
+
+# Create CBT database
+mysql -u root -p
+> CREATE DATABASE cbt_system CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+> CREATE USER 'cbt_user'@'%' IDENTIFIED BY 'SecurePassword123!';
+> GRANT ALL PRIVILEGES ON cbt_system.* TO 'cbt_user'@'%';
+> FLUSH PRIVILEGES;
+> EXIT;
+```
+
+#### Step 2: Enable Remote Connections
+
+**File**: `C:\ProgramData\MySQL\MySQL Server 8.0\my.ini`
+
+```ini
+[mysqld]
+# Default: bind-address = 127.0.0.1 (localhost only)
+# Change to:
+bind-address = 0.0.0.0             # Listen on all interfaces
+port = 3306
+max_connections = 1000
+```
+
+**Restart MySQL:**
+```powershell
+Restart-Service MySQL80
+```
+
+#### Step 3: Test Remote Connection
+
+**From API Server PC (192.168.1.100):**
+
+```powershell
+# Download MySQL Client tools if needed
+# Test connection:
+mysql -h 192.168.1.50 -u cbt_user -p
+# Enter password: SecurePassword123!
+```
+
+If connection succeeds:
+```sql
+SHOW DATABASES;
+USE cbt_system;
+SHOW TABLES;           # Should be empty (no tables yet)
+```
+
+#### Step 4: Configure API Server #1 (Main)
+
+**File**: `C:\xampp\htdocs\cbt-system\backend\.env`
+
+```ini
+# Application
+APP_NAME=CBT_System
+APP_ENV=production
+APP_URL=http://192.168.1.100
+
+# Database - Points to CENTRAL SERVER
+DB_CONNECTION=mysql
+DB_HOST=192.168.1.50        # ← Central DB server IP
+DB_PORT=3306
+DB_DATABASE=cbt_system
+DB_USERNAME=cbt_user
+DB_PASSWORD=SecurePassword123!
+
+# API
+API_URL=http://192.168.1.100:8000
+
+# Frontend
+FRONTEND_URL=http://192.168.1.100:3000
+
+# Sanctum
+SANCTUM_STATEFUL_DOMAINS=192.168.1.100
+```
+
+**Run Migrations on API Server #1** (Only once!):
+
+```powershell
+cd C:\xampp\htdocs\cbt-system\backend
+php artisan migrate
+php artisan seed:run
+```
+
+⚠️ **IMPORTANT**: Only run migrations from ONE server, not all!
+
+#### Step 5: Configure API Server #2 (Lab)
+
+**File**: `C:\xampp\htdocs\cbt-system\backend\.env`
+
+```ini
+# Application
+APP_NAME=CBT_System
+APP_ENV=production
+APP_URL=http://192.168.1.101    # Different IP
+
+# Database - Points to SAME CENTRAL SERVER
+DB_CONNECTION=mysql
+DB_HOST=192.168.1.50            # ← Same as Server #1
+DB_PORT=3306
+DB_DATABASE=cbt_system
+DB_USERNAME=cbt_user
+DB_PASSWORD=SecurePassword123!
+
+# API
+API_URL=http://192.168.1.101:8000
+
+# Frontend
+FRONTEND_URL=http://192.168.1.101:3000
+
+# Sanctum
+SANCTUM_STATEFUL_DOMAINS=192.168.1.101
+```
+
+**DO NOT run migrations** - database already exists!
+
+Just start the API:
+```powershell
+cd C:\xampp\htdocs\cbt-system\backend
+php artisan serve --host 192.168.1.101 --port 8000
+```
+
+#### Step 6: Configure API Server #3 (Admin)
+
+Same as #2, but with `192.168.1.102` instead of `.101`
+
+#### Step 7: Frontend Configuration
+
+**Each frontend server points to its local API:**
+
+**API Server #1** - `frontend\.env`:
+```ini
+REACT_APP_API_URL=http://192.168.1.100:8000/api
+```
+
+**API Server #2** - `frontend\.env`:
+```ini
+REACT_APP_API_URL=http://192.168.1.101:8000/api
+```
+
+**API Server #3** - `frontend\.env`:
+```ini
+REACT_APP_API_URL=http://192.168.1.102:8000/api
+```
+
+---
+
+### Load Balancing (Optional - for even distribution)
+
+If you want to distribute traffic across servers automatically:
+
+```
+┌─────────────────────────────────────┐
+│  Load Balancer (Nginx)              │
+│  192.168.1.99                       │
+├─────────────────────────────────────┤
+│  Forward all /api requests to:      │
+│  - API #1 (192.168.1.100)  50%      │
+│  - API #2 (192.168.1.101)  50%      │
+│  - API #3 (192.168.1.102)  Backup   │
+└─────────────────────────────────────┘
+       ▲
+       │
+    Clients connect to:
+    http://192.168.1.99:8000/api
+    (instead of individual servers)
+```
+
+**Nginx Configuration** (`C:\nginx\conf\nginx.conf`):
+
+```nginx
+upstream cbt_api {
+    server 192.168.1.100:8000 weight=50;
+    server 192.168.1.101:8000 weight=50;
+    server 192.168.1.102:8000 backup;
+}
+
+server {
+    listen 8000;
+    server_name _;
+    
+    location / {
+        proxy_pass http://cbt_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+---
+
+### Data Consistency & Synchronization
+
+**How it stays in sync:**
+
+```
+Student takes exam on API Server #1
+├─ Submits answer
+├─ API #1 sends to Central DB (192.168.1.50)
+│  └─ DB stores answer
+│
+Teacher checks results on API Server #3
+├─ Requests results from API #3
+├─ API #3 queries Central DB (192.168.1.50)
+└─ Shows up-to-date results
+
+✅ Always in sync (single database)
+```
+
+**No manual sync needed** - all servers query the same database!
+
+---
+
+### Failover Strategy
+
+**If Central DB Server Goes Down:**
+
+```
+All API servers unable to connect → System offline
+Solution: Database failover server (secondary)
+
+┌─────────────────────────────────┐
+│  Primary DB (192.168.1.50)      │
+│  (Main)                         │
+└──────────┬──────────────────────┘
+           │ MySQL Replication
+           ▼
+┌─────────────────────────────────┐
+│  Secondary DB (192.168.1.51)    │
+│  (Standby/Read-Only)            │
+└─────────────────────────────────┘
+```
+
+**Setup MySQL Replication:**
+
+```sql
+-- On Primary (192.168.1.50):
+CHANGE MASTER TO
+  MASTER_HOST='192.168.1.51',
+  MASTER_USER='repl_user',
+  MASTER_PASSWORD='repl_pass';
+
+START SLAVE;
+SHOW SLAVE STATUS;
+```
+
+If Primary fails, manually promote Secondary:
+```powershell
+# Quick failover script
+mysql -h 192.168.1.51 -u root -p
+> STOP SLAVE;
+> RESET SLAVE ALL;
+> SET GLOBAL read_only = OFF;
+```
+
+Update `.env` on all API servers to point to Secondary:
+```ini
+DB_HOST=192.168.1.51  # Now Secondary becomes Primary
+```
+
+---
+
+### Recommended Checklist: Centralized DB Setup
+
+- [ ] Central DB server hardware installed (16GB RAM minimum)
+- [ ] MySQL Server installed and running
+- [ ] Database created: `cbt_system`
+- [ ] User created: `cbt_user` with privileges
+- [ ] Remote connections enabled (`bind-address = 0.0.0.0`)
+- [ ] Firewall allows MySQL from LAN subnet
+- [ ] Test connection from each API server successful
+- [ ] API Server #1 configured with `.env`
+- [ ] Migrations run on API Server #1 only
+- [ ] API Server #2, #3 configured (NO migrations)
+- [ ] All API servers connect and share same data
+- [ ] Test: Create data on API #1, verify visible on API #2 & #3
+- [ ] Backup strategy documented
+- [ ] Optional: Load balancer configured
+- [ ] Optional: Secondary DB for failover set up
+
+---
+
 ## Step-by-Step Setup (Windows + XAMPP)
-
-### 1. Prepare Server Hardware
-
-```
-Choose a dedicated machine to be the HUB Server:
-- Keep it powered on 24/7 or scheduled for exam periods
-- Position near router/network switch for best connectivity
-- Use wired Ethernet connection (not WiFi) for stability
-- Monitor CPU/RAM usage to ensure capacity
-```
-
-### 2. Install XAMPP Stack
 
 ```powershell
 # Download XAMPP for Windows: https://www.apachefriends.org/
