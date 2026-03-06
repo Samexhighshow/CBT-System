@@ -122,7 +122,7 @@
 
     <div class="score-card">
         <h2>Final Score</h2>
-        <h1 style="font-size: 48px; margin: 10px 0;">{{ $attempt->score }}/{{ $attempt->exam->total_marks }}</h1>
+        <h1 style="font-size: 48px; margin: 10px 0;">{{ $attempt->score }}/{{ $total_marks }}</h1>
         <h3>{{ $percentage }}%</h3>
         <p style="margin-top: 15px;">
             Correct Answers: {{ $correct_answers }}/{{ $total_questions }}

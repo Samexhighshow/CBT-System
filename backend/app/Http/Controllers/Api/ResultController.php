@@ -84,7 +84,7 @@ class ResultController extends Controller
                     'id' => $attempt->id,
                     'exam_title' => $attempt->exam->title,
                     'subject' => $attempt->exam->subject->name,
-                    'assessment_type' => $attempt->exam->assessment_type,
+                    'assessment_type' => $this->resolveAssessmentTypeLabel($attempt),
                     'academic_session' => $this->resolveExamSession($attempt->exam),
                     'term' => $this->resolveExamTerm($attempt->exam),
                     'status' => 'not_released',
@@ -117,7 +117,7 @@ class ResultController extends Controller
                 'id' => $attempt->id,
                 'exam_title' => $attempt->exam->title,
                 'subject' => $attempt->exam->subject->name,
-                'assessment_type' => $attempt->exam->assessment_type,
+                'assessment_type' => $this->resolveAssessmentTypeLabel($attempt),
                 'academic_session' => $this->resolveExamSession($attempt->exam),
                 'term' => $this->resolveExamTerm($attempt->exam),
                 'score' => $attempt->score,
@@ -606,7 +606,7 @@ class ResultController extends Controller
                 $percentage = round((((float) ($attempt->score ?? 0)) / $safeTotal) * 100, 2);
 
                 $component = $this->attemptComponent($attempt);
-                $assessmentType = $component === 'ca' ? 'CA Test' : 'Exam';
+                $assessmentType = $this->resolveAssessmentTypeLabel($attempt);
 
                 return [
                     'exam_id' => (int) $exam->id,
@@ -775,7 +775,29 @@ class ResultController extends Controller
         }
 
         $assessmentType = strtolower(trim((string) ($attempt->exam?->assessment_type ?? '')));
-        return $assessmentType === 'ca test' ? 'ca' : 'exam';
+        return $this->isContinuousAssessmentType($assessmentType) ? 'ca' : 'exam';
+    }
+
+    private function resolveAssessmentTypeLabel(ExamAttempt $attempt): string
+    {
+        $raw = trim((string) ($attempt->exam?->assessment_type ?? ''));
+        if ($raw !== '') {
+            return $raw;
+        }
+
+        return $this->attemptComponent($attempt) === 'ca' ? 'CA Test' : 'Final Exam';
+    }
+
+    private function isContinuousAssessmentType(string $assessmentType): bool
+    {
+        return in_array($assessmentType, [
+            'ca',
+            'ca test',
+            'continuous assessment',
+            'quiz',
+            'midterm',
+            'midterm test',
+        ], true);
     }
 
     private function weightedAverage(Collection $records, bool $useAssessmentWeight, float $fallbackWeight): ?float

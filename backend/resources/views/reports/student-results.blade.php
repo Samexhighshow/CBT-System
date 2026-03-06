@@ -139,6 +139,7 @@
             <tr>
                 <th>Exam Title</th>
                 <th>Subject</th>
+                <th>Assessment Type</th>
                 <th>Score</th>
                 <th>Percentage</th>
                 <th>Status</th>
@@ -150,10 +151,11 @@
             <tr>
                 <td>{{ $attempt->exam->title }}</td>
                 <td>{{ $attempt->exam->subject->name }}</td>
-                <td>{{ $attempt->score }}/{{ $attempt->exam->total_marks }}</td>
-                <td>{{ ($attempt->exam->total_marks > 0) ? round(($attempt->score / $attempt->exam->total_marks) * 100, 2) . '%' : 'N/A' }}</td>
-                <td class="{{ $attempt->score >= $attempt->exam->passing_marks ? 'passed' : 'failed' }}">
-                    {{ $attempt->score >= $attempt->exam->passing_marks ? 'Passed' : 'Failed' }}
+                <td>{{ $attempt->report_assessment_type ?? ($attempt->exam->assessment_type ?? 'Final Exam') }}</td>
+                <td>{{ (float) ($attempt->report_score ?? 0) }}/{{ (float) ($attempt->report_total_marks ?? 0) }}</td>
+                <td>{{ (isset($attempt->report_percentage) && is_numeric($attempt->report_percentage)) ? round((float) $attempt->report_percentage, 2) . '%' : 'N/A' }}</td>
+                <td class="{{ !empty($attempt->report_passed) ? 'passed' : 'failed' }}">
+                    {{ !empty($attempt->report_passed) ? 'Passed' : 'Failed' }}
                 </td>
                 <td>{{ $attempt->completed_at?->format('Y-m-d H:i') ?? 'N/A' }}</td>
             </tr>
