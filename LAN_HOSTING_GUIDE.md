@@ -81,13 +81,14 @@ This guide explains how to host the CBT System on a Local Area Network (LAN) wit
 
 The number of concurrent users your system can handle depends on server specs:
 
-| Server Specs | Concurrent Users | Notes |
-|---|---|---|
-| **i5 + 8GB RAM** | 20-30 users | Light usage (browsing results) |
-| **i7 + 16GB RAM** | 50-100 users | Typical exam-taking with some idle time |
-| **i9/Xeon + 32GB RAM** | 100-200+ users | Heavy usage, all students taking exams simultaneously |
+| Server Specs           | Concurrent Users | Notes                                                 |
+| ---------------------- | ---------------- | ----------------------------------------------------- |
+| **i5 + 8GB RAM**       | 20-30 users      | Light usage (browsing results)                        |
+| **i7 + 16GB RAM**      | 50-100 users     | Typical exam-taking with some idle time               |
+| **i9/Xeon + 32GB RAM** | 100-200+ users   | Heavy usage, all students taking exams simultaneously |
 
 **Real-World Example:**
+
 - If your school has **500 students** but exams are **staggered by class**, you might have:
   - JSS1: 50 Students taking exam at 8am
   - JSS2: 50 Students taking exam at 9am
@@ -95,6 +96,7 @@ The number of concurrent users your system can handle depends on server specs:
   - Maximum concurrent = 50 users (not 500!)
 
 **How connections work:**
+
 1. Each student's device = **1 connection** to server
 2. Server handles 50-100 simultaneous connections easily with standard hardware
 3. Database allows 500-1000 concurrent MySQL connections (plenty)
@@ -152,6 +154,7 @@ Roles:
 **Configuration for Multi-Server:**
 
 **Primary Server (.env)**:
+
 ```ini
 APP_URL=http://192.168.1.100
 DB_HOST=127.0.0.1
@@ -160,6 +163,7 @@ CACHE_HOST=127.0.0.1        # Cache server (if using Redis)
 ```
 
 **Secondary Server (.env)**:
+
 ```ini
 APP_URL=http://192.168.1.100  # Still point to PRIMARY for DB
 DB_HOST=192.168.1.100         # Connect to PRIMARY database
@@ -168,6 +172,7 @@ READONLY_MODE=true            # Secondary only serves static content
 ```
 
 **Client Configuration** - Both servers serve same content:
+
 ```ini
 # Frontend still points to PRIMARY
 REACT_APP_API_URL=http://192.168.1.100:8000/api
@@ -219,7 +224,7 @@ If you have **multiple schools** with separate exam centers:
 DB_HOST=192.168.1.100         # Local database
 SYNC_REMOTE_DB=192.168.0.50   # Central office database (for sync)
 
-# School B Server  
+# School B Server
 DB_HOST=192.168.2.100         # Local database
 SYNC_REMOTE_DB=192.168.0.50   # Central office database (for sync)
 
@@ -232,6 +237,7 @@ SYNC_REMOTE_DB=192.168.0.50   # Central office database (for sync)
 ### Real Example: 500-Student School
 
 **Exam Schedule:**
+
 ```
 08:00-09:30: JSS1 (60 students) - Exam 1
 09:45-11:15: JSS2 (70 students) - Exam 2
@@ -241,6 +247,7 @@ SYNC_REMOTE_DB=192.168.0.50   # Central office database (for sync)
 ```
 
 **Single Server Solution** (Recommended for 500 students):
+
 ```
 Time    | Users Online | Server Load
 --------|--------------|----------
@@ -256,6 +263,7 @@ Peak:   | 100 (SSS2)   | 20% CPU, 4GB RAM
 ```
 
 **If All 500 Students Took Exam Simultaneously** (Worst case):
+
 ```
 Scenario: Emergency online assessment, all at once
 Max Users: 500
@@ -278,12 +286,14 @@ Solution 2: Two Servers (Load Balanced)
 ### Network Impact (Won't Affect Regular Workload)
 
 **Bandwidth Per User Taking Exam:**
+
 - Submit an answer: ~5KB every 30 seconds
 - Download exam questions: ~500KB (one-time)
 - View results: ~100KB
 - **Total per hour per user: ~1-2MB**
 
 **500 Students Taking Exams (Staggered):**
+
 ```
 Peak usage: 100 students × 2MB/hour = 200MB/hour
 Converting: 200MB/hour ÷ 3600 seconds = 55KB/sec
@@ -388,6 +398,7 @@ This is the **best setup for scaling** - all servers share ONE central database 
 ### Hardware Requirements
 
 **Central Database Server:**
+
 - **CPU**: Intel Xeon / AMD Ryzen 5 (multi-core essential)
 - **RAM**: 16GB-32GB (database loves RAM)
 - **Storage**: 500GB-1TB SSD (fast I/O for database)
@@ -396,12 +407,14 @@ This is the **best setup for scaling** - all servers share ONE central database 
 - **Power**: UPS with 4-hour backup
 
 **API/Frontend Servers** (Can be modest):
+
 - **CPU**: i5 or Ryzen 3
 - **RAM**: 8GB
 - **Storage**: 256GB SSD (just app files)
 - **Network**: Gigabit Ethernet
 
 **Example Cost Breakdown:**
+
 ```
 Central DB Server (good quality): $2,500
 API Server #1 (basic): $800
@@ -477,6 +490,7 @@ max_connections = 1000
 ```
 
 **Restart MySQL:**
+
 ```powershell
 Restart-Service MySQL80
 ```
@@ -493,6 +507,7 @@ mysql -h 192.168.1.50 -u cbt_user -p
 ```
 
 If connection succeeds:
+
 ```sql
 SHOW DATABASES;
 USE cbt_system;
@@ -568,6 +583,7 @@ SANCTUM_STATEFUL_DOMAINS=192.168.1.101
 **DO NOT run migrations** - database already exists!
 
 Just start the API:
+
 ```powershell
 cd C:\xampp\htdocs\cbt-system\backend
 php artisan serve --host 192.168.1.101 --port 8000
@@ -582,16 +598,19 @@ Same as #2, but with `192.168.1.102` instead of `.101`
 **Each frontend server points to its local API:**
 
 **API Server #1** - `frontend\.env`:
+
 ```ini
 REACT_APP_API_URL=http://192.168.1.100:8000/api
 ```
 
 **API Server #2** - `frontend\.env`:
+
 ```ini
 REACT_APP_API_URL=http://192.168.1.101:8000/api
 ```
 
 **API Server #3** - `frontend\.env`:
+
 ```ini
 REACT_APP_API_URL=http://192.168.1.102:8000/api
 ```
@@ -631,7 +650,7 @@ upstream cbt_api {
 server {
     listen 8000;
     server_name _;
-    
+
     location / {
         proxy_pass http://cbt_api;
         proxy_set_header Host $host;
@@ -698,6 +717,7 @@ SHOW SLAVE STATUS;
 ```
 
 If Primary fails, manually promote Secondary:
+
 ```powershell
 # Quick failover script
 mysql -h 192.168.1.51 -u root -p
@@ -707,6 +727,7 @@ mysql -h 192.168.1.51 -u root -p
 ```
 
 Update `.env` on all API servers to point to Secondary:
+
 ```ini
 DB_HOST=192.168.1.51  # Now Secondary becomes Primary
 ```
