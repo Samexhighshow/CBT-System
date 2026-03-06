@@ -47,19 +47,17 @@ class RoleScopeService
         ?int $examId,
         array $classNameById
     ): bool {
-        if (!is_null($scope->exam_id)) {
-            if (is_null($examId) || (int) $scope->exam_id !== (int) $examId) {
-                return false;
-            }
-        }
+        $hasConstraint = false;
 
         if (!is_null($scope->subject_id)) {
+            $hasConstraint = true;
             if (is_null($subjectId) || (int) $scope->subject_id !== (int) $subjectId) {
                 return false;
             }
         }
 
         if (!is_null($scope->class_id)) {
+            $hasConstraint = true;
             $scopeClassId = (int) $scope->class_id;
             if (!is_null($classId)) {
                 if ($scopeClassId !== (int) $classId) {
@@ -75,6 +73,10 @@ class RoleScopeService
                     return false;
                 }
             }
+        }
+
+        if (!$hasConstraint) {
+            return false;
         }
 
         return true;
@@ -272,18 +274,14 @@ class RoleScopeService
             return $query;
         }
 
-        $examIds = $this->scopedExamIds($user);
         $subjectIds = $this->scopedSubjectIds($user);
         $classIds = $this->scopedClassIds($user);
 
-        if (empty($examIds) && empty($subjectIds) && empty($classIds)) {
+        if (empty($subjectIds) && empty($classIds)) {
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->where(function ($q) use ($examIdColumn, $subjectIdColumn, $classIdColumn, $examIds, $subjectIds, $classIds) {
-            if (!empty($examIds)) {
-                $q->orWhereIn($examIdColumn, $examIds);
-            }
+        return $query->where(function ($q) use ($subjectIdColumn, $classIdColumn, $subjectIds, $classIds) {
             if (!empty($subjectIds)) {
                 $q->orWhereIn($subjectIdColumn, $subjectIds);
             }

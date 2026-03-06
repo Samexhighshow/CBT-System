@@ -53,19 +53,28 @@ class ReportController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $exam = \App\Models\Exam::with(['subject', 'attempts' => function($q) {
-            $q->whereIn('status', ['completed', 'submitted'])->with('student.department');
-        }])->findOrFail($examId);
+        $exam = \App\Models\Exam::with('subject')->findOrFail($examId);
 
         if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
-        $attempts = $exam->attempts->sortByDesc('score');
+        $attempts = $this->loadExamReportAttempts($exam);
+        $examTotalMarks = (float) ($exam->total_marks ?? 0);
+        if ($examTotalMarks <= 0) {
+            $examTotalMarks = (float) $exam->getTotalMarks();
+        }
+        $examPassingMarks = (float) ($exam->passing_marks ?? 0);
+        $startTime = $exam->start_datetime ?? $exam->start_time;
+        $endTime = $exam->end_datetime ?? $exam->end_time;
 
         $data = [
             'exam' => $exam,
             'attempts' => $attempts,
+            'exam_total_marks' => $examTotalMarks,
+            'exam_passing_marks' => $examPassingMarks,
+            'exam_start_time' => $startTime ? $startTime->format('Y-m-d H:i') : null,
+            'exam_end_time' => $endTime ? $endTime->format('Y-m-d H:i') : null,
             'total_attempts' => $attempts->count(),
             'average_score' => round($attempts->avg('score'), 2),
             'highest_score' => $attempts->max('score'),
@@ -77,6 +86,43 @@ class ReportController extends Controller
         $pdf = Pdf::loadView('reports.exam-report', $data);
         
         return $pdf->download('exam_report_' . $exam->id . '.pdf');
+    }
+
+    private function loadExamReportAttempts(Exam $exam): Collection
+    {
+        $baseQuery = ExamAttempt::query()
+            ->with(['student.department'])
+            ->where('exam_id', $exam->id)
+            ->whereNotNull('score');
+
+        // Preferred statuses for final report rows.
+        $attempts = (clone $baseQuery)
+            ->whereIn('status', ['completed', 'submitted', 'scored'])
+            ->get();
+
+        // Fallback for legacy/edge statuses that still carry a valid score.
+        if ($attempts->isEmpty()) {
+            $attempts = (clone $baseQuery)
+                ->whereNotIn('status', ['pending', 'in_progress'])
+                ->get();
+        }
+
+        $sortedByFreshness = $attempts->sortByDesc(function (ExamAttempt $attempt) {
+            $stamp = $attempt->completed_at
+                ?? $attempt->submitted_at
+                ?? $attempt->ended_at
+                ?? $attempt->updated_at;
+
+            return $stamp ? $stamp->getTimestamp() : 0;
+        });
+
+        // Keep the latest scored attempt per student, then rank by score.
+        return $sortedByFreshness
+            ->unique('student_id')
+            ->sortByDesc(function (ExamAttempt $attempt) {
+                return (float) ($attempt->score ?? 0);
+            })
+            ->values();
     }
 
     /**
@@ -325,7 +371,9 @@ class ReportController extends Controller
             'questions' => $questions,
             'total_questions' => $questions->count(),
             'correct_answers' => $questions->where('is_correct', true)->count(),
-            'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
+            'percentage' => ((float) ($attempt->exam->total_marks ?? 0) > 0)
+                ? round((((float) ($attempt->score ?? 0)) / (float) $attempt->exam->total_marks) * 100, 2)
+                : 0,
             'generated_at' => now()->format('Y-m-d H:i:s'),
         ];
 

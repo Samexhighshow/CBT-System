@@ -151,11 +151,11 @@
                 <td>{{ $attempt->exam->title }}</td>
                 <td>{{ $attempt->exam->subject->name }}</td>
                 <td>{{ $attempt->score }}/{{ $attempt->exam->total_marks }}</td>
-                <td>{{ round(($attempt->score / $attempt->exam->total_marks) * 100, 2) }}%</td>
+                <td>{{ ($attempt->exam->total_marks > 0) ? round(($attempt->score / $attempt->exam->total_marks) * 100, 2) . '%' : 'N/A' }}</td>
                 <td class="{{ $attempt->score >= $attempt->exam->passing_marks ? 'passed' : 'failed' }}">
                     {{ $attempt->score >= $attempt->exam->passing_marks ? 'Passed' : 'Failed' }}
                 </td>
-                <td>{{ $attempt->completed_at->format('Y-m-d H:i') }}</td>
+                <td>{{ $attempt->completed_at?->format('Y-m-d H:i') ?? 'N/A' }}</td>
             </tr>
             @endforeach
         </tbody>

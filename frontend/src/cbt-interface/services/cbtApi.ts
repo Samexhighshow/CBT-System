@@ -1,8 +1,18 @@
 import axios from 'axios';
 import { CbtAttemptEventLogResponse, CbtAttemptState, CbtAttemptVerifyResponse, CbtOpenExam, CbtQuestion } from '../types';
-import { checkReachability, getCachedReachability, getReachableBaseUrl } from '../../services/reachability';
+import { API_URL } from '../../services/api';
 
-const CBT_API_BASE_URL = process.env.REACT_APP_CBT_API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const normalizeApiBaseUrl = (baseUrl: string): string => {
+  const trimmed = (baseUrl || '').replace(/\/$/, '');
+  if (/\/api(?:\/|$)/i.test(trimmed)) {
+    return trimmed;
+  }
+  return `${trimmed}/api`;
+};
+
+const CBT_API_BASE_URL = normalizeApiBaseUrl(
+  process.env.REACT_APP_CBT_API_URL || API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8000/api'
+);
 
 const cbtClient = axios.create({
   baseURL: CBT_API_BASE_URL,
@@ -14,13 +24,7 @@ const cbtClient = axios.create({
 });
 
 const resolveBaseUrl = async (): Promise<string> => {
-  const cached = getCachedReachability();
-  if (cached) {
-    return getReachableBaseUrl(cached) || CBT_API_BASE_URL;
-  }
-
-  const reachability = await checkReachability();
-  return getReachableBaseUrl(reachability) || CBT_API_BASE_URL;
+  return CBT_API_BASE_URL;
 };
 
 const withSessionHeader = (sessionToken: string) => ({

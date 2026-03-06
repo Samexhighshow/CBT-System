@@ -228,8 +228,13 @@ const CbtExamSession: React.FC = () => {
         clearStoredSession(attemptId);
         navigate('/cbt');
         return;
+      } else if (code === 'invalid_session' || code === 'missing_session_token' || err?.response?.status === 401) {
+        clearStoredSession(attemptId);
+        setError('Exam session expired. Return to portal and login again.');
+        return;
       }
-      setError(err?.response?.data?.message || 'Failed to load exam session.');
+      const fallbackMessage = typeof err?.message === 'string' ? err.message : null;
+      setError(err?.response?.data?.message || fallbackMessage || 'Failed to load exam session.');
     } finally {
       setLoading(false);
     }

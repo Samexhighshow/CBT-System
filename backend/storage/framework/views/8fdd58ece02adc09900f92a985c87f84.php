@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Exam Report - {{ $exam->title }}</title>
+    <title>Exam Report - <?php echo e($exam->title); ?></title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -31,14 +31,15 @@
             width: 200px;
         }
         .stats-grid {
-            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
             margin-bottom: 30px;
-            border-collapse: separate;
-            border-spacing: 10px 0;
         }
         .stat-box {
             border: 1px solid #e5e7eb;
             padding: 15px;
+            border-radius: 5px;
             background: #f9fafb;
         }
         .stat-label {
@@ -89,63 +90,53 @@
 <body>
     <div class="header">
         <h1>CBT System - Exam Report</h1>
-        <h2>{{ $exam->title }}</h2>
-        <p>Subject: {{ $exam->subject->name ?? 'N/A' }}</p>
+        <h2><?php echo e($exam->title); ?></h2>
+        <p>Subject: <?php echo e($exam->subject->name); ?></p>
     </div>
 
     <div class="info-section">
         <h3>Exam Information</h3>
         <div class="info-row">
             <span class="info-label">Duration:</span>
-            <span>{{ $exam->duration_minutes }} minutes</span>
+            <span><?php echo e($exam->duration_minutes); ?> minutes</span>
         </div>
         <div class="info-row">
             <span class="info-label">Total Marks:</span>
-            <span>{{ $exam_total_marks }}</span>
+            <span><?php echo e($exam->total_marks); ?></span>
         </div>
         <div class="info-row">
             <span class="info-label">Passing Marks:</span>
-            <span>{{ $exam_passing_marks }}</span>
+            <span><?php echo e($exam->passing_marks); ?></span>
         </div>
         <div class="info-row">
             <span class="info-label">Start Time:</span>
-            <span>{{ $exam_start_time ?? 'N/A' }}</span>
+            <span><?php echo e($exam->start_time); ?></span>
         </div>
         <div class="info-row">
             <span class="info-label">End Time:</span>
-            <span>{{ $exam_end_time ?? 'N/A' }}</span>
+            <span><?php echo e($exam->end_time); ?></span>
         </div>
     </div>
 
     <h3>Statistics</h3>
-    <table class="stats-grid">
-        <tr>
-            <td width="25%">
-                <div class="stat-box">
-                    <div class="stat-label">Total Attempts</div>
-                    <div class="stat-value">{{ $total_attempts }}</div>
-                </div>
-            </td>
-            <td width="25%">
-                <div class="stat-box">
-                    <div class="stat-label">Average Score</div>
-                    <div class="stat-value">{{ $average_score }}</div>
-                </div>
-            </td>
-            <td width="25%">
-                <div class="stat-box">
-                    <div class="stat-label">Highest Score</div>
-                    <div class="stat-value">{{ $highest_score ?? 0 }}</div>
-                </div>
-            </td>
-            <td width="25%">
-                <div class="stat-box">
-                    <div class="stat-label">Pass Rate</div>
-                    <div class="stat-value">{{ $pass_rate }}%</div>
-                </div>
-            </td>
-        </tr>
-    </table>
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-label">Total Attempts</div>
+            <div class="stat-value"><?php echo e($total_attempts); ?></div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Average Score</div>
+            <div class="stat-value"><?php echo e($average_score); ?></div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Highest Score</div>
+            <div class="stat-value"><?php echo e($highest_score); ?></div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Pass Rate</div>
+            <div class="stat-value"><?php echo e($pass_rate); ?>%</div>
+        </div>
+    </div>
 
     <h3>Student Results</h3>
     <table>
@@ -161,29 +152,27 @@
             </tr>
         </thead>
         <tbody>
-            @forelse($attempts as $index => $attempt)
+            <?php $__currentLoopData = $attempts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $index => $attempt): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
             <tr>
-                <td>{{ $index + 1 }}</td>
-                <td>{{ $attempt->student->registration_number ?? 'N/A' }}</td>
-                <td>{{ trim(($attempt->student->first_name ?? '') . ' ' . ($attempt->student->last_name ?? '')) ?: 'N/A' }}</td>
-                <td>{{ $attempt->student->department->name ?? 'N/A' }}</td>
-                <td>{{ (float) ($attempt->score ?? 0) }}/{{ $exam_total_marks }}</td>
-                <td>{{ ($exam_total_marks > 0) ? round((((float) ($attempt->score ?? 0)) / $exam_total_marks) * 100, 2) . '%' : 'N/A' }}</td>
-                <td class="{{ ((float) ($attempt->score ?? 0)) >= $exam_passing_marks ? 'passed' : 'failed' }}">
-                    {{ ((float) ($attempt->score ?? 0)) >= $exam_passing_marks ? 'Passed' : 'Failed' }}
+                <td><?php echo e($index + 1); ?></td>
+                <td><?php echo e($attempt->student->registration_number); ?></td>
+                <td><?php echo e($attempt->student->first_name); ?> <?php echo e($attempt->student->last_name); ?></td>
+                <td><?php echo e($attempt->student->department->name ?? 'N/A'); ?></td>
+                <td><?php echo e($attempt->score); ?>/<?php echo e($exam->total_marks); ?></td>
+                <td><?php echo e(($exam->total_marks > 0) ? round(($attempt->score / $exam->total_marks) * 100, 2) . '%' : 'N/A'); ?></td>
+                <td class="<?php echo e($attempt->score >= $exam->passing_marks ? 'passed' : 'failed'); ?>">
+                    <?php echo e($attempt->score >= $exam->passing_marks ? 'Passed' : 'Failed'); ?>
+
                 </td>
             </tr>
-            @empty
-            <tr>
-                <td colspan="7" style="text-align: center; color: #6b7280;">No student results available for this exam yet.</td>
-            </tr>
-            @endforelse
+            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
         </tbody>
     </table>
 
     <div class="footer">
-        <p>Generated on {{ $generated_at }}</p>
+        <p>Generated on <?php echo e($generated_at); ?></p>
         <p>&copy; 2025 CBT System. All rights reserved.</p>
     </div>
 </body>
 </html>
+<?php /**PATH C:\xampp\htdocs\CBT-System\backend\resources\views/reports/exam-report.blade.php ENDPATH**/ ?>
