@@ -182,7 +182,6 @@ const CbtExamSession: React.FC = () => {
       setQuestions(questionData);
       setRemainingSeconds(stateData.remaining_seconds || 0);
 
-      setTabWarningLimit(stateData.tab_warning_limit || 3);
       setShowStartModal(stateData.status !== 'in_progress');
       setShowReview(false);
 
@@ -466,7 +465,7 @@ const CbtExamSession: React.FC = () => {
     } catch (err: any) {
       setAutoSaveStatus('Save failed');
       const message = err?.response?.data?.message || 'Unable to save answer. Retry or notify invigilator.';
-      setTabFencingAlert(message);
+      setError(message);
     }
   };
 
