@@ -2607,6 +2607,10 @@ code {
   background-color: rgb(20 83 45 / 0.2);
 }
 
+.bg-slate-900\/40 {
+  background-color: rgb(15 23 42 / 0.4);
+}
+
 .bg-opacity-20 {
   --tw-bg-opacity: 0.2;
 }
@@ -5427,6 +5431,10 @@ svg {
 
   .md\:p-8 {
     padding: 2rem;
+  }
+
+  .md\:p-7 {
+    padding: 1.75rem;
   }
 
   .md\:px-10 {
