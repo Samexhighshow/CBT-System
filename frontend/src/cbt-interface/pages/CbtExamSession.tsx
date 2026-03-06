@@ -14,8 +14,6 @@ type AnswerValue = {
   answerText?: string;
 };
 
-const TAB_WARNING_EVENT_TYPES = ['tab_hidden', 'window_blur', 'fullscreen_exited'] as const;
-
 const normalizeQuestionType = (raw?: string): string => {
   const value = (raw || '')
     .trim()
@@ -84,9 +82,6 @@ const CbtExamSession: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'Connected' | 'Reconnecting...'>('Connected');
   const [submitting, setSubmitting] = useState(false);
   const [sessionRevoked, setSessionRevoked] = useState(false);
-  const [tabWarningCount, setTabWarningCount] = useState(0);
-  const [tabWarningLimit, setTabWarningLimit] = useState(3);
-  const [tabFencingAlert, setTabFencingAlert] = useState<string | null>(null);
   const [showInstructionsMobile, setShowInstructionsMobile] = useState(false);
   const [showPaletteMobile, setShowPaletteMobile] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
@@ -144,12 +139,10 @@ const CbtExamSession: React.FC = () => {
       eventThrottleRef.current[eventType] = now;
     }
 
-    if (options?.countAsWarning) {
-      setTabWarningCount((prev) => prev + 1);
-    }
+
 
     if (options?.warningAlert) {
-      setTabFencingAlert(options.warningAlert);
+      // Warning alerts disabled - tab fencing removed
     }
 
     try {
@@ -158,18 +151,11 @@ const CbtExamSession: React.FC = () => {
         meta,
       });
 
-      if (response && TAB_WARNING_EVENT_TYPES.includes(response.event_type as (typeof TAB_WARNING_EVENT_TYPES)[number])) {
-        setTabWarningCount(response.tab_warning_count);
-        if (response.tab_warning_limit) {
-          setTabWarningLimit(response.tab_warning_limit);
-        }
+      if (response && response.event_type) {
+        // Tab fencing removed - no warning count tracking
       }
     } catch (err: any) {
       const code = err?.response?.data?.code;
-      if (code === 'auto_submitted_tab_fencing') {
-        handleAttemptClosed('Tab-fencing limit reached. Your attempt has been auto-submitted.');
-        return;
-      }
       if (code === 'attempt_submitted') {
         handleAttemptClosed('This attempt is already submitted.');
       }
@@ -195,8 +181,7 @@ const CbtExamSession: React.FC = () => {
       setAttemptState(stateData);
       setQuestions(questionData);
       setRemainingSeconds(stateData.remaining_seconds || 0);
-      setTabWarningCount(stateData.tab_warning_count || 0);
-      setTabWarningLimit(stateData.tab_warning_limit || 3);
+
       setShowStartModal(stateData.status !== 'in_progress');
       setShowReview(false);
 
@@ -238,12 +223,17 @@ const CbtExamSession: React.FC = () => {
       const code = err?.response?.data?.code;
       if (code === 'session_revoked') {
         setSessionRevoked(true);
-      } else if (code === 'auto_submitted_tab_fencing' || code === 'attempt_submitted') {
+      } else if (code === 'attempt_submitted') {
         clearStoredSession(attemptId);
         navigate('/cbt');
         return;
+      } else if (code === 'invalid_session' || code === 'missing_session_token' || err?.response?.status === 401) {
+        clearStoredSession(attemptId);
+        setError('Exam session expired. Return to portal and login again.');
+        return;
       }
-      setError(err?.response?.data?.message || 'Failed to load exam session.');
+      const fallbackMessage = typeof err?.message === 'string' ? err.message : null;
+      setError(err?.response?.data?.message || fallbackMessage || 'Failed to load exam session.');
     } finally {
       setLoading(false);
     }
@@ -341,10 +331,6 @@ const CbtExamSession: React.FC = () => {
           setSessionRevoked(true);
           return;
         }
-        if (code === 'auto_submitted_tab_fencing') {
-          handleAttemptClosed('Tab-fencing limit reached. Your attempt has been auto-submitted.');
-          return;
-        }
         if (code === 'attempt_submitted') {
           handleAttemptClosed('This attempt is already submitted.');
           return;
@@ -378,83 +364,7 @@ const CbtExamSession: React.FC = () => {
     };
   }, [attemptState, logAttemptEvent]);
 
-  useEffect(() => {
-    if (!attemptState || attemptState.status !== 'in_progress' || !sessionToken) return;
 
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        logAttemptEvent(
-          'tab_hidden',
-          { visibility_state: document.visibilityState },
-          { throttleMs: 2000, warningAlert: 'Tab switch detected. Stay on the exam screen.', countAsWarning: true }
-        );
-        return;
-      }
-      logAttemptEvent('tab_visible', { visibility_state: document.visibilityState }, { throttleMs: 2000 });
-    };
-
-    const onWindowBlur = () => {
-      logAttemptEvent(
-        'window_blur',
-        { reason: 'window_blur' },
-        { throttleMs: 2000, warningAlert: 'Focus lost. Return to the exam window.', countAsWarning: true }
-      );
-    };
-
-    const onWindowFocus = () => {
-      logAttemptEvent('window_focus', { reason: 'window_focus' }, { throttleMs: 2000 });
-    };
-
-    const onContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-      logAttemptEvent('context_menu_blocked', { action: 'context_menu' }, { throttleMs: 2000 });
-      setTabFencingAlert('Right-click is disabled during the exam.');
-    };
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      const blocked =
-        key === 'f12' ||
-        (event.ctrlKey && event.shiftKey && ['i', 'j', 'c'].includes(key)) ||
-        (event.ctrlKey && ['u', 'p'].includes(key));
-
-      if (!blocked) return;
-
-      event.preventDefault();
-      logAttemptEvent(
-        'keyboard_shortcut_blocked',
-        {
-          key: event.key,
-          ctrl: event.ctrlKey,
-          shift: event.shiftKey,
-          alt: event.altKey,
-          meta: event.metaKey,
-        },
-        { throttleMs: 800 }
-      );
-      setTabFencingAlert('Developer and print shortcuts are blocked.');
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('blur', onWindowBlur);
-    window.addEventListener('focus', onWindowFocus);
-    window.addEventListener('contextmenu', onContextMenu);
-    window.addEventListener('keydown', onKeyDown);
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('blur', onWindowBlur);
-      window.removeEventListener('focus', onWindowFocus);
-      window.removeEventListener('contextmenu', onContextMenu);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [attemptState, logAttemptEvent, sessionToken]);
-
-  useEffect(() => {
-    if (!tabFencingAlert) return;
-    const timer = window.setTimeout(() => setTabFencingAlert(null), 2800);
-    return () => window.clearTimeout(timer);
-  }, [tabFencingAlert]);
 
   useEffect(() => {
     if (!showReview) return;
@@ -555,7 +465,7 @@ const CbtExamSession: React.FC = () => {
     } catch (err: any) {
       setAutoSaveStatus('Save failed');
       const message = err?.response?.data?.message || 'Unable to save answer. Retry or notify invigilator.';
-      setTabFencingAlert(message);
+      setError(message);
     }
   };
 
@@ -967,12 +877,7 @@ const CbtExamSession: React.FC = () => {
                 {autoSaveStatus}
               </span>
             </p>
-            <p>
-              Tab warnings:{' '}
-              <span style={{ color: '#B45309', fontWeight: 600 }}>
-                {tabWarningCount}/{tabWarningLimit}
-              </span>
-            </p>
+
             {showReconnectPrompt && (
               <div className="flex items-center gap-2 rounded-md border px-2 py-1" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB', color: '#92400E' }}>
                 <span>Server connection restored. Sync now?</span>
@@ -1030,9 +935,7 @@ const CbtExamSession: React.FC = () => {
               Quick timer: <span className="font-bold">{formatDuration(remainingSeconds)}</span>
             </div>
 
-            <div className="mt-3 rounded-xl border p-3 text-xs" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A', color: '#92400E' }}>
-              Tab-fencing is active. Violations may auto-submit your exam.
-            </div>
+
           </aside>
 
           <main className="rounded-2xl border p-5 md:p-6" style={{ backgroundColor: cbtTheme.cardBg, borderColor: cbtTheme.border }}>
@@ -1294,14 +1197,7 @@ const CbtExamSession: React.FC = () => {
         </div>
       )}
 
-      {tabFencingAlert && (
-        <div
-          className="fixed bottom-4 right-4 z-50 max-w-sm rounded-lg border px-4 py-2 text-sm font-medium shadow-lg"
-          style={{ backgroundColor: cbtTheme.warning, borderColor: '#D97706', color: cbtTheme.title }}
-        >
-          {tabFencingAlert}
-        </div>
-      )}
+
     </div>
   );
 };

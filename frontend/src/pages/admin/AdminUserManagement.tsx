@@ -111,7 +111,6 @@ const AdminUserManagement: React.FC = () => {
   const [scopeTab, setScopeTab] = useState<'requests' | 'active' | 'assign'>('requests');
   const [scopeSubjects, setScopeSubjects] = useState<ScopeOption[]>([]);
   const [scopeClasses, setScopeClasses] = useState<ScopeOption[]>([]);
-  const [scopeExams, setScopeExams] = useState<ScopeOption[]>([]);
   const [pendingScopeRequests, setPendingScopeRequests] = useState<TeacherScopeRequest[]>([]);
   const [scopeSearch, setScopeSearch] = useState('');
   const [editingScopeId, setEditingScopeId] = useState<number | null>(null);
@@ -120,7 +119,6 @@ const AdminUserManagement: React.FC = () => {
     role_name: 'teacher',
     subject_id: '',
     class_id: '',
-    exam_id: '',
     academic_session: '',
     term: '',
     is_active: true,
@@ -377,9 +375,8 @@ const AdminUserManagement: React.FC = () => {
   const loadScopeOptions = useCallback(async () => {
     if (!isMainAdmin) return;
     try {
-      const [preferencesRes, examsRes] = await Promise.all([
+      const [preferencesRes] = await Promise.all([
         api.get('/preferences/options'),
-        api.get('/exams', { params: { per_page: 100 } }),
       ]);
 
       const prefData = preferencesRes?.data || {};
@@ -389,19 +386,12 @@ const AdminUserManagement: React.FC = () => {
       const classes = normalizeList<any>(prefData.classes, ['classes'])
         .map((row: any) => ({ id: Number(row.id), name: String(row.name || '') }))
         .filter((row: ScopeOption) => Number.isFinite(row.id) && row.name);
-      const examsPayload = examsRes?.data || {};
-      const exams = normalizeList<any>(examsPayload, ['data'])
-        .map((row: any) => ({ id: Number(row.id), name: String(row.title || `Exam #${row.id}`) }))
-        .filter((row: ScopeOption) => Number.isFinite(row.id) && row.name);
-
       setScopeSubjects(subjects);
       setScopeClasses(classes);
-      setScopeExams(exams);
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to load scope options');
       setScopeSubjects([]);
       setScopeClasses([]);
-      setScopeExams([]);
     }
   }, [isMainAdmin]);
 
@@ -678,7 +668,7 @@ const AdminUserManagement: React.FC = () => {
       role_name: scopeForm.role_name?.trim() || null,
       subject_id: scopeForm.subject_id ? Number(scopeForm.subject_id) : null,
       class_id: scopeForm.class_id ? Number(scopeForm.class_id) : null,
-      exam_id: scopeForm.exam_id ? Number(scopeForm.exam_id) : null,
+      exam_id: null,
       academic_session: scopeForm.academic_session?.trim() || null,
       term: scopeForm.term || null,
       is_active: scopeForm.is_active,
@@ -688,8 +678,8 @@ const AdminUserManagement: React.FC = () => {
       showError('Select a user for scope assignment');
       return;
     }
-    if (!payload.subject_id && !payload.class_id && !payload.exam_id) {
-      showError('Select at least one scope target (Subject, Class, or Exam)');
+    if (!payload.subject_id && !payload.class_id) {
+      showError('Select at least one scope target (Subject or Class)');
       return;
     }
 
@@ -707,7 +697,6 @@ const AdminUserManagement: React.FC = () => {
         role_name: 'teacher',
         subject_id: '',
         class_id: '',
-        exam_id: '',
         academic_session: '',
         term: '',
         is_active: true,
@@ -728,7 +717,6 @@ const AdminUserManagement: React.FC = () => {
       role_name: String(scope.role_name || 'teacher'),
       subject_id: scope.subject_id ? String(scope.subject_id) : '',
       class_id: scope.class_id ? String(scope.class_id) : '',
-      exam_id: scope.exam_id ? String(scope.exam_id) : '',
       academic_session: scope.academic_session || '',
       term: scope.term || '',
       is_active: Boolean(scope.is_active),
@@ -743,7 +731,6 @@ const AdminUserManagement: React.FC = () => {
       role_name: 'teacher',
       subject_id: '',
       class_id: '',
-      exam_id: '',
       academic_session: '',
       term: '',
       is_active: true,
@@ -1174,7 +1161,7 @@ const AdminUserManagement: React.FC = () => {
                     <option value="">Term (optional)</option><option value="First Term">First Term</option><option value="Second Term">Second Term</option><option value="Third Term">Third Term</option>
                   </select>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
                   <select value={scopeForm.subject_id} onChange={(e) => setScopeForm((prev) => ({ ...prev, subject_id: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
                     <option value="">Subject scope (optional)</option>
                     {scopeSubjects.map((subject) => (<option key={subject.id} value={subject.id}>{subject.name}</option>))}
@@ -1182,10 +1169,6 @@ const AdminUserManagement: React.FC = () => {
                   <select value={scopeForm.class_id} onChange={(e) => setScopeForm((prev) => ({ ...prev, class_id: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
                     <option value="">Class scope (optional)</option>
                     {scopeClasses.map((schoolClass) => (<option key={schoolClass.id} value={schoolClass.id}>{schoolClass.name}</option>))}
-                  </select>
-                  <select value={scopeForm.exam_id} onChange={(e) => setScopeForm((prev) => ({ ...prev, exam_id: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" disabled={!isMainAdmin}>
-                    <option value="">Exam scope (optional)</option>
-                    {scopeExams.map((exam) => (<option key={exam.id} value={exam.id}>{exam.name}</option>))}
                   </select>
                   <input type="text" value={scopeForm.academic_session} onChange={(e) => setScopeForm((prev) => ({ ...prev, academic_session: e.target.value }))} className="rounded border border-gray-300 px-3 py-2 text-sm" placeholder="Academic session (optional)" disabled={!isMainAdmin} />
                 </div>

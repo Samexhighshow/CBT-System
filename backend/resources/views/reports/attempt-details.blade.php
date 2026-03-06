@@ -108,21 +108,21 @@
         </div>
         <div class="info-row">
             <span class="info-label">Started At:</span>
-            <span>{{ $attempt->started_at->format('Y-m-d H:i:s') }}</span>
+            <span>{{ $attempt->started_at?->format('Y-m-d H:i:s') ?? 'N/A' }}</span>
         </div>
         <div class="info-row">
             <span class="info-label">Completed At:</span>
-            <span>{{ $attempt->completed_at->format('Y-m-d H:i:s') }}</span>
+            <span>{{ $attempt->completed_at?->format('Y-m-d H:i:s') ?? 'N/A' }}</span>
         </div>
         <div class="info-row">
             <span class="info-label">Duration:</span>
-            <span>{{ $attempt->started_at->diffInMinutes($attempt->completed_at) }} minutes</span>
+            <span>{{ ($attempt->started_at && $attempt->completed_at) ? $attempt->started_at->diffInMinutes($attempt->completed_at) . ' minutes' : 'N/A' }}</span>
         </div>
     </div>
 
     <div class="score-card">
         <h2>Final Score</h2>
-        <h1 style="font-size: 48px; margin: 10px 0;">{{ $attempt->score }}/{{ $attempt->exam->total_marks }}</h1>
+        <h1 style="font-size: 48px; margin: 10px 0;">{{ $attempt->score }}/{{ $total_marks }}</h1>
         <h3>{{ $percentage }}%</h3>
         <p style="margin-top: 15px;">
             Correct Answers: {{ $correct_answers }}/{{ $total_questions }}

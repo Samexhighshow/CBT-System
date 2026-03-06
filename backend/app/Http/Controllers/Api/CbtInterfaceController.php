@@ -485,8 +485,9 @@ class CbtInterfaceController extends Controller
                 'submitted_at' => $attempt->submitted_at?->toIso8601String(),
                 'remaining_seconds' => $remainingSeconds,
                 'switch_count' => $attempt->switch_count,
-                'tab_warning_count' => $this->tabWarningCount($attempt->id),
-                'tab_warning_limit' => $this->tabWarningLimit(),
+                // Tab-fencing disabled: keep these fields for compatibility.
+                'tab_warning_count' => 0,
+                'tab_warning_limit' => 0,
                 'score' => $attempt->score,
                 'exam' => [
                     'id' => $attempt->exam?->id,
@@ -838,42 +839,14 @@ class CbtInterfaceController extends Controller
 
         $this->logEvent($attempt->id, $eventType, $meta);
 
-        $tabWarningCount = $this->tabWarningCount($attempt->id);
-        $tabWarningLimit = $this->tabWarningLimit();
-
-        if ($this->isTabWarningEvent($eventType) && $tabWarningCount >= $tabWarningLimit) {
-            $result = $this->finalizeAttempt($attempt, 'auto_submitted_tab_fencing');
-
-            ExamAttemptSession::where('attempt_id', $attempt->id)
-                ->where('is_active', true)
-                ->update([
-                    'is_active' => false,
-                    'ended_at' => $now,
-                    'revoked_reason' => 'tab_fencing_limit',
-                ]);
-
-            $this->logEvent($attempt->id, 'tab_fencing_limit_reached', [
-                'warning_count' => $tabWarningCount,
-                'warning_limit' => $tabWarningLimit,
-            ]);
-
-            return response()->json([
-                'message' => 'Tab-fencing limit reached. Attempt was auto-submitted.',
-                'code' => 'auto_submitted_tab_fencing',
-                'data' => array_merge($result, [
-                    'tab_warning_count' => $tabWarningCount,
-                    'tab_warning_limit' => $tabWarningLimit,
-                ]),
-            ], 409);
-        }
-
         return response()->json([
             'message' => 'Event logged.',
             'data' => [
                 'attempt_id' => $attempt->id,
                 'event_type' => $eventType,
-                'tab_warning_count' => $tabWarningCount,
-                'tab_warning_limit' => $tabWarningLimit,
+                // Tab-fencing disabled: keep these fields for compatibility.
+                'tab_warning_count' => 0,
+                'tab_warning_limit' => 0,
                 'logged_at' => $now->toIso8601String(),
             ],
         ]);
@@ -961,8 +934,8 @@ class CbtInterfaceController extends Controller
         if (!$session->is_active) {
             if ($session->revoked_reason === 'tab_fencing_limit') {
                 return response()->json([
-                    'message' => 'Attempt auto-submitted after tab-fencing violations.',
-                    'code' => 'auto_submitted_tab_fencing',
+                    'message' => 'Session moved to another device.',
+                    'code' => 'session_revoked',
                 ], 409);
             }
 

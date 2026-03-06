@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ExamAttempt;
 use App\Models\Exam;
+use App\Models\Question;
 use App\Models\SchoolClass;
 use App\Models\Student;
 use App\Models\SystemSetting;
@@ -53,23 +54,64 @@ class ReportController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $exam = \App\Models\Exam::with(['subject', 'attempts' => function($q) {
-            $q->whereIn('status', ['completed', 'submitted'])->with('student.department');
-        }])->findOrFail($examId);
+        $exam = \App\Models\Exam::with('subject')->findOrFail($examId);
 
         if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
-        $attempts = $exam->attempts->sortByDesc('score');
+        $attempts = $this->loadExamReportAttempts($exam)->map(function (ExamAttempt $attempt) {
+            $score = (float) ($attempt->score ?? 0);
+            $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+            $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+            $safeTotal = max(1.0, $totalMarks);
+            $percentage = round(($score / $safeTotal) * 100, 2);
+            $passed = $this->hasPassed($score, $totalMarks, $passingMarks);
+
+            $attempt->setAttribute('report_score', $score);
+            $attempt->setAttribute('report_total_marks', $totalMarks);
+            $attempt->setAttribute('report_passing_marks', $passingMarks);
+            $attempt->setAttribute('report_percentage', $percentage);
+            $attempt->setAttribute('report_passed', $passed);
+            $attempt->setAttribute('report_assessment_type', $this->resolveAssessmentTypeLabel($attempt));
+
+            return $attempt;
+        })->values();
+
+        $distinctTotals = $attempts
+            ->pluck('report_total_marks')
+            ->filter(fn ($value) => is_numeric($value) && (float) $value > 0)
+            ->map(fn ($value) => (float) $value)
+            ->unique()
+            ->values();
+        $distinctPassing = $attempts
+            ->pluck('report_passing_marks')
+            ->filter(fn ($value) => is_numeric($value) && (float) $value >= 0)
+            ->map(fn ($value) => (float) $value)
+            ->unique()
+            ->values();
+
+        $examTotalMarksDisplay = $distinctTotals->count() === 1
+            ? (float) $distinctTotals->first()
+            : 'Varies by attempt';
+        $examPassingMarksDisplay = $distinctPassing->count() === 1
+            ? (float) $distinctPassing->first()
+            : 'Varies by attempt';
+
+        $startTime = $exam->start_datetime ?? $exam->start_time;
+        $endTime = $exam->end_datetime ?? $exam->end_time;
 
         $data = [
             'exam' => $exam,
             'attempts' => $attempts,
+            'exam_total_marks' => $examTotalMarksDisplay,
+            'exam_passing_marks' => $examPassingMarksDisplay,
+            'exam_start_time' => $startTime ? $startTime->format('Y-m-d H:i') : null,
+            'exam_end_time' => $endTime ? $endTime->format('Y-m-d H:i') : null,
             'total_attempts' => $attempts->count(),
-            'average_score' => round($attempts->avg('score'), 2),
-            'highest_score' => $attempts->max('score'),
-            'lowest_score' => $attempts->min('score'),
+            'average_score' => round((float) $attempts->avg('report_percentage'), 2),
+            'highest_score' => $attempts->max('report_score'),
+            'lowest_score' => $attempts->min('report_score'),
             'pass_rate' => $this->calculatePassRate($attempts),
             'generated_at' => now()->format('Y-m-d H:i:s'),
         ];
@@ -77,6 +119,43 @@ class ReportController extends Controller
         $pdf = Pdf::loadView('reports.exam-report', $data);
         
         return $pdf->download('exam_report_' . $exam->id . '.pdf');
+    }
+
+    private function loadExamReportAttempts(Exam $exam): Collection
+    {
+        $baseQuery = ExamAttempt::query()
+            ->with(['student.department'])
+            ->where('exam_id', $exam->id)
+            ->whereNotNull('score');
+
+        // Preferred statuses for final report rows.
+        $attempts = (clone $baseQuery)
+            ->whereIn('status', ['completed', 'submitted', 'scored'])
+            ->get();
+
+        // Fallback for legacy/edge statuses that still carry a valid score.
+        if ($attempts->isEmpty()) {
+            $attempts = (clone $baseQuery)
+                ->whereNotIn('status', ['pending', 'in_progress'])
+                ->get();
+        }
+
+        $sortedByFreshness = $attempts->sortByDesc(function (ExamAttempt $attempt) {
+            $stamp = $attempt->completed_at
+                ?? $attempt->submitted_at
+                ?? $attempt->ended_at
+                ?? $attempt->updated_at;
+
+            return $stamp ? $stamp->getTimestamp() : 0;
+        });
+
+        // Keep the latest scored attempt per student, then rank by score.
+        return $sortedByFreshness
+            ->unique('student_id')
+            ->sortByDesc(function (ExamAttempt $attempt) {
+                return (float) ($attempt->score ?? 0);
+            })
+            ->values();
     }
 
     /**
@@ -197,6 +276,24 @@ class ReportController extends Controller
         }
         $attempts = $attemptsQuery->get()->sortByDesc('completed_at');
 
+        $attempts = $attempts->map(function (ExamAttempt $attempt) {
+            $score = (float) ($attempt->score ?? 0);
+            $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+            $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+            $safeTotal = max(1.0, $totalMarks);
+            $percentage = round(($score / $safeTotal) * 100, 2);
+            $passed = $this->hasPassed($score, $totalMarks, $passingMarks);
+
+            $attempt->setAttribute('report_score', $score);
+            $attempt->setAttribute('report_total_marks', $totalMarks);
+            $attempt->setAttribute('report_passing_marks', $passingMarks);
+            $attempt->setAttribute('report_percentage', $percentage);
+            $attempt->setAttribute('report_passed', $passed);
+            $attempt->setAttribute('report_assessment_type', $this->resolveAssessmentTypeLabel($attempt));
+
+            return $attempt;
+        })->values();
+
         if ($isStudent && $attempts->isEmpty()) {
             return response()->json([
                 'status' => 'not_released',
@@ -208,8 +305,8 @@ class ReportController extends Controller
             'student' => $student,
             'attempts' => $attempts,
             'total_exams' => $attempts->count(),
-            'average_score' => round($attempts->avg('score'), 2),
-            'highest_score' => $attempts->max('score'),
+            'average_score' => round((float) $attempts->avg('report_percentage'), 2),
+            'highest_score' => $attempts->max('report_score'),
             'pass_rate' => $this->calculatePassRate($attempts),
             'generated_at' => now()->format('Y-m-d H:i:s'),
         ];
@@ -320,12 +417,16 @@ class ReportController extends Controller
             ];
         });
 
+        $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+        $safeTotal = max(1.0, $totalMarks);
+
         $data = [
             'attempt' => $attempt,
             'questions' => $questions,
             'total_questions' => $questions->count(),
             'correct_answers' => $questions->where('is_correct', true)->count(),
-            'percentage' => round(($attempt->score / $attempt->exam->total_marks) * 100, 2),
+            'total_marks' => $totalMarks,
+            'percentage' => round((((float) ($attempt->score ?? 0)) / $safeTotal) * 100, 2),
             'generated_at' => now()->format('Y-m-d H:i:s'),
         ];
 
@@ -344,7 +445,14 @@ class ReportController extends Controller
         }
 
         $passed = $attempts->filter(function($attempt) {
-            return $attempt->score >= $attempt->exam->passing_marks;
+            if (isset($attempt->report_passed)) {
+                return (bool) $attempt->report_passed;
+            }
+
+            $score = (float) ($attempt->score ?? 0);
+            $totalMarks = $this->resolveAttemptTotalMarks($attempt);
+            $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
+            return $this->hasPassed($score, $totalMarks, $passingMarks);
         })->count();
 
         return round(($passed / $attempts->count()) * 100, 2);
@@ -492,7 +600,7 @@ class ReportController extends Controller
         }
 
         $assessmentType = strtolower(trim((string) ($attempt->exam?->assessment_type ?? '')));
-        return $assessmentType === 'ca test' ? 'ca' : 'exam';
+        return $this->isContinuousAssessmentType($assessmentType) ? 'ca' : 'exam';
     }
 
     private function weightedAverage(Collection $records, bool $useAssessmentWeight, float $fallbackWeight): ?float
@@ -526,13 +634,117 @@ class ReportController extends Controller
 
     private function resolveAttemptTotalMarks(ExamAttempt $attempt): float
     {
-        $fromExam = (float) ($attempt->exam?->total_marks ?? 0);
+        $questionIds = collect($attempt->question_order ?: [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        if ($questionIds->isEmpty()) {
+            $questionIds = Question::where('exam_id', $attempt->exam_id)
+                ->orderBy('order_index')
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+        }
+
+        if ($questionIds->isNotEmpty()) {
+            $questions = Question::with('bankQuestion:id,marks')
+                ->whereIn('id', $questionIds)
+                ->get();
+
+            $total = (float) $questions->sum(function (Question $question) {
+                if (($question->marks_override ?? null) !== null) {
+                    return (float) $question->marks_override;
+                }
+
+                if (($question->marks ?? null) !== null) {
+                    return (float) $question->marks;
+                }
+
+                if (($question->bankQuestion?->marks ?? null) !== null) {
+                    return (float) $question->bankQuestion->marks;
+                }
+
+                return 1.0;
+            });
+
+            if ($total > 0) {
+                return $total;
+            }
+        }
+
+        $fromExam = (float) ($attempt->exam?->total_marks ?? data_get($attempt->exam?->metadata, 'total_marks') ?? 0);
         if ($fromExam > 0) {
             return $fromExam;
         }
 
-        $sum = (float) $attempt->examAnswers()->sum('marks_awarded');
-        return max(1.0, $sum);
+        return 0.0;
+    }
+
+    private function resolveAttemptPassingMarks(ExamAttempt $attempt, ?float $totalMarks = null): ?float
+    {
+        $exam = $attempt->exam;
+        if (!$exam) {
+            return null;
+        }
+
+        $direct = $exam->passing_marks ?? null;
+        if ($direct !== null && is_numeric($direct)) {
+            return (float) $direct;
+        }
+
+        $metaPassing = data_get($exam->metadata, 'passing_marks');
+        if ($metaPassing !== null && is_numeric($metaPassing)) {
+            return (float) $metaPassing;
+        }
+
+        if ($totalMarks !== null && $totalMarks > 0) {
+            $passPercentage = SystemSetting::get('pass_mark_percentage', 50);
+            $passPercentage = is_numeric($passPercentage) ? (float) $passPercentage : 50.0;
+            return round($totalMarks * max(0.0, min(100.0, $passPercentage)) / 100, 2);
+        }
+
+        return null;
+    }
+
+    private function hasPassed(float $score, float $totalMarks, ?float $passingMarks): bool
+    {
+        if ($passingMarks !== null) {
+            return $score >= $passingMarks;
+        }
+
+        if ($totalMarks <= 0) {
+            return false;
+        }
+
+        $passPercentage = SystemSetting::get('pass_mark_percentage', 50);
+        $passPercentage = is_numeric($passPercentage) ? (float) $passPercentage : 50.0;
+        $percentage = ($score / max(1.0, $totalMarks)) * 100;
+
+        return $percentage >= max(0.0, min(100.0, $passPercentage));
+    }
+
+    private function resolveAssessmentTypeLabel(ExamAttempt $attempt): string
+    {
+        $raw = trim((string) ($attempt->exam?->assessment_type ?? ''));
+        if ($raw !== '') {
+            return $raw;
+        }
+
+        return $this->attemptComponent($attempt) === 'ca' ? 'CA Test' : 'Final Exam';
+    }
+
+    private function isContinuousAssessmentType(string $assessmentType): bool
+    {
+        return in_array($assessmentType, [
+            'ca',
+            'ca test',
+            'continuous assessment',
+            'quiz',
+            'midterm',
+            'midterm test',
+        ], true);
     }
 
     private function resolveExamTerm(Exam $exam): string

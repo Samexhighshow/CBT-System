@@ -16,9 +16,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class MarkingController extends Controller
 {
+    private ?bool $hasAttemptFinalizationColumns = null;
+
     public function __construct(
         private readonly GradingService $gradingService,
         private readonly RoleScopeService $roleScopeService
@@ -602,13 +605,26 @@ class MarkingController extends Controller
 
         $isFinalized = $finalize && $pendingManual === 0;
 
-        $attempt->update([
+        $updatePayload = [
             'score' => round($score, 2),
             'status' => $status,
             'completed_at' => $status === 'completed' ? ($attempt->completed_at ?? now()) : null,
-            'finalized_at' => $isFinalized ? ($attempt->finalized_at ?? now()) : null,
-            'finalized_by' => $isFinalized ? ($finalizedBy ?: $attempt->finalized_by) : null,
-        ]);
+        ];
+
+        if ($this->attemptFinalizationColumnsExist()) {
+            $updatePayload['finalized_at'] = $isFinalized ? ($attempt->finalized_at ?? now()) : null;
+            $updatePayload['finalized_by'] = $isFinalized ? ($finalizedBy ?: $attempt->finalized_by) : null;
+        }
+
+        $attempt->update($updatePayload);
+
+        $freshAttempt = $attempt->fresh();
+        $finalizedAt = $this->attemptFinalizationColumnsExist()
+            ? $freshAttempt?->finalized_at?->toIso8601String()
+            : null;
+        $finalizedByValue = $this->attemptFinalizationColumnsExist()
+            ? $freshAttempt?->finalized_by
+            : null;
 
         return [
             'attempt_id' => $attempt->id,
@@ -617,9 +633,22 @@ class MarkingController extends Controller
             'total_marks' => round($totalMarks, 2),
             'pending_manual_count' => $pendingManual,
             'finalized' => $isFinalized,
-            'finalized_at' => $isFinalized ? ($attempt->fresh()->finalized_at?->toIso8601String()) : null,
-            'finalized_by' => $isFinalized ? ($attempt->fresh()->finalized_by) : null,
+            'finalized_at' => $isFinalized ? $finalizedAt : null,
+            'finalized_by' => $isFinalized ? $finalizedByValue : null,
         ];
+    }
+
+    private function attemptFinalizationColumnsExist(): bool
+    {
+        if ($this->hasAttemptFinalizationColumns !== null) {
+            return $this->hasAttemptFinalizationColumns;
+        }
+
+        $this->hasAttemptFinalizationColumns =
+            Schema::hasColumn('exam_attempts', 'finalized_at')
+            && Schema::hasColumn('exam_attempts', 'finalized_by');
+
+        return $this->hasAttemptFinalizationColumns;
     }
 
     private function requiresManualMarking(?Question $question): bool

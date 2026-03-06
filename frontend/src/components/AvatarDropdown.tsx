@@ -89,6 +89,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, p
 
           {/* Profile Link */}
           <button
+            type="button"
             onClick={() => {
               setShowProfileModal(true);
               setIsOpen(false);
@@ -103,6 +104,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, p
 
           {isTeacher && (
             <button
+              type="button"
               onClick={() => {
                 navigate('/admin/my-teaching-assignment');
                 setIsOpen(false);
@@ -116,6 +118,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, p
 
           {isMainAdmin && (
             <button
+              type="button"
               onClick={() => {
                 navigate('/admin/teacher-scope-requests');
                 setIsOpen(false);
@@ -134,6 +137,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, p
 
           {/* Admin links */}
           <button
+            type="button"
             onClick={() => {
               navigate('/admin/users');
               setIsOpen(false);
@@ -147,6 +151,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, p
           </button>
 
           <button
+            type="button"
             onClick={() => {
               navigate('/admin/activity-logs');
               setIsOpen(false);
@@ -162,6 +167,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, p
           {/* Settings Link (Main Admin Only) */}
           {showSettings && (
             <button
+              type="button"
               onClick={() => {
                 setShowSettingsModal(true);
                 setIsOpen(false);
@@ -181,6 +187,7 @@ const AvatarDropdown: React.FC<AvatarDropdownProps> = ({ showSettings = false, p
 
           {/* Logout */}
           <button
+            type="button"
             onClick={handleLogout}
             className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
           >
