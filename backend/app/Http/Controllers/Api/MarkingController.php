@@ -100,7 +100,7 @@ class MarkingController extends Controller
                     'started_at' => $attempt->started_at?->toIso8601String(),
                     'submitted_at' => $attempt->submitted_at?->toIso8601String(),
                     'completed_at' => $attempt->completed_at?->toIso8601String(),
-                    'assessment_type' => $attempt->exam?->assessment_type,
+                    'assessment_type' => $this->resolveAssessmentTypeLabel($attempt),
                     'student' => [
                         'id' => $attempt->student?->id,
                         'registration_number' => $attempt->student?->registration_number,
@@ -154,6 +154,21 @@ class MarkingController extends Controller
         }
 
         return $rankMap;
+    }
+
+    private function resolveAssessmentTypeLabel(ExamAttempt $attempt): string
+    {
+        $mode = strtolower(trim((string) ($attempt->assessment_mode ?? '')));
+        if ($mode === 'ca_test') {
+            return 'CA Test';
+        }
+
+        if ($mode === 'exam') {
+            return 'Final Exam';
+        }
+
+        $raw = trim((string) ($attempt->exam?->assessment_type ?? ''));
+        return $raw !== '' ? $raw : 'Final Exam';
     }
 
     public function attempt(int $attemptId): JsonResponse

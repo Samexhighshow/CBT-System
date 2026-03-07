@@ -66,6 +66,16 @@ interface CompiledAdminRow {
   source_exam_ids: number[];
 }
 
+type AssessmentWindowMode = 'exam' | 'ca_test' | 'auto';
+
+const normalizeAssessmentWindowMode = (value: unknown): AssessmentWindowMode => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'ca_test' || normalized === 'exam' || normalized === 'auto') {
+    return normalized as AssessmentWindowMode;
+  }
+  return 'auto';
+};
+
 const ResultsAnalytics: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -92,6 +102,7 @@ const ResultsAnalytics: React.FC = () => {
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [compiledRows, setCompiledRows] = useState<CompiledAdminRow[]>([]);
   const [loadingCompiledRows, setLoadingCompiledRows] = useState(false);
+  const [assessmentWindowMode, setAssessmentWindowMode] = useState<AssessmentWindowMode>('auto');
   const [examResults, setExamResults] = useState<AttemptSummary[]>([]);
   const [resultsPage, setResultsPage] = useState(1);
   const resultsPerPage = 10;
@@ -100,7 +111,7 @@ const ResultsAnalytics: React.FC = () => {
     let isActive = true;
 
     const loadInitial = async () => {
-      await Promise.all([loadExams(), loadAnalytics(), loadMarkingSummary()]);
+      await Promise.all([loadExams(), loadAnalytics(), loadMarkingSummary(), loadAssessmentWindowMode()]);
     };
 
     loadInitial();
@@ -116,6 +127,21 @@ const ResultsAnalytics: React.FC = () => {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadAssessmentWindowMode = async () => {
+    try {
+      const response = await runWithRetry(() =>
+        api.get('/settings', { skipGlobalLoading: true } as any)
+      );
+      const data = response.data?.data || response.data || [];
+      const rows = Array.isArray(data) ? data : [];
+      const modeRow = rows.find((row: any) => String(row?.key || '').trim() === 'assessment_display_mode');
+      setAssessmentWindowMode(normalizeAssessmentWindowMode(modeRow?.value));
+    } catch (error) {
+      console.warn('Failed to load assessment mode, using auto fallback.', error);
+      setAssessmentWindowMode('auto');
+    }
+  };
 
   const loadExams = async () => {
     try {
@@ -374,7 +400,7 @@ const ResultsAnalytics: React.FC = () => {
                 rank_label: row.rank_label || null,
                 submitted_at: submittedAt,
                 completed_at: completedAt,
-                assessment_type: row.assessment_type || 'Exam',
+                assessment_type: row.assessment_type || 'Final Exam',
                 time_taken_minutes: Number.isFinite(timeTakenMinutes) ? timeTakenMinutes : null,
               };
             })
@@ -552,6 +578,28 @@ const ResultsAnalytics: React.FC = () => {
     return 'bg-slate-100 text-slate-700';
   };
 
+  const assessmentModeBanner = useMemo(() => {
+    if (assessmentWindowMode === 'ca_test') {
+      return {
+        tone: 'border-blue-200 bg-blue-50 text-blue-900',
+        title: 'System Assessment Mode: CA TEST',
+        message: 'All attempts started now are recorded as CA Test.',
+      };
+    }
+    if (assessmentWindowMode === 'exam') {
+      return {
+        tone: 'border-rose-200 bg-rose-50 text-rose-900',
+        title: 'System Assessment Mode: FINAL EXAM',
+        message: 'All attempts started now are recorded as Final Exam.',
+      };
+    }
+    return {
+      tone: 'border-slate-200 bg-slate-50 text-slate-800',
+      title: 'System Assessment Mode: AUTO',
+      message: 'Attempt mode follows each exam fallback rule.',
+    };
+  }, [assessmentWindowMode]);
+
   return (
     <div className="app-shell section-shell">
       <div className="stack-tight">
@@ -568,6 +616,11 @@ const ResultsAnalytics: React.FC = () => {
             Open Marking Workbench
           </button>
         </div>
+
+        <Card className={`panel-compact border ${assessmentModeBanner.tone}`}>
+          <h2 className="text-sm font-semibold">{assessmentModeBanner.title}</h2>
+          <p className="text-xs mt-1">{assessmentModeBanner.message}</p>
+        </Card>
 
         <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3">
@@ -850,12 +903,12 @@ const ResultsAnalytics: React.FC = () => {
                       <th className="px-3 py-2 text-left font-semibold">Class</th>
                       <th className="px-3 py-2 text-left font-semibold">Score (%)</th>
                       <th className="px-3 py-2 text-left font-semibold">Grade</th>
+                      <th className="px-3 py-2 text-left font-semibold">Assessment Type</th>
                       <th className="px-3 py-2 text-left font-semibold">Subject Position</th>
                       <th className="px-3 py-2 text-left font-semibold">Status</th>
                       <th className="px-3 py-2 text-left font-semibold">Total Questions</th>
                       <th className="px-3 py-2 text-left font-semibold">Time Taken</th>
                       <th className="px-3 py-2 text-left font-semibold">Attempt Date</th>
-                      <th className="px-3 py-2 text-left font-semibold">Assessment Type</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -872,6 +925,7 @@ const ResultsAnalytics: React.FC = () => {
                             {Number(row.score ?? 0).toFixed(1)}/{Number(row.total_marks ?? 0).toFixed(1)} ({Number(row.percentage ?? 0).toFixed(1)}%)
                           </td>
                           <td className="px-3 py-2 text-sm text-slate-700">{row.grade || '-'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-700">{row.assessment_type || 'Final Exam'}</td>
                           <td className="px-3 py-2 text-sm text-slate-700">{row.rank_label || '-'}</td>
                           <td className="px-3 py-2 text-sm text-slate-700">
                             <span
@@ -898,7 +952,6 @@ const ResultsAnalytics: React.FC = () => {
                           <td className="px-3 py-2 text-sm text-slate-700">
                             {row.completed_at ? new Date(row.completed_at).toLocaleString() : '-'}
                           </td>
-                          <td className="px-3 py-2 text-sm text-slate-700">{row.assessment_type || 'Exam'}</td>
                         </tr>
                       );
                     })}
