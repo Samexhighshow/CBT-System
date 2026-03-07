@@ -431,7 +431,7 @@ const AdminLayout: React.FC = () => {
         <Outlet />
       </main>
 
-      <div className="sticky bottom-0 z-30">
+      <div className="sticky bottom-0 z-30 pt-1">
         <FooterMinimal />
       </div>
 

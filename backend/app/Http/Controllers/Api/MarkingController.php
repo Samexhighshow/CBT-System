@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class MarkingController extends Controller
 {
@@ -158,7 +159,7 @@ class MarkingController extends Controller
     public function attempt(int $attemptId): JsonResponse
     {
         $attempt = ExamAttempt::with([
-            'exam:id,title',
+            'exam:id,title,subject_id,class_id,class_level',
             'student:id,registration_number,first_name,last_name,class_level',
             'examAnswers.question.options',
             'examAnswers.option',
@@ -308,12 +309,60 @@ class MarkingController extends Controller
         ]);
     }
 
-    public function finalize(int $attemptId): JsonResponse
+    public function bulkScore(Request $request, int $attemptId): JsonResponse
     {
+        $validated = $request->validate([
+            'scores' => 'required|array|min:1',
+            'scores.*.question_id' => 'required_with:scores|integer|distinct',
+            'scores.*.marks_awarded' => 'required_with:scores|numeric|min:0',
+            'scores.*.feedback' => 'nullable|string',
+        ]);
+
         $attempt = ExamAttempt::findOrFail($attemptId);
         $exam = Exam::findOrFail((int) $attempt->exam_id);
-        if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        if ($attempt->status === 'completed') {
+            return response()->json([
+                'message' => 'Cannot modify scores for a finalized attempt.',
+            ], 422);
+        }
+
+        $this->applyBulkManualScores($attempt, collect($validated['scores']), $request->user()?->id);
+        $result = $this->recalculateAttemptScore($attempt->fresh());
+
+        return response()->json([
+            'message' => 'Draft scores saved.',
+            'data' => $result,
+        ]);
+    }
+
+    public function finalize(Request $request, int $attemptId): JsonResponse
+    {
+        $validated = $request->validate([
+            'scores' => 'sometimes|array|min:1',
+            'scores.*.question_id' => 'required_with:scores|integer|distinct',
+            'scores.*.marks_awarded' => 'required_with:scores|numeric|min:0',
+            'scores.*.feedback' => 'nullable|string',
+        ]);
+
+        $attempt = ExamAttempt::findOrFail($attemptId);
+        $exam = Exam::findOrFail((int) $attempt->exam_id);
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        if ($attempt->status === 'completed') {
+            return response()->json([
+                'message' => 'Attempt is already finalized.',
+            ], 422);
+        }
+
+        $scoreRows = collect($validated['scores'] ?? []);
+        if ($scoreRows->isNotEmpty()) {
+            $this->applyBulkManualScores($attempt, $scoreRows, $request->user()?->id);
         }
 
         $result = $this->recalculateAttemptScore($attempt, true, (int) (request()->user()?->id ?? 0));
@@ -329,6 +378,71 @@ class MarkingController extends Controller
             'message' => 'Attempt marking finalized.',
             'data' => $result,
         ]);
+    }
+
+    private function applyBulkManualScores(ExamAttempt $attempt, Collection $scoreRows, ?int $reviewedBy): void
+    {
+        $questionIds = $scoreRows
+            ->pluck('question_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $questions = Question::with('bankQuestion:id,marks,question_type')
+            ->whereIn('id', $questionIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($questions->count() !== $questionIds->count()) {
+            throw ValidationException::withMessages([
+                'scores' => ['One or more questions were not found for bulk scoring.'],
+            ]);
+        }
+
+        $nonManual = $questions->filter(fn (Question $question) => !$this->requiresManualMarking($question));
+        if ($nonManual->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'scores' => ['Bulk scoring only accepts manual-marking questions.'],
+            ]);
+        }
+
+        $answers = ExamAnswer::where('attempt_id', $attempt->id)
+            ->whereIn('question_id', $questionIds)
+            ->get()
+            ->keyBy('question_id');
+
+        if ($answers->count() !== $questionIds->count()) {
+            throw ValidationException::withMessages([
+                'scores' => ['One or more answers were not found for bulk scoring.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($scoreRows, $questions, $answers, $reviewedBy) {
+            $reviewedAt = now();
+
+            foreach ($scoreRows as $row) {
+                $questionId = (int) ($row['question_id'] ?? 0);
+                /** @var Question|null $question */
+                $question = $questions->get($questionId);
+                /** @var ExamAnswer|null $answer */
+                $answer = $answers->get($questionId);
+
+                if (!$question || !$answer) {
+                    continue;
+                }
+
+                $maxMarks = $this->questionMarks($question);
+                $awarded = min($maxMarks, max(0.0, (float) ($row['marks_awarded'] ?? 0)));
+
+                $answer->update([
+                    'marks_awarded' => $awarded,
+                    'feedback' => array_key_exists('feedback', $row) ? ($row['feedback'] ?? null) : $answer->feedback,
+                    'reviewed_by' => $reviewedBy,
+                    'reviewed_at' => $reviewedAt,
+                    'is_correct' => null,
+                ]);
+            }
+        });
     }
 
     public function clearAttempt(Request $request, int $attemptId): JsonResponse
@@ -394,6 +508,12 @@ class MarkingController extends Controller
             ->findOrFail($attemptId);
         if (!$this->roleScopeService->canManageExam($request->user(), $attempt->exam)) {
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        if (in_array(strtolower((string) $attempt->status), ['submitted', 'completed', 'voided'], true)) {
+            return response()->json([
+                'message' => 'Attempt is already submitted/finalized. Force submit is not available.',
+            ], 422);
         }
 
         $result = $this->recalculateAttemptScore($attempt, true);

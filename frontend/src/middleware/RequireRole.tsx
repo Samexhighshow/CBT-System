@@ -23,7 +23,7 @@ const RequireRole: React.FC<Props> = ({ roles, children }) => {
 
   if (!hasRole) {
     if (userRoles.some((role: string) => ['admin', 'main admin', 'sub-admin', 'sub admin', 'moderator', 'teacher'].includes(role))) {
-      return <Navigate to="/admin" replace />;
+      return <Navigate to="/admin/forbidden" replace />;
     }
 
     if (location.pathname.startsWith('/student')) {

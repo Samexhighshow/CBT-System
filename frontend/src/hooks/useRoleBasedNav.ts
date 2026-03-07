@@ -18,7 +18,9 @@ const REQUEST_CACHE_TTL_MS = 2 * 60 * 1000;
 const USER_PAGES_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const ROLE_PAGE_FALLBACKS: Record<string, string[]> = {
-  'teacher': ['Overview', 'Questions', 'Results & Marking', 'Marking Workbench'],
+  // Keep Exams in teacher fallback so Assessments submenu does not disappear
+  // during transient /admin/me/pages failures.
+  'teacher': ['Overview', 'Questions', 'Exams', 'Results & Marking', 'Marking Workbench'],
   'moderator': ['Overview', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench'],
   'sub-admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls'],
   'sub admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls'],
@@ -189,6 +191,7 @@ export const useRoleBasedNav = () => {
       }
 
       const userPagesCacheKey = `userPages:${userId}:${roleSignature || 'no-roles'}:v${permissionsVersion}`;
+      const persistedPagesKey = `rbac_user_pages:${userId}:${roleSignature || 'no-roles'}`;
       const cachedUserPages = getCachedData<string[]>(userPagesCacheKey);
       if (cachedUserPages) {
         if (isMounted) {
@@ -196,6 +199,18 @@ export const useRoleBasedNav = () => {
           setLoading(false);
         }
         return;
+      }
+
+      const persistedRaw = localStorage.getItem(persistedPagesKey);
+      if (persistedRaw && isMounted) {
+        try {
+          const parsed = JSON.parse(persistedRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setUserPages(parsed.map((item) => String(item)).filter(Boolean));
+          }
+        } catch {
+          // ignore invalid persisted payload
+        }
       }
 
       if (isMounted) {
@@ -219,14 +234,33 @@ export const useRoleBasedNav = () => {
           : fallbackPagesFromRoles;
 
         setCachedData(userPagesCacheKey, effectivePages, USER_PAGES_CACHE_TTL_MS);
+        try {
+          localStorage.setItem(persistedPagesKey, JSON.stringify(effectivePages));
+        } catch {
+          // ignore storage failures
+        }
         if (isMounted) {
           setUserPages(effectivePages);
         }
       } catch (err) {
         console.error('Failed to load user pages:', err);
         if (isMounted) {
-          // Fallback to role defaults to avoid false hard-lock on transient API failures.
-          setUserPages(fallbackPagesFromRoles);
+          // Prefer last known granted pages for this user; fallback to role defaults if absent.
+          const persistedOnErrorRaw = localStorage.getItem(persistedPagesKey);
+          if (persistedOnErrorRaw) {
+            try {
+              const parsed = JSON.parse(persistedOnErrorRaw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setUserPages(parsed.map((item) => String(item)).filter(Boolean));
+              } else {
+                setUserPages(fallbackPagesFromRoles);
+              }
+            } catch {
+              setUserPages(fallbackPagesFromRoles);
+            }
+          } else {
+            setUserPages(fallbackPagesFromRoles);
+          }
         }
       } finally {
         if (fallbackTimer) {

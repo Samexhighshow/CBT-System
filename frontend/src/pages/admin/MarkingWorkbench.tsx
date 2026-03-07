@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
+import useAuthStore from '../../store/authStore';
 
 interface MarkingExamRow {
   id: number;
@@ -94,7 +96,6 @@ interface AttemptDetailResponse {
 interface ScoreFormState {
   marks: string;
   feedback: string;
-  saving: boolean;
 }
 
 const statusBadge = (status: string) => {
@@ -103,6 +104,11 @@ const statusBadge = (status: string) => {
   if (normalized === 'submitted') return 'bg-amber-100 text-amber-800';
   if (normalized === 'in_progress') return 'bg-blue-100 text-blue-800';
   return 'bg-gray-100 text-gray-700';
+};
+
+const isForceSubmitLockedStatus = (status?: string | null) => {
+  const normalized = String(status ?? '').toLowerCase();
+  return ['submitted', 'completed', 'voided'].includes(normalized);
 };
 
 const formatEventLabel = (eventType: string) => eventType
@@ -211,6 +217,7 @@ const normalizeStudentText = (raw?: string | null): string | null => {
 };
 
 const MarkingWorkbench: React.FC = () => {
+  const { user } = useAuthStore();
   const [exams, setExams] = useState<MarkingExamRow[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
   const [attempts, setAttempts] = useState<MarkingAttemptRow[]>([]);
@@ -220,6 +227,7 @@ const MarkingWorkbench: React.FC = () => {
   const [loadingAttempts, setLoadingAttempts] = useState(false);
   const [loadingAttemptDetail, setLoadingAttemptDetail] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [clearingAttempt, setClearingAttempt] = useState(false);
   const [forcingSubmit, setForcingSubmit] = useState(false);
   const [extendingTime, setExtendingTime] = useState(false);
@@ -228,6 +236,26 @@ const MarkingWorkbench: React.FC = () => {
   const [adminOverrideClear, setAdminOverrideClear] = useState(false);
 
   const selectedExam = useMemo(() => exams.find((exam) => exam.id === selectedExamId) || null, [exams, selectedExamId]);
+
+  const roleNames = useMemo(() => (
+    (user?.roles || [])
+      .map((role: any) => String(role?.name || role || '').trim().toLowerCase())
+      .filter(Boolean)
+  ), [user]);
+
+  const isAdmin = useMemo(() => (
+    roleNames.includes('admin') || roleNames.includes('main admin')
+  ), [roleNames]);
+
+  const isTeacherOnly = useMemo(() => (
+    roleNames.includes('teacher') && !isAdmin
+  ), [isAdmin, roleNames]);
+
+  const canClearAttempt = useMemo(() => {
+    return !isTeacherOnly;
+  }, [isTeacherOnly]);
+
+  const canModerateAttempt = useMemo(() => isAdmin, [isAdmin]);
 
   const loadExams = async () => {
     try {
@@ -278,7 +306,6 @@ const MarkingWorkbench: React.FC = () => {
         nextForms[question.question_id] = {
           marks: question.answer.marks_awarded?.toString() || '',
           feedback: question.answer.feedback || '',
-          saving: false,
         };
       });
       setScoreForms(nextForms);
@@ -317,44 +344,66 @@ const MarkingWorkbench: React.FC = () => {
     }));
   };
 
-  const saveScore = async (question: AttemptQuestion) => {
-    if (!attemptDetail) return;
+  const collectManualScores = (requireAll: boolean) => {
+    if (!attemptDetail) return null;
 
-    const form = scoreForms[question.question_id];
-    if (!form) return;
+    const manualQuestions = attemptDetail.questions.filter((question) => (
+      question.requires_manual_marking && hasCandidateResponse(question)
+    ));
 
-    const parsedMarks = Number(form.marks);
-    if (Number.isNaN(parsedMarks) || parsedMarks < 0) {
-      showError('Enter a valid mark before saving');
-      return;
+    const missingQuestionNumbers: number[] = [];
+    const invalidQuestionNumbers: number[] = [];
+
+    const scores = manualQuestions
+      .map((question, index) => {
+        const form = scoreForms[question.question_id] || { marks: '', feedback: '' };
+        const rawMarks = String(form.marks ?? '').trim();
+        const questionNumber = index + 1;
+
+        if (rawMarks === '') {
+          if (requireAll) {
+            missingQuestionNumbers.push(questionNumber);
+          }
+          return null;
+        }
+
+        const marks = Number(rawMarks);
+        if (Number.isNaN(marks) || marks < 0) {
+          invalidQuestionNumbers.push(questionNumber);
+          return null;
+        }
+
+        return {
+          question_id: question.question_id,
+          marks_awarded: marks,
+          feedback: form.feedback || '',
+        };
+      })
+      .filter(Boolean) as Array<{ question_id: number; marks_awarded: number; feedback?: string }>;
+
+    if (missingQuestionNumbers.length > 0) {
+      showError(`Enter marks for all pending manual answers before finalizing. Missing question numbers: ${missingQuestionNumbers.join(', ')}`);
+      return null;
     }
 
-    try {
-      updateForm(question.question_id, { saving: true });
-      await api.post(`/marking/attempts/${attemptDetail.attempt.id}/questions/${question.question_id}/score`, {
-        marks_awarded: parsedMarks,
-        feedback: form.feedback,
-      });
-      showSuccess('Question score updated');
-      await loadAttemptDetail(attemptDetail.attempt.id);
-      if (selectedExamId) await loadAttempts(selectedExamId);
-    } catch (error: any) {
-      showError(error.response?.data?.message || 'Failed to save score');
-    } finally {
-      updateForm(question.question_id, { saving: false });
+    if (invalidQuestionNumbers.length > 0) {
+      showError(`Some entered marks are invalid. Check question numbers: ${invalidQuestionNumbers.join(', ')}`);
+      return null;
     }
+
+    return scores;
   };
 
   const finalizeAttempt = async () => {
     if (!attemptDetail) return;
 
-    if (attemptDetail.attempt.pending_manual_count > 0) {
-      showError('Cannot finalize while manual marking is pending.');
+    if (String(attemptDetail.attempt.status).toLowerCase() === 'completed') {
+      showError('Attempt is already finalized.');
       return;
     }
 
-    if (String(attemptDetail.attempt.status).toLowerCase() === 'completed') {
-      showError('Attempt is already finalized.');
+    const scores = collectManualScores(true);
+    if (!scores) {
       return;
     }
 
@@ -363,8 +412,10 @@ const MarkingWorkbench: React.FC = () => {
 
     try {
       setFinalizing(true);
-      await api.post(`/marking/attempts/${attemptDetail.attempt.id}/finalize`);
-      showSuccess('Attempt finalized successfully');
+      await api.post(`/marking/attempts/${attemptDetail.attempt.id}/finalize`, {
+        scores,
+      });
+      showSuccess('All scores saved and attempt finalized successfully');
       await loadAttemptDetail(attemptDetail.attempt.id);
       if (selectedExamId) await loadAttempts(selectedExamId);
     } catch (error: any) {
@@ -374,8 +425,42 @@ const MarkingWorkbench: React.FC = () => {
     }
   };
 
+  const saveDraftScores = async () => {
+    if (!attemptDetail) return;
+
+    if (String(attemptDetail.attempt.status).toLowerCase() === 'completed') {
+      showError('Attempt is already finalized.');
+      return;
+    }
+
+    const scores = collectManualScores(false);
+    if (!scores || scores.length === 0) {
+      showError('Enter at least one valid manual score before saving draft.');
+      return;
+    }
+
+    try {
+      setSavingDraft(true);
+      await api.post(`/marking/attempts/${attemptDetail.attempt.id}/bulk-score`, {
+        scores,
+      });
+      showSuccess('Draft scores saved successfully');
+      await loadAttemptDetail(attemptDetail.attempt.id);
+      if (selectedExamId) await loadAttempts(selectedExamId);
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'Unable to save draft scores');
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
   const forceSubmitAttempt = async () => {
     if (!attemptDetail || !selectedExamId) return;
+
+    if (isForceSubmitLockedStatus(attemptDetail.attempt.status)) {
+      showError('Attempt is already submitted/finalized. Force submit is not available.');
+      return;
+    }
 
     const reason = window.prompt('Enter reason for force submit:');
     if (!reason || !reason.trim()) {
@@ -444,6 +529,11 @@ const MarkingWorkbench: React.FC = () => {
 
   const clearAttempt = async () => {
     if (!attemptDetail || !selectedExamId) return;
+
+    if (!canClearAttempt) {
+      showError('Teachers are not allowed to clear attempts.');
+      return;
+    }
 
     const isFinalized = String(attemptDetail.attempt.status).toLowerCase() === 'completed';
     if (isFinalized && !adminOverrideClear) {
@@ -541,8 +631,16 @@ const MarkingWorkbench: React.FC = () => {
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Marking Workbench</h1>
           <p className="text-sm text-gray-600 mt-1">Dedicated interface for manual scoring and finalizing attempts.</p>
         </div>
-        <div className="text-xs text-gray-600">
-          {selectedExam ? `${selectedExam.title} • Pending ${selectedExam.pending_marking}` : 'Select an exam to begin marking'}
+        <div className="flex flex-col items-start md:items-end gap-2">
+          <div className="text-xs text-gray-600">
+            {selectedExam ? `${selectedExam.title} • Pending ${selectedExam.pending_marking}` : 'Select an exam to begin marking'}
+          </div>
+          <Link
+            to="/admin/results"
+            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Back to Results
+          </Link>
         </div>
       </div>
 
@@ -623,23 +721,34 @@ const MarkingWorkbench: React.FC = () => {
                   <span className={`text-xs px-3 py-1.5 rounded-full font-semibold ${statusBadge(attemptDetail.attempt.status)}`}>
                     {attemptDetail.attempt.status}
                   </span>
+                  {canModerateAttempt && (
+                    <>
+                      <button
+                        onClick={forceSubmitAttempt}
+                        disabled={forcingSubmit || isForceSubmitLockedStatus(attemptDetail.attempt.status)}
+                        className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {forcingSubmit ? 'Submitting...' : 'Force Submit'}
+                      </button>
+                      <button
+                        onClick={extendAttemptTime}
+                        disabled={extendingTime}
+                        className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
+                      >
+                        {extendingTime ? 'Extending...' : 'Extend Time'}
+                      </button>
+                    </>
+                  )}
                   <button
-                    onClick={forceSubmitAttempt}
-                    disabled={forcingSubmit || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
-                    className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
+                    onClick={saveDraftScores}
+                    disabled={savingDraft || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
+                    className="px-3 py-1.5 rounded-md bg-slate-700 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-60"
                   >
-                    {forcingSubmit ? 'Submitting...' : 'Force Submit'}
-                  </button>
-                  <button
-                    onClick={extendAttemptTime}
-                    disabled={extendingTime}
-                    className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-60"
-                  >
-                    {extendingTime ? 'Extending...' : 'Extend Time'}
+                    {savingDraft ? 'Saving Draft...' : 'Save Draft Scores'}
                   </button>
                   <button
                     onClick={finalizeAttempt}
-                    disabled={finalizing || scoreSummary.manualPending > 0 || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
+                    disabled={finalizing || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
                     className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60"
                   >
                     {finalizing ? 'Finalizing...' : 'Finalize Marking'}
@@ -705,32 +814,34 @@ const MarkingWorkbench: React.FC = () => {
                 </span>
               </div>
 
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-red-800">Danger Zone: Clear Attempt</h3>
-                  <label className="text-xs text-red-700 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={adminOverrideClear}
-                      onChange={(e) => setAdminOverrideClear(e.target.checked)}
-                    />
-                    Admin Override
-                  </label>
+              {canClearAttempt && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-red-800">Danger Zone: Clear Attempt</h3>
+                    <label className="text-xs text-red-700 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={adminOverrideClear}
+                        onChange={(e) => setAdminOverrideClear(e.target.checked)}
+                      />
+                      Admin Override
+                    </label>
+                  </div>
+                  <input
+                    value={clearReason}
+                    onChange={(e) => setClearReason(e.target.value)}
+                    placeholder="Reason for clearing this attempt"
+                    className="w-full border border-red-300 rounded-md px-3 py-2 text-sm bg-white"
+                  />
+                  <button
+                    onClick={clearAttempt}
+                    disabled={clearingAttempt || (String(attemptDetail.attempt.status).toLowerCase() === 'completed' && !adminOverrideClear)}
+                    className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {clearingAttempt ? 'Clearing...' : 'Clear Attempt'}
+                  </button>
                 </div>
-                <input
-                  value={clearReason}
-                  onChange={(e) => setClearReason(e.target.value)}
-                  placeholder="Reason for clearing this attempt"
-                  className="w-full border border-red-300 rounded-md px-3 py-2 text-sm bg-white"
-                />
-                <button
-                  onClick={clearAttempt}
-                  disabled={clearingAttempt || (String(attemptDetail.attempt.status).toLowerCase() === 'completed' && !adminOverrideClear)}
-                  className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
-                >
-                  {clearingAttempt ? 'Clearing...' : 'Clear Attempt'}
-                </button>
-              </div>
+              )}
 
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                 <div className="flex items-center justify-between">
@@ -755,7 +866,7 @@ const MarkingWorkbench: React.FC = () => {
 
               <div className="space-y-3 max-h-[720px] overflow-auto pr-1">
                 {attemptDetail.questions.map((question, idx) => {
-                  const form = scoreForms[question.question_id] || { marks: '', feedback: '', saving: false };
+                  const form = scoreForms[question.question_id] || { marks: '', feedback: '' };
                   const selectedOptionIds = Array.from(new Set([
                     ...(typeof question.answer.option_id === 'number' ? [question.answer.option_id] : []),
                     ...(question.answer.option_ids || []),
@@ -786,7 +897,7 @@ const MarkingWorkbench: React.FC = () => {
                       </div>
 
                       {question.requires_manual_marking ? (
-                        <div className="mt-3 border-t border-gray-200 pt-3 grid gap-2 md:grid-cols-[180px_minmax(0,1fr)_auto]">
+                        <div className="mt-3 border-t border-gray-200 pt-3 grid gap-2 md:grid-cols-[180px_minmax(0,1fr)]">
                           <input
                             type="number"
                             min={0}
@@ -805,13 +916,6 @@ const MarkingWorkbench: React.FC = () => {
                             disabled={String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
                             className="border border-gray-300 rounded-md px-3 py-2 text-sm"
                           />
-                          <button
-                            onClick={() => saveScore(question)}
-                            disabled={form.saving || String(attemptDetail.attempt.status).toLowerCase() === 'completed'}
-                            className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
-                          >
-                            {form.saving ? 'Saving...' : 'Save'}
-                          </button>
                         </div>
                       ) : (
                         <div className="mt-3 text-xs text-emerald-700 font-semibold">

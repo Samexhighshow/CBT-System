@@ -92,7 +92,14 @@ class ExamAccessController extends Controller
                 $expiresAt = $this->resolveExpiryForExam($exam);
 
                 [$access, $rotatedCount] = DB::transaction(function () use ($exam, $student, $expiresAt) {
-                    $rotatedCount = $this->rotateUnusedCodes($exam->id, $student->id);
+                    // Serialize generation per student to avoid duplicate NEW codes from rapid double-submit.
+                    Student::whereKey($student->id)->lockForUpdate()->first();
+
+                    $rotatedCount = $this->rotateUnusedCodes(
+                        $exam->id,
+                        $student->id,
+                        $student->registration_number
+                    );
                     $accessCode = ExamAccess::generateUniqueCode();
 
                     $access = ExamAccess::create([
@@ -146,7 +153,14 @@ class ExamAccessController extends Controller
                 $rotatedCount = 0;
 
                 DB::transaction(function () use ($exam, $student, $expiresAt, &$accessCode, &$rotatedCount) {
-                    $rotatedCount = $this->rotateUnusedCodes($exam->id, $student->id);
+                    // Serialize generation per student to avoid duplicate NEW codes from rapid double-submit.
+                    Student::whereKey($student->id)->lockForUpdate()->first();
+
+                    $rotatedCount = $this->rotateUnusedCodes(
+                        $exam->id,
+                        $student->id,
+                        $student->registration_number
+                    );
                     $accessCode = ExamAccess::generateUniqueCode();
 
                     ExamAccess::create([
@@ -487,19 +501,32 @@ class ExamAccessController extends Controller
      * Invalidate any existing unused code for same exam/student before generating a new one.
      * This allows unlimited regeneration while ensuring only the latest code remains active.
      */
-    private function rotateUnusedCodes(int $examId, int $studentId): int
+    private function rotateUnusedCodes(int $examId, int $studentId, ?string $studentRegNumber = null): int
     {
         $now = now();
+        $normalizedReg = strtoupper(trim((string) $studentRegNumber));
 
         return ExamAccess::where('exam_id', $examId)
-            ->where('student_id', $studentId)
-            ->where(function ($q) {
-                $q->where('used', false)->orWhereNull('used');
+            ->where(function ($q) use ($studentId, $normalizedReg) {
+                $q->where('student_id', $studentId);
+
+                if ($normalizedReg !== '') {
+                    // Also match legacy rows where student_id may be missing but registration number is present.
+                    $q->orWhere(function ($sq) use ($normalizedReg) {
+                        $sq->whereNull('student_id')
+                            ->whereRaw('UPPER(COALESCE(student_reg_number, "")) = ?', [$normalizedReg]);
+                    });
+                }
             })
             ->where(function ($q) {
-                $q->whereNull('status')
-                    ->orWhere('status', 'NEW')
-                    ->orWhere('status', '');
+                // Void every non-final code shape (legacy/new/blank statuses and rows not marked used).
+                $q->where(function ($sq) {
+                    $sq->where('used', false)->orWhereNull('used');
+                })->orWhere(function ($sq) {
+                    $sq->whereNull('status')
+                        ->orWhere('status', '')
+                        ->orWhereNotIn('status', ['USED', 'VOID']);
+                });
             })
             ->update([
                 'status' => 'VOID',
@@ -518,16 +545,17 @@ class ExamAccessController extends Controller
     {
         $rows = ExamAccess::query()
             ->where(function ($q) {
-                $q->where('used', false)->orWhereNull('used');
-            })
-            ->where(function ($q) {
-                $q->whereNull('status')
-                    ->orWhere('status', 'NEW')
-                    ->orWhere('status', '');
+                $q->where(function ($sq) {
+                    $sq->where('used', false)->orWhereNull('used');
+                })->orWhere(function ($sq) {
+                    $sq->whereNull('status')
+                        ->orWhere('status', '')
+                        ->orWhereNotIn('status', ['USED', 'VOID']);
+                });
             })
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->get(['id', 'exam_id', 'student_id']);
+            ->get(['id', 'exam_id', 'student_id', 'student_reg_number']);
 
         if ($rows->isEmpty()) {
             return;
@@ -538,7 +566,10 @@ class ExamAccessController extends Controller
         $toVoid = [];
 
         foreach ($rows as $row) {
-            $key = ((int) $row->exam_id) . ':' . ((int) $row->student_id);
+            $studentId = (int) ($row->student_id ?? 0);
+            $reg = strtoupper(trim((string) ($row->student_reg_number ?? '')));
+            $identity = $studentId > 0 ? 'sid:' . $studentId : 'reg:' . $reg;
+            $key = ((int) $row->exam_id) . ':' . $identity;
             if (!isset($seen[$key])) {
                 $seen[$key] = true; // keep newest row for this pair
                 continue;

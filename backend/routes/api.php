@@ -603,9 +603,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/attempts/{attemptId}', [MarkingController::class, 'attempt']);
     });
 
-    Route::middleware(['role:Admin|Main Admin', 'teacher.scope.approved'])->prefix('marking')->group(function () {
+    Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->prefix('marking')->group(function () {
         Route::post('/attempts/{attemptId}/questions/{questionId}/score', [MarkingController::class, 'scoreQuestion']);
+        Route::post('/attempts/{attemptId}/bulk-score', [MarkingController::class, 'bulkScore']);
         Route::post('/attempts/{attemptId}/finalize', [MarkingController::class, 'finalize']);
+    });
+
+    Route::middleware(['role:Admin|Main Admin', 'teacher.scope.approved'])->prefix('marking')->group(function () {
         Route::post('/attempts/{attemptId}/force-submit', [MarkingController::class, 'forceSubmit']);
         Route::post('/attempts/{attemptId}/extend-time', [MarkingController::class, 'extendTime']);
         Route::delete('/attempts/{attemptId}', [MarkingController::class, 'clearAttempt']);

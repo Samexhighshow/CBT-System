@@ -33,6 +33,7 @@ class ExamResultsExport implements FromCollection, WithHeadings, WithMapping
             'Student Name',
             'Department',
             'Class Level',
+            'Assessment Type',
             'Score',
             'Total Marks',
             'Percentage',
@@ -59,6 +60,7 @@ class ExamResultsExport implements FromCollection, WithHeadings, WithMapping
             $attempt->student->first_name . ' ' . $attempt->student->last_name,
             $attempt->student->department->name ?? 'N/A',
             $attempt->student->class_level,
+            $this->resolveAssessmentTypeLabel($attempt),
             $score,
             $totalMarks,
             $percentage . '%',
@@ -66,6 +68,21 @@ class ExamResultsExport implements FromCollection, WithHeadings, WithMapping
             $attempt->completed_at?->format('Y-m-d H:i:s') ?? '-',
             $duration,
         ];
+    }
+
+    private function resolveAssessmentTypeLabel(ExamAttempt $attempt): string
+    {
+        $mode = strtolower(trim((string) ($attempt->assessment_mode ?? '')));
+        if ($mode === 'ca_test') {
+            return 'CA Test';
+        }
+
+        if ($mode === 'exam') {
+            return 'Final Exam';
+        }
+
+        $raw = trim((string) ($attempt->exam->assessment_type ?? ''));
+        return $raw !== '' ? $raw : 'Final Exam';
     }
 
     private function resolveAttemptTotalMarks(ExamAttempt $attempt): float

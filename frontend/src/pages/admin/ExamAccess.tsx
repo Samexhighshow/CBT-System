@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../services/api';
 import { showSuccess, showError } from '../../utils/alerts';
 import useConnectivity from '../../hooks/useConnectivity';
@@ -66,6 +66,8 @@ const ExamAccess: React.FC = () => {
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkResults, setBulkResults] = useState<{ generated: any[]; errors: string[] } | null>(null);
   const [bulkAccessCodeLimit, setBulkAccessCodeLimit] = useState(2000);
+  const singleGenerateInFlightRef = useRef(false);
+  const bulkGenerateInFlightRef = useRef(false);
 
   const toExamOption = (row: any): Exam => ({
     id: Number(row.id ?? row.examId),
@@ -289,6 +291,10 @@ const ExamAccess: React.FC = () => {
   };
 
   const handleGenerateAccess = async () => {
+    if (singleGenerateInFlightRef.current) {
+      return;
+    }
+
     if (!selectedExam) {
       showError('Please select an exam');
       return;
@@ -300,6 +306,7 @@ const ExamAccess: React.FC = () => {
     }
 
     setLoading(true);
+    singleGenerateInFlightRef.current = true;
     try {
       const examId = Number(selectedExam);
       const studentId = Number(foundStudent.id);
@@ -463,6 +470,7 @@ const ExamAccess: React.FC = () => {
         'Failed to generate access code'
       );
     } finally {
+      singleGenerateInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -586,6 +594,10 @@ const ExamAccess: React.FC = () => {
   };
 
   const handleBulkGenerate = async () => {
+    if (bulkGenerateInFlightRef.current) {
+      return;
+    }
+
     if (!selectedExam) {
       showError('Please select an exam first');
       return;
@@ -607,6 +619,7 @@ const ExamAccess: React.FC = () => {
     }
 
     setBulkGenerating(true);
+    bulkGenerateInFlightRef.current = true;
     setBulkResults(null);
 
     try {
@@ -658,6 +671,7 @@ const ExamAccess: React.FC = () => {
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to generate bulk access codes');
     } finally {
+      bulkGenerateInFlightRef.current = false;
       setBulkGenerating(false);
     }
   };

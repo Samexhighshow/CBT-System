@@ -13,6 +13,26 @@ use Illuminate\Support\Collection;
 
 class RoleScopeService
 {
+    private function nullableInt($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        $int = (int) $value;
+        return $int > 0 ? $int : null;
+    }
+
+    private function nullableString($value): ?string
+    {
+        $string = trim((string) ($value ?? ''));
+        return $string !== '' ? $string : null;
+    }
+
     private function normalizeClassLevel(?string $value): string
     {
         return strtolower(str_replace(' ', '', trim((string) $value)));
@@ -48,6 +68,13 @@ class RoleScopeService
         array $classNameById
     ): bool {
         $hasConstraint = false;
+
+        if (!is_null($scope->exam_id)) {
+            $hasConstraint = true;
+            if (is_null($examId) || (int) $scope->exam_id !== (int) $examId) {
+                return false;
+            }
+        }
 
         if (!is_null($scope->subject_id)) {
             $hasConstraint = true;
@@ -274,14 +301,18 @@ class RoleScopeService
             return $query;
         }
 
+        $examIds = $this->scopedExamIds($user);
         $subjectIds = $this->scopedSubjectIds($user);
         $classIds = $this->scopedClassIds($user);
 
-        if (empty($subjectIds) && empty($classIds)) {
+        if (empty($examIds) && empty($subjectIds) && empty($classIds)) {
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->where(function ($q) use ($subjectIdColumn, $classIdColumn, $subjectIds, $classIds) {
+        return $query->where(function ($q) use ($examIdColumn, $subjectIdColumn, $classIdColumn, $examIds, $subjectIds, $classIds) {
+            if (!empty($examIds)) {
+                $q->orWhereIn($examIdColumn, $examIds);
+            }
             if (!empty($subjectIds)) {
                 $q->orWhereIn($subjectIdColumn, $subjectIds);
             }
@@ -325,10 +356,10 @@ class RoleScopeService
     {
         return $this->canAccessSubjectClass(
             $user,
-            (int) ($exam->subject_id ?? 0),
-            (string) ($exam->class_level ?? ''),
-            (int) ($exam->class_id ?? 0),
-            (int) ($exam->id ?? 0)
+            $this->nullableInt($exam->subject_id),
+            $this->nullableString($exam->class_level),
+            $this->nullableInt($exam->class_id),
+            $this->nullableInt($exam->id)
         );
     }
 
@@ -336,9 +367,9 @@ class RoleScopeService
     {
         return $this->canAccessSubjectClass(
             $user,
-            (int) ($subject->id ?? 0),
-            (string) ($subject->class_level ?? ''),
-            (int) ($subject->class_id ?? 0)
+            $this->nullableInt($subject->id),
+            $this->nullableString($subject->class_level),
+            $this->nullableInt($subject->class_id)
         );
     }
 
@@ -346,8 +377,8 @@ class RoleScopeService
     {
         return $this->canAccessSubjectClass(
             $user,
-            (int) ($question->subject_id ?? 0),
-            (string) ($question->class_level ?? '')
+            $this->nullableInt($question->subject_id),
+            $this->nullableString($question->class_level)
         );
     }
 
@@ -382,8 +413,8 @@ class RoleScopeService
         return $this->canAccessSubjectClass(
             $user,
             null,
-            (string) ($class->name ?? ''),
-            (int) ($class->id ?? 0)
+            $this->nullableString($class->name),
+            $this->nullableInt($class->id)
         );
     }
 }

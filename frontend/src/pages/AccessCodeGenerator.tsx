@@ -13,10 +13,10 @@ interface OfflineCode {
 
 const AccessCodeGenerator: React.FC = () => {
   const { isDark } = useTheme();
-  const { user, userRole } = useAuthStore();
+  const { user } = useAuthStore();
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamIds, setSelectedExamIds] = useState<number[]>([]);
-  const [quantity, setQuantity] = useState(10);
+  const [quantity, setQuantity] = useState(1);
   const [generating, setGenerating] = useState(false);
   const [codes, setCodes] = useState<string[]>([]);
   const [offlineCodes, setOfflineCodes] = useState<OfflineCode[]>([]);
@@ -29,8 +29,30 @@ const AccessCodeGenerator: React.FC = () => {
   const textClass = isDark ? 'text-gray-100' : 'text-gray-900';
   const mutedClass = isDark ? 'text-gray-400' : 'text-gray-600';
 
-  // Check if user has permission (admin, moderator, teacher)
-  const hasAccess = user && ['Admin', 'Main Admin', 'Moderator', 'Teacher'].some(role => user.role?.includes(role));
+  // Check if user has permission (admin, main admin, moderator, teacher)
+  // Supports both current `user.roles[]` payload and legacy `user.role` string payload.
+  const hasAccess = useMemo(() => {
+    if (!user) return false;
+
+    const roleNames = new Set<string>();
+
+    const normalizeRole = (value: unknown) =>
+      String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ');
+
+    (user.roles || []).forEach((role: any) => {
+      const roleName = normalizeRole(role?.name || role || '');
+      if (roleName) roleNames.add(roleName);
+    });
+
+    const legacyRole = normalizeRole((user as any)?.role || '');
+    if (legacyRole) roleNames.add(legacyRole);
+
+    return ['admin', 'main admin', 'moderator', 'teacher'].some((required) => roleNames.has(required));
+  }, [user]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -114,7 +136,7 @@ const AccessCodeGenerator: React.FC = () => {
       }
 
       setSelectedExamIds([]);
-      setQuantity(10);
+      setQuantity(1);
     } catch (err: any) {
       showError(err?.response?.data?.message || 'Failed to generate codes');
     } finally {

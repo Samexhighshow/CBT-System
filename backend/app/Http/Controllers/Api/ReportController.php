@@ -149,9 +149,11 @@ class ReportController extends Controller
             return $stamp ? $stamp->getTimestamp() : 0;
         });
 
-        // Keep the latest scored attempt per student, then rank by score.
+        // Keep the latest scored attempt per student per component (CA vs Exam), then rank by score.
         return $sortedByFreshness
-            ->unique('student_id')
+            ->unique(function (ExamAttempt $attempt) {
+                return ((int) $attempt->student_id) . ':' . $this->attemptComponent($attempt);
+            })
             ->sortByDesc(function (ExamAttempt $attempt) {
                 return (float) ($attempt->score ?? 0);
             })
@@ -727,6 +729,14 @@ class ReportController extends Controller
 
     private function resolveAssessmentTypeLabel(ExamAttempt $attempt): string
     {
+        $mode = strtolower(trim((string) ($attempt->assessment_mode ?? '')));
+        if ($mode === 'ca_test') {
+            return 'CA Test';
+        }
+        if ($mode === 'exam') {
+            return 'Final Exam';
+        }
+
         $raw = trim((string) ($attempt->exam?->assessment_type ?? ''));
         if ($raw !== '') {
             return $raw;

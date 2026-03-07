@@ -18,6 +18,7 @@ class ExamAccess extends Model
         'student_reg_number',
         'access_code',
         'status',
+        'active_new_token',
         'used',
         'used_at',
         'used_by_device_id',
@@ -27,9 +28,21 @@ class ExamAccess extends Model
 
     protected $casts = [
         'used' => 'boolean',
+        'active_new_token' => 'integer',
         'used_at' => 'datetime',
         'expires_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $model) {
+            $status = strtoupper((string) ($model->status ?? 'NEW'));
+            $isUsed = (bool) ($model->used ?? false);
+
+            // Keep guard token aligned with the active NEW state.
+            $model->active_new_token = ($status === 'NEW' && !$isUsed && !empty($model->student_id)) ? 1 : null;
+        });
+    }
 
     /**
      * Get the exam associated with this access code
@@ -64,6 +77,7 @@ class ExamAccess extends Model
     {
         $this->update([
             'status' => 'USED',
+            'active_new_token' => null,
             'used' => true,
             'used_at' => now(),
         ]);

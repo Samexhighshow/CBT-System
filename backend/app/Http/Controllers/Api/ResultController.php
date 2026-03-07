@@ -780,6 +780,14 @@ class ResultController extends Controller
 
     private function resolveAssessmentTypeLabel(ExamAttempt $attempt): string
     {
+        $mode = strtolower(trim((string) ($attempt->assessment_mode ?? '')));
+        if ($mode === 'ca_test') {
+            return 'CA Test';
+        }
+        if ($mode === 'exam') {
+            return 'Final Exam';
+        }
+
         $raw = trim((string) ($attempt->exam?->assessment_type ?? ''));
         if ($raw !== '') {
             return $raw;
