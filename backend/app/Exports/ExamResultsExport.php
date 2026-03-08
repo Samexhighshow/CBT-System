@@ -11,19 +11,26 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 class ExamResultsExport implements FromCollection, WithHeadings, WithMapping
 {
     protected $examId;
+    protected ?string $mode;
 
-    public function __construct($examId)
+    public function __construct($examId, ?string $mode = null)
     {
         $this->examId = $examId;
+        $this->mode = $this->normalizeAssessmentModeFilter($mode);
     }
 
     public function collection()
     {
-        return ExamAttempt::with(['student.department', 'exam'])
+        $query = ExamAttempt::with(['student.department', 'exam'])
             ->where('exam_id', $this->examId)
             ->where('status', 'completed')
-            ->orderBy('score', 'desc')
-            ->get();
+            ->orderBy('score', 'desc');
+
+        if ($this->mode !== null) {
+            $query->where('assessment_mode', $this->mode);
+        }
+
+        return $query->get();
     }
 
     public function headings(): array
@@ -161,5 +168,15 @@ class ExamResultsExport implements FromCollection, WithHeadings, WithMapping
         }
 
         return (($score / max(1.0, $totalMarks)) * 100) >= 50;
+    }
+
+    private function normalizeAssessmentModeFilter(?string $mode): ?string
+    {
+        $value = strtolower(trim((string) ($mode ?? '')));
+        return match ($value) {
+            'ca', 'ca_test', 'catest' => 'ca_test',
+            'exam', 'final_exam', 'final exam' => 'exam',
+            default => null,
+        };
     }
 }

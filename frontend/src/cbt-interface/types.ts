@@ -10,6 +10,14 @@ export interface CbtOpenExam {
   end_datetime?: string | null;
   can_access: boolean;
   reason?: string | null;
+  sittings?: Array<{
+    id: number;
+    assessment_mode_snapshot: 'ca_test' | 'exam';
+    duration_minutes?: number | null;
+    start_at?: string | null;
+    end_at?: string | null;
+    status: 'draft' | 'scheduled' | 'active' | 'closed';
+  }>;
 }
 
 export interface CbtAttemptVerifyResponse {
@@ -26,6 +34,16 @@ export interface CbtAttemptVerifyResponse {
     subject?: string;
     class_level?: string;
     duration_minutes: number;
+    sitting_id?: number;
+    assessment_mode_snapshot?: 'ca_test' | 'exam';
+  };
+  sitting?: {
+    id: number;
+    assessment_mode_snapshot: 'ca_test' | 'exam';
+    duration_minutes?: number;
+    start_at?: string | null;
+    end_at?: string | null;
+    status?: string;
   };
   student: {
     id: number;

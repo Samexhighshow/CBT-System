@@ -23,6 +23,59 @@ class StudentBulkController extends Controller
     ) {
     }
 
+    private function currentAuthenticatedUser(Request $request): ?User
+    {
+        $user = $request->user();
+        if ($user instanceof User) {
+            return $user;
+        }
+
+        $sanctumUser = $request->user('sanctum');
+        return $sanctumUser instanceof User ? $sanctumUser : null;
+    }
+
+    private function isTeacherScopedUser(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        $roles = $this->roleScopeService->roleNames($user);
+        return in_array('teacher', $roles, true);
+    }
+
+    private function resolveAllowedClassScopeForUser(?User $user): array
+    {
+        if (!$user) {
+            return [[], []];
+        }
+
+        if ($this->isTeacherScopedUser($user)) {
+            $classIds = $this->roleScopeService->scopedClassIdsForRole($user, 'teacher');
+            if (empty($classIds)) {
+                return [[], []];
+            }
+
+            $classLevels = SchoolClass::query()
+                ->whereIn('id', $classIds)
+                ->pluck('name')
+                ->filter()
+                ->map(fn ($name) => trim((string) $name))
+                ->values()
+                ->all();
+
+            return [$classIds, $this->buildClassLevelVariants($classLevels)];
+        }
+
+        if ($this->roleScopeService->isScopedActor($user)) {
+            $classIds = $this->roleScopeService->scopedClassIds($user);
+            $classLevels = $this->roleScopeService->scopedClassLevels($user);
+            return [$classIds, $this->buildClassLevelVariants($classLevels)];
+        }
+
+        return [[], []];
+    }
+
     private function buildClassLevelVariants(array $levels): array
     {
         return collect($levels)
@@ -60,8 +113,10 @@ class StudentBulkController extends Controller
         $errors = [];
         $allowedClassVariants = [];
 
-        if ($this->roleScopeService->isScopedActor($request->user())) {
-            $allowedClassVariants = $this->buildClassLevelVariants($this->roleScopeService->scopedClassLevels($request->user()));
+        $actor = $this->currentAuthenticatedUser($request);
+        [$allowedClassIds, $allowedClassVariants] = $this->resolveAllowedClassScopeForUser($actor);
+
+        if ($actor && ($this->isTeacherScopedUser($actor) || $this->roleScopeService->isScopedActor($actor))) {
             if (empty($allowedClassVariants)) {
                 return response()->json([
                     'message' => 'No approved class scope available for import.',
@@ -127,6 +182,14 @@ class StudentBulkController extends Controller
                 $temporaryPassword = $this->generateTemporaryPassword();
                 $studentId = $this->generateStudentId((string) $rowData['registration_number']);
                 $classId = $this->resolveClassIdByLevel((string) $rowData['class_level']);
+                if (!empty($allowedClassIds) && $classId && !in_array((int) $classId, $allowedClassIds, true)) {
+                    $errors[] = [
+                        'row' => $index + 2,
+                        'data' => $row,
+                        'errors' => ["Class '{$rowData['class_level']}' is outside your approved scope."],
+                    ];
+                    continue;
+                }
                 $user = User::create([
                     'name' => trim(($rowData['first_name'] ?? '') . ' ' . ($rowData['last_name'] ?? '')),
                     'email' => $rowData['email'],
@@ -205,10 +268,10 @@ class StudentBulkController extends Controller
     {
         $query = Student::with('department');
 
-        if ($this->roleScopeService->isScopedActor($request->user())) {
-            $classIds = $this->roleScopeService->scopedClassIds($request->user());
-            $classVariants = $this->buildClassLevelVariants($this->roleScopeService->scopedClassLevels($request->user()));
+        $actor = $this->currentAuthenticatedUser($request);
+        [$classIds, $classVariants] = $this->resolveAllowedClassScopeForUser($actor);
 
+        if ($actor && ($this->isTeacherScopedUser($actor) || $this->roleScopeService->isScopedActor($actor))) {
             if (empty($classIds) && empty($classVariants)) {
                 $query->whereRaw('1 = 0');
             } else {

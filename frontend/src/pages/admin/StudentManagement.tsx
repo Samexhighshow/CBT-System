@@ -47,7 +47,7 @@ const StudentManagement: React.FC = () => {
   const [perPage, setPerPage] = useState(25);
   const [page, setPage] = useState(1);
   const [departments, setDepartments] = useState<Array<{id: number; name: string}>>([]);
-  const [availableClassLevels, setAvailableClassLevels] = useState<string[]>([]);
+  const [availableClasses, setAvailableClasses] = useState<Array<{ id: number; name: string; department_id?: number | null }>>([]);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState<null | Student>(null);
   const [viewStudentDetails, setViewStudentDetails] = useState<Student | null>(null);
@@ -57,6 +57,7 @@ const StudentManagement: React.FC = () => {
     other_names: '',
     last_name: '',
     email: '',
+    class_id: 0,
     department_id: 0,
     class_level: 'JSS1',
     status: 'active',
@@ -80,25 +81,35 @@ const StudentManagement: React.FC = () => {
     try {
       const response = await api.get('/staff/classes?limit=1000');
       const classData = response?.data?.data || response?.data || [];
-      const levels = Array.from(
-        new Set(
-          (Array.isArray(classData) ? classData : [])
-            .map((cls: any) => String(cls?.name || '').trim().toUpperCase())
-            .filter(Boolean)
-        )
-      ).sort((a, b) => a.localeCompare(b));
+      const scopedClasses = (Array.isArray(classData) ? classData : [])
+        .map((cls: any) => ({
+          id: Number(cls?.id || 0),
+          name: String(cls?.name || '').trim().toUpperCase(),
+          department_id: cls?.department_id ? Number(cls.department_id) : null,
+        }))
+        .filter((cls: any) => cls.id > 0 && !!cls.name)
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
 
-      setAvailableClassLevels(levels);
-      if (levels.length > 0) {
+      setAvailableClasses(scopedClasses);
+      if (scopedClasses.length > 0) {
+        const selectedClass = scopedClasses.find((cls: any) => cls.name === form.class_level) || scopedClasses[0];
         setForm((prev) => ({
           ...prev,
-          class_level: levels.includes(prev.class_level) ? prev.class_level : levels[0],
-          department_id: isSssClass(levels.includes(prev.class_level) ? prev.class_level : levels[0]) ? prev.department_id : 0,
+          class_id: selectedClass.id,
+          class_level: selectedClass.name,
+          department_id: isSssClass(selectedClass.name) ? prev.department_id : 0,
+        }));
+      } else {
+        setForm((prev) => ({
+          ...prev,
+          class_id: 0,
+          class_level: '',
+          department_id: 0,
         }));
       }
     } catch (error) {
       console.error('Failed to load scoped classes:', error);
-      setAvailableClassLevels([]);
+      setAvailableClasses([]);
     }
   };
 
@@ -648,18 +659,23 @@ const StudentManagement: React.FC = () => {
                 <label className="block text-sm font-medium">Class Level</label>
                 <select
                   className="mt-1 w-full border rounded px-3 py-2"
-                  value={form.class_level}
+                  value={String(form.class_id || '')}
                   onChange={e => {
-                    const nextClass = e.target.value;
+                    const nextClassId = Number(e.target.value);
+                    const nextClass = availableClasses.find((cls) => cls.id === nextClassId);
+                    if (!nextClass) return;
                     setForm((prev) => ({
                       ...prev,
-                      class_level: nextClass,
-                      department_id: isSssClass(nextClass) ? prev.department_id : 0,
+                      class_id: nextClass.id,
+                      class_level: nextClass.name,
+                      department_id: isSssClass(nextClass.name) ? prev.department_id : 0,
                     }));
                   }}
                   aria-label="Class level"
                 >
-                  {availableClassLevels.map(l => <option key={l} value={l}>{l}</option>)}
+                  {availableClasses.map((cls) => (
+                    <option key={cls.id} value={cls.id}>{cls.name}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -692,7 +708,7 @@ const StudentManagement: React.FC = () => {
             <button className="px-4 py-2 border rounded" onClick={() => setShowRegisterModal(false)}>Cancel</button>
             <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={async () => {
               try {
-                if (availableClassLevels.length === 0) {
+                if (availableClasses.length === 0 || !form.class_id) {
                   showError('No assigned class is available for registration.');
                   return;
                 }
@@ -700,7 +716,7 @@ const StudentManagement: React.FC = () => {
                   showError('Please select a department for SSS class registration.');
                   return;
                 }
-                const response = await api.post('/students', { ...form, quick_register: true });
+                const response = await api.post('/students/admin-register', { ...form, quick_register: true });
                 showSuccess(response?.data?.message || 'Student created and onboarding email sent');
                 setShowRegisterModal(false);
                 setForm({
@@ -708,8 +724,9 @@ const StudentManagement: React.FC = () => {
                   other_names: '',
                   last_name: '',
                   email: '',
+                  class_id: availableClasses[0]?.id || 0,
                   department_id: 0,
-                  class_level: availableClassLevels[0] || '',
+                  class_level: availableClasses[0]?.name || '',
                   status: 'active',
                 });
                 loadStudents();

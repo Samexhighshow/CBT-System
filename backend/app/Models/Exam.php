@@ -153,6 +153,14 @@ class Exam extends Model
     }
 
     /**
+     * Scheduled sittings/instances for this exam template.
+     */
+    public function sittings(): HasMany
+    {
+        return $this->hasMany(ExamSitting::class);
+    }
+
+    /**
      * Check if exam is currently active (within start and end time)
      */
     public function isActive(): bool
@@ -203,7 +211,7 @@ class Exam extends Model
         }
 
         // Check if student is in the correct class
-        if ($this->class_id && $student->class_id !== $this->class_id) {
+        if (!$this->isStudentClassEligible($student)) {
             return false;
         }
 
@@ -294,16 +302,15 @@ class Exam extends Model
         }
 
         // 4. Verify student belongs to exam's class level
-        if ($this->class_id && $student->class_id !== $this->class_id) {
-            $examClass = $this->schoolClass;
-            $studentClass = $student->schoolClass;
+        if (!$this->isStudentClassEligible($student)) {
+            $classDetails = $this->classEligibilityDetails($student);
             return [
                 'eligible' => false,
                 'reason' => 'class_mismatch',
                 'message' => 'This exam is not for your class level.',
                 'details' => [
-                    'required_class' => $examClass ? $examClass->name : 'Unknown',
-                    'your_class' => $studentClass ? $studentClass->name : 'Unknown'
+                    'required_class' => $classDetails['required_class'],
+                    'your_class' => $classDetails['your_class'],
                 ]
             ];
         }
@@ -382,6 +389,71 @@ class Exam extends Model
 
         $assessmentType = strtolower(trim((string) ($this->assessment_type ?? '')));
         return $assessmentType === 'ca test' ? 'ca_test' : 'exam';
+    }
+
+    public function isStudentClassEligible(Student $student): bool
+    {
+        $examClassId = $this->resolveExamClassId();
+        if (!is_null($examClassId) && (int) ($student->class_id ?? 0) !== $examClassId) {
+            return false;
+        }
+
+        $requiredClass = $this->normalizeClassToken($this->resolveExamClassLabel());
+        if ($requiredClass === '') {
+            return true;
+        }
+
+        $studentClass = $this->normalizeClassToken($this->resolveStudentClassLabel($student));
+        if ($studentClass === '') {
+            return false;
+        }
+
+        return $requiredClass === $studentClass;
+    }
+
+    public function classEligibilityDetails(Student $student): array
+    {
+        return [
+            'required_class' => $this->resolveExamClassLabel() ?? 'Unknown',
+            'your_class' => $this->resolveStudentClassLabel($student) ?? 'Unknown',
+        ];
+    }
+
+    private function resolveExamClassId(): ?int
+    {
+        $classId = (int) ($this->class_id ?? 0);
+        if ($classId > 0) {
+            return $classId;
+        }
+
+        $classLevelId = (int) ($this->class_level_id ?? 0);
+        return $classLevelId > 0 ? $classLevelId : null;
+    }
+
+    private function resolveExamClassLabel(): ?string
+    {
+        $label = trim((string) ($this->schoolClass?->name ?? $this->classLevel?->name ?? $this->class_level ?? ''));
+        return $label !== '' ? $label : null;
+    }
+
+    private function resolveStudentClassLabel(Student $student): ?string
+    {
+        $label = trim((string) ($student->schoolClass?->name ?? $student->class_level ?? ''));
+        return $label !== '' ? $label : null;
+    }
+
+    private function normalizeClassToken(?string $value): string
+    {
+        $token = strtoupper(str_replace(' ', '', trim((string) $value)));
+        if ($token === '') {
+            return '';
+        }
+
+        if (str_starts_with($token, 'SSS')) {
+            return 'SS' . substr($token, 3);
+        }
+
+        return $token;
     }
 
     /**

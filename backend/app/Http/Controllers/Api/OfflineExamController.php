@@ -7,6 +7,7 @@ use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptEvent;
+use App\Models\ExamSitting;
 use App\Models\IdempotencyKey;
 use App\Models\Question;
 use App\Models\SystemSetting;
@@ -159,6 +160,8 @@ class OfflineExamController extends Controller
         }
 
         $exam = Exam::with(['questions.options'])->findOrFail($validated['examId']);
+        $resolvedMode = $this->resolveAttemptMode($exam);
+        $sitting = ExamSitting::resolveOrCreateDefault($exam, $resolvedMode);
 
         DB::beginTransaction();
 
@@ -166,6 +169,7 @@ class OfflineExamController extends Controller
             $attempt = ExamAttempt::create([
                 'attempt_uuid' => $validated['attemptId'],
                 'exam_id' => $exam->id,
+                'exam_sitting_id' => $sitting->id,
                 'student_id' => $validated['studentId'],
                 'started_at' => $validated['startedAt'],
                 'client_started_at' => $validated['startedAt'],
@@ -174,7 +178,7 @@ class OfflineExamController extends Controller
                 'client_submitted_at' => $validated['submittedAt'],
                 'server_submitted_at' => now(),
                 'ended_at' => $validated['submittedAt'],
-                'assessment_mode' => $this->resolveAttemptMode($exam),
+                'assessment_mode' => $sitting->assessment_mode_snapshot ?? $resolvedMode,
                 'status' => 'submitted',
                 'sync_status' => 'SYNCED',
                 'sync_version' => 1,
@@ -315,6 +319,10 @@ class OfflineExamController extends Controller
         try {
             DB::beginTransaction();
 
+            $exam = Exam::findOrFail((int) $request->exam_id);
+            $resolvedMode = $this->resolveAttemptMode($exam);
+            $sitting = ExamSitting::resolveOrCreateDefault($exam, $resolvedMode);
+
             // Check if this submission already exists
             $existingAttempt = ExamAttempt::where('exam_id', $request->exam_id)
                 ->where('student_id', $request->student_id)
@@ -333,6 +341,7 @@ class OfflineExamController extends Controller
             // Create exam attempt
             $attempt = ExamAttempt::create([
                 'exam_id' => $request->exam_id,
+                'exam_sitting_id' => $sitting->id,
                 'student_id' => $request->student_id,
                 'started_at' => $request->started_at,
                 'client_started_at' => $request->started_at,
@@ -340,7 +349,7 @@ class OfflineExamController extends Controller
                 'ended_at' => $request->submitted_at,
                 'client_submitted_at' => $request->submitted_at,
                 'server_submitted_at' => now(),
-                'assessment_mode' => $this->resolveAttemptMode(Exam::findOrFail((int) $request->exam_id)),
+                'assessment_mode' => $sitting->assessment_mode_snapshot ?? $resolvedMode,
                 'status' => 'completed',
                 'sync_status' => 'SYNCED',
                 'sync_version' => 1,

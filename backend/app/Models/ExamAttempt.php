@@ -13,6 +13,7 @@ class ExamAttempt extends Model
     protected $fillable = [
         'attempt_uuid',
         'exam_id',
+        'exam_sitting_id',
         'student_id',
         'device_id',
         'started_at',
@@ -60,6 +61,7 @@ class ExamAttempt extends Model
         'sync_version' => 'integer',
         'extra_time_minutes' => 'integer',
         'finalized_by' => 'integer',
+        'exam_sitting_id' => 'integer',
     ];
 
     public function exam(): BelongsTo
@@ -70,6 +72,11 @@ class ExamAttempt extends Model
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
+    }
+
+    public function examSitting(): BelongsTo
+    {
+        return $this->belongsTo(ExamSitting::class, 'exam_sitting_id');
     }
 
     public function examAnswers(): HasMany

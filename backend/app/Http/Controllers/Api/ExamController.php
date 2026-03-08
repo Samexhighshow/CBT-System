@@ -7,6 +7,7 @@ use App\Models\AttemptAction;
 use App\Models\Exam;
 use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
+use App\Models\ExamSitting;
 use App\Models\Question;
 use App\Models\Student;
 use App\Models\SystemSetting;
@@ -15,6 +16,7 @@ use App\Models\SchoolClass;
 use App\Services\RoleScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
@@ -243,6 +245,7 @@ class ExamController extends Controller
         $examData['assessment_type'] = $this->resolveAssessmentType($examData['assessment_type'] ?? null);
 
         $exam = Exam::create($examData);
+        $defaultSitting = ExamSitting::createFromExamTemplate($exam, $this->resolveAttemptMode($exam));
 
         return response()->json([
             'message' => 'Exam created successfully',
@@ -250,6 +253,7 @@ class ExamController extends Controller
             'title' => $exam->title,
             'subject_id' => $exam->subject_id,
             'class_id' => $exam->class_id,
+            'default_sitting_id' => $defaultSitting->id,
             'exam' => $exam->load(['subject', 'schoolClass'])
         ], 201);
     }
@@ -600,6 +604,12 @@ class ExamController extends Controller
     public function startExam(Request $request, $id)
     {
         $exam = Exam::with(['questions'])->findOrFail($id);
+        $resolvedMode = $this->resolveAttemptMode($exam);
+        $sitting = $this->resolveRequestedSitting($request, $exam, $resolvedMode);
+        if (!$sitting) {
+            return response()->json(['message' => 'Invalid sitting for this exam.'], 422);
+        }
+        $attemptMode = $sitting->assessment_mode_snapshot ?? $resolvedMode;
 
         $student = $this->resolveStudentFromRequest($request);
         if (!$student) {
@@ -618,6 +628,9 @@ class ExamController extends Controller
         $existingAttempt = ExamAttempt::where('exam_id', $exam->id)
             ->where('student_id', $student->id)
             ->whereIn('status', ['pending', 'in_progress'])
+            ->when($this->hasExamSittingColumn(), function ($query) use ($sitting) {
+                $query->where('exam_sitting_id', $sitting->id);
+            })
             ->latest('id')
             ->first();
 
@@ -642,6 +655,9 @@ class ExamController extends Controller
             $completedAttemptsCount = ExamAttempt::where('exam_id', $exam->id)
                 ->where('student_id', $student->id)
                 ->whereIn('status', ['completed', 'submitted'])
+                ->when($this->hasExamSittingColumn(), function ($query) use ($sitting) {
+                    $query->where('exam_sitting_id', $sitting->id);
+                })
                 ->count();
 
             if ($completedAttemptsCount >= $maxAttempts) {
@@ -652,15 +668,16 @@ class ExamController extends Controller
         }
 
         $startAt = now();
-        $endsAt = $this->computeAttemptEndsAt($exam, $startAt);
+        $endsAt = $this->computeAttemptEndsAt($exam, $startAt, $sitting);
 
         $attempt = ExamAttempt::create([
             'attempt_uuid' => (string) Str::uuid(),
             'exam_id' => $exam->id,
+            'exam_sitting_id' => $sitting->id,
             'student_id' => $student->id,
             'started_at' => $startAt,
             'ends_at' => $endsAt,
-            'assessment_mode' => $this->resolveAttemptMode($exam),
+            'assessment_mode' => $attemptMode,
             'status' => 'in_progress',
         ]);
 
@@ -670,7 +687,9 @@ class ExamController extends Controller
             'exam' => [
                 'id' => $exam->id,
                 'title' => $exam->title,
-                'duration_minutes' => $exam->duration_minutes,
+                'duration_minutes' => $sitting->duration_minutes ?? $exam->duration_minutes,
+                'sitting_id' => $sitting->id,
+                'assessment_mode_snapshot' => $attemptMode,
             ],
         ], 201);
     }
@@ -699,21 +718,37 @@ class ExamController extends Controller
                 return response()->json(['message' => 'Student authentication required.'], 401);
             }
 
+            $resolvedMode = $this->resolveAttemptMode($exam);
+            $sitting = $this->resolveRequestedSitting($request, $exam, $resolvedMode);
+            if (!$sitting) {
+                return response()->json(['message' => 'Invalid sitting for this exam.'], 422);
+            }
+
             $attempt = ExamAttempt::where('exam_id', $exam->id)
                 ->where('student_id', $student->id)
                 ->whereIn('status', ['pending', 'in_progress'])
+                ->when($this->hasExamSittingColumn(), function ($query) use ($sitting) {
+                    $query->where('exam_sitting_id', $sitting->id);
+                })
                 ->latest('id')
                 ->first();
 
             if (!$attempt) {
+                $resolvedMode = $this->resolveAttemptMode($exam);
+                $sitting = $this->resolveRequestedSitting($request, $exam, $resolvedMode);
+                if (!$sitting) {
+                    return response()->json(['message' => 'Invalid sitting for this exam.'], 422);
+                }
                 $startAt = now();
-                $endsAt = $this->computeAttemptEndsAt($exam, $startAt);
+                $endsAt = $this->computeAttemptEndsAt($exam, $startAt, $sitting);
                 $attempt = ExamAttempt::create([
                     'attempt_uuid' => (string) Str::uuid(),
                     'exam_id' => $exam->id,
+                    'exam_sitting_id' => $sitting->id,
                     'student_id' => $student->id,
                     'started_at' => $startAt,
                     'ends_at' => $endsAt,
+                    'assessment_mode' => $sitting->assessment_mode_snapshot ?? $resolvedMode,
                     'status' => 'in_progress',
                 ]);
             }
@@ -833,17 +868,38 @@ class ExamController extends Controller
         return null;
     }
 
-    private function computeAttemptEndsAt(Exam $exam, Carbon $startAt): ?Carbon
+    private function computeAttemptEndsAt(Exam $exam, Carbon $startAt, ?ExamSitting $sitting = null): ?Carbon
     {
-        $duration = (int) ($exam->duration_minutes ?? 0);
+        $duration = (int) ($sitting?->duration_minutes ?? $exam->duration_minutes ?? 0);
         $endByDuration = $duration > 0 ? $startAt->copy()->addMinutes($duration) : null;
-        $scheduleEnd = $exam->end_datetime ?? $exam->end_time;
+        $scheduleEnd = $sitting?->end_at ?? $exam->end_datetime ?? $exam->end_time;
 
         if ($scheduleEnd && $endByDuration) {
             return $scheduleEnd->lt($endByDuration) ? $scheduleEnd : $endByDuration;
         }
 
         return $scheduleEnd ?? $endByDuration;
+    }
+
+    private function hasExamSittingColumn(): bool
+    {
+        static $hasColumn = null;
+
+        if ($hasColumn === null) {
+            $hasColumn = Schema::hasColumn('exam_attempts', 'exam_sitting_id');
+        }
+
+        return $hasColumn;
+    }
+
+    private function resolveRequestedSitting(Request $request, Exam $exam, string $resolvedMode): ?ExamSitting
+    {
+        $requestedId = (int) ($request->input('exam_sitting_id') ?? 0);
+        if ($requestedId > 0) {
+            return ExamSitting::where('exam_id', $exam->id)->where('id', $requestedId)->first();
+        }
+
+        return ExamSitting::resolveOrCreateDefault($exam, $resolvedMode);
     }
 
     private function resolveAttemptMode(Exam $exam): string

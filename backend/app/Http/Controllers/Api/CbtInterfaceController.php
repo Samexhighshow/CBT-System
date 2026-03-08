@@ -9,6 +9,7 @@ use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptEvent;
 use App\Models\ExamAttemptSession;
+use App\Models\ExamSitting;
 use App\Models\IdempotencyKey;
 use App\Models\Question;
 use App\Models\Student;
@@ -18,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class CbtInterfaceController extends Controller
@@ -57,7 +59,28 @@ class CbtInterfaceController extends Controller
             ->orderByRaw('COALESCE(start_datetime, start_time) asc')
             ->get();
 
-        $payload = $exams->map(function (Exam $exam) use ($student) {
+        $sittingsByExam = collect();
+        if (Schema::hasTable('exam_sittings') && $exams->isNotEmpty()) {
+            $examIds = $exams->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $sittings = ExamSitting::query()
+                ->whereIn('exam_id', $examIds)
+                ->whereIn('status', ['scheduled', 'active'])
+                ->orderBy('start_at')
+                ->orderBy('id')
+                ->get([
+                    'id',
+                    'exam_id',
+                    'assessment_mode_snapshot',
+                    'duration_minutes',
+                    'start_at',
+                    'end_at',
+                    'status',
+                ]);
+
+            $sittingsByExam = $sittings->groupBy('exam_id');
+        }
+
+        $payload = $exams->map(function (Exam $exam) use ($student, $sittingsByExam) {
             $start = $exam->start_datetime ?? $exam->start_time;
             $end = $exam->end_datetime ?? $exam->end_time;
 
@@ -69,6 +92,19 @@ class CbtInterfaceController extends Controller
                 $canAccess = (bool) ($eligibility['eligible'] ?? false);
                 $reason = $eligibility['message'] ?? null;
             }
+
+            $sittings = collect($sittingsByExam->get($exam->id, []))
+                ->map(function (ExamSitting $sitting) {
+                    return [
+                        'id' => (int) $sitting->id,
+                        'assessment_mode_snapshot' => (string) $sitting->assessment_mode_snapshot,
+                        'duration_minutes' => $sitting->duration_minutes,
+                        'start_at' => $sitting->start_at?->toDateTimeString(),
+                        'end_at' => $sitting->end_at?->toDateTimeString(),
+                        'status' => (string) $sitting->status,
+                    ];
+                })
+                ->values();
 
             return [
                 'id' => $exam->id,
@@ -82,6 +118,7 @@ class CbtInterfaceController extends Controller
                 'end_datetime' => $end?->toDateTimeString(),
                 'can_access' => $canAccess,
                 'reason' => $reason,
+                'sittings' => $sittings,
             ];
         })->values();
 
@@ -102,6 +139,7 @@ class CbtInterfaceController extends Controller
             'reg_number' => 'required|string|max:64',
             'access_code' => 'required|string|max:64',
             'device_id' => 'nullable|string|max:255',
+            'sitting_id' => 'nullable|integer|min:1',
         ]);
 
         $exam = Exam::with(['subject:id,name', 'schoolClass:id,name'])->findOrFail($examId);
@@ -151,11 +189,34 @@ class CbtInterfaceController extends Controller
             ], 403);
         }
 
-        $attemptMode = $this->resolveAttemptMode($exam);
+        $assignmentEligibility = $this->validateStudentExamAssignment($exam, $student);
+        if (!($assignmentEligibility['eligible'] ?? false)) {
+            return response()->json([
+                'message' => $assignmentEligibility['message'] ?? 'Exam access denied for this student.',
+                'reason' => $assignmentEligibility['reason'] ?? 'not_eligible',
+                'details' => $assignmentEligibility['details'] ?? null,
+            ], 403);
+        }
+
+        $resolvedMode = $this->resolveAttemptMode($exam);
+        $requestedSittingId = (int) ($validated['sitting_id'] ?? 0);
+        $sitting = $requestedSittingId > 0
+            ? ExamSitting::where('exam_id', $exam->id)->where('id', $requestedSittingId)->first()
+            : ExamSitting::resolveOrCreateDefault($exam, $resolvedMode);
+        if (!$sitting) {
+            return response()->json([
+                'message' => 'Invalid sitting selected for this exam.',
+                'reason' => 'invalid_sitting',
+            ], 422);
+        }
+        $attemptMode = $sitting->assessment_mode_snapshot ?? $resolvedMode;
 
         $activeAttempt = ExamAttempt::where('exam_id', $exam->id)
             ->where('student_id', $student->id)
             ->whereIn('status', ['pending', 'in_progress'])
+            ->when($this->hasExamSittingColumn(), function ($query) use ($sitting) {
+                $query->where('exam_sitting_id', $sitting->id);
+            })
             ->where(function ($q) use ($attemptMode) {
                 $this->applyAttemptModeScope($q, $attemptMode);
             })
@@ -169,6 +230,9 @@ class CbtInterfaceController extends Controller
 
         $latestAttempt = ExamAttempt::where('exam_id', $exam->id)
             ->where('student_id', $student->id)
+            ->when($this->hasExamSittingColumn(), function ($query) use ($sitting) {
+                $query->where('exam_sitting_id', $sitting->id);
+            })
             ->where(function ($q) use ($attemptMode) {
                 $this->applyAttemptModeScope($q, $attemptMode);
             })
@@ -251,6 +315,7 @@ class CbtInterfaceController extends Controller
             $activeAttempt = ExamAttempt::create([
                 'attempt_uuid' => (string) Str::uuid(),
                 'exam_id' => $exam->id,
+                'exam_sitting_id' => $sitting->id,
                 'student_id' => $student->id,
                 'device_id' => $validated['device_id'] ?? null,
                 'started_at' => null,
@@ -324,12 +389,13 @@ class CbtInterfaceController extends Controller
 
         $remainingSeconds = $activeAttempt->ends_at
             ? max(0, now()->diffInSeconds($activeAttempt->ends_at, false))
-            : max(60, ((int) ($exam->duration_minutes ?? 60)) * 60);
+            : max(60, ((int) ($sitting->duration_minutes ?? $exam->duration_minutes ?? 60)) * 60);
 
         return response()->json([
             'message' => 'Access verified successfully.',
             'data' => [
                 'attempt_id' => $activeAttempt->id,
+                'exam_sitting_id' => $activeAttempt->exam_sitting_id,
                 'session_token' => $sessionToken,
                 'status' => $activeAttempt->status,
                 'started_at' => $activeAttempt->started_at?->toIso8601String(),
@@ -342,6 +408,14 @@ class CbtInterfaceController extends Controller
                     'subject' => $exam->subject?->name,
                     'class_level' => $exam->schoolClass?->name,
                     'duration_minutes' => $exam->duration_minutes,
+                ],
+                'sitting' => [
+                    'id' => $sitting->id,
+                    'assessment_mode_snapshot' => $attemptMode,
+                    'duration_minutes' => $sitting->duration_minutes ?? $exam->duration_minutes,
+                    'start_at' => $sitting->start_at?->toDateTimeString(),
+                    'end_at' => $sitting->end_at?->toDateTimeString(),
+                    'status' => $sitting->status,
                 ],
                 'student' => [
                     'id' => $student->id,
@@ -358,7 +432,7 @@ class CbtInterfaceController extends Controller
             'client_started_at' => 'nullable|date',
         ]);
 
-        $attempt = ExamAttempt::with(['exam.subject:id,name', 'exam.schoolClass:id,name'])->findOrFail($attemptId);
+        $attempt = ExamAttempt::with(['exam.subject:id,name', 'exam.schoolClass:id,name', 'examSitting'])->findOrFail($attemptId);
 
         $session = $this->validateSession($request, $attempt);
         if ($session instanceof JsonResponse) {
@@ -382,8 +456,8 @@ class CbtInterfaceController extends Controller
 
         if ($attempt->status !== 'in_progress') {
             $now = now();
-            $examStart = $attempt->exam?->start_datetime ?? $attempt->exam?->start_time;
-            $examEnd = $attempt->exam?->end_datetime ?? $attempt->exam?->end_time;
+            $examStart = $attempt->examSitting?->start_at ?? $attempt->exam?->start_datetime ?? $attempt->exam?->start_time;
+            $examEnd = $attempt->examSitting?->end_at ?? $attempt->exam?->end_datetime ?? $attempt->exam?->end_time;
             if ($examStart instanceof Carbon && $now->lt($examStart)) {
                 return response()->json([
                     'message' => 'Exam has not started yet.',
@@ -397,7 +471,7 @@ class CbtInterfaceController extends Controller
                 ], 409);
             }
 
-            $endsAt = $this->computeEndsAt($attempt->exam, $now);
+            $endsAt = $this->computeEndsAt($attempt->exam, $now, $attempt->examSitting);
             if ($endsAt->lte($now)) {
                 return response()->json([
                     'message' => 'Exam window has already closed.',
@@ -1123,10 +1197,10 @@ class CbtInterfaceController extends Controller
         return $selected->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
     }
 
-    private function computeEndsAt(Exam $exam, Carbon $startedAt): Carbon
+    private function computeEndsAt(Exam $exam, Carbon $startedAt, ?ExamSitting $sitting = null): Carbon
     {
-        $durationEnd = $startedAt->copy()->addMinutes(max(1, (int) ($exam->duration_minutes ?? 60)));
-        $scheduleEnd = $exam->end_datetime ?? $exam->end_time;
+        $durationEnd = $startedAt->copy()->addMinutes(max(1, (int) ($sitting?->duration_minutes ?? $exam->duration_minutes ?? 60)));
+        $scheduleEnd = $sitting?->end_at ?? $exam->end_datetime ?? $exam->end_time;
         $graceMinutes = max(0, (int) SystemSetting::get('exam_end_grace_minutes', 0));
 
         if ($scheduleEnd instanceof Carbon) {
@@ -1145,8 +1219,19 @@ class CbtInterfaceController extends Controller
             return max(0, now()->diffInSeconds($attempt->ends_at, false));
         }
 
-        $durationMinutes = (int) ($attempt->exam?->duration_minutes ?? 60);
+        $durationMinutes = (int) ($attempt->examSitting?->duration_minutes ?? $attempt->exam?->duration_minutes ?? 60);
         return max(60, $durationMinutes * 60);
+    }
+
+    private function hasExamSittingColumn(): bool
+    {
+        static $hasColumn = null;
+
+        if ($hasColumn === null) {
+            $hasColumn = Schema::hasColumn('exam_attempts', 'exam_sitting_id');
+        }
+
+        return $hasColumn;
     }
 
     private function accessMatchesStudent(ExamAccess $access, Student $student): bool
@@ -1160,6 +1245,32 @@ class CbtInterfaceController extends Controller
         }
 
         return false;
+    }
+
+    private function validateStudentExamAssignment(Exam $exam, Student $student): array
+    {
+        if (!$exam->isStudentClassEligible($student)) {
+            return [
+                'eligible' => false,
+                'reason' => 'class_mismatch',
+                'message' => 'This exam is not for your class level.',
+                'details' => $exam->classEligibilityDetails($student),
+            ];
+        }
+
+        if ($exam->subject_id) {
+            $hasSubject = $student->subjects()->where('subject_id', $exam->subject_id)->exists();
+            if (!$hasSubject) {
+                return [
+                    'eligible' => false,
+                    'reason' => 'subject_not_assigned',
+                    'message' => 'You are not enrolled in this subject.',
+                    'details' => ['subject_id' => (int) $exam->subject_id],
+                ];
+            }
+        }
+
+        return ['eligible' => true];
     }
 
     private function resolveAttemptMode(Exam $exam): string

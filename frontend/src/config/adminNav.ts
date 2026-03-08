@@ -41,6 +41,12 @@ export const buildAdminNavLinks = (labels?: {
           icon: "bx-book-content",
         },
         {
+          name: "Assessment Sittings",
+          permissionName: "Exams",
+          path: "/admin/exams/sittings",
+          icon: "bx-calendar-event",
+        },
+        {
           name: accessLabel,
           permissionName: "Exam Access",
           path: "/admin/exam-access",
@@ -123,8 +129,32 @@ export const buildAdminNavLinks = (labels?: {
         {
           name: "Results & Marking",
           permissionName: "Results & Marking",
-          path: "/admin/results",
+          path: "/admin/results/exam",
           icon: "bx-bar-chart-alt-2",
+        },
+        {
+          name: "CA Test Results",
+          permissionName: "Results & Marking",
+          path: "/admin/results/ca",
+          icon: "bx-list-check",
+        },
+        {
+          name: "Exam Results",
+          permissionName: "Results & Marking",
+          path: "/admin/results/exam",
+          icon: "bx-clipboard",
+        },
+        {
+          name: "Compiled Results",
+          permissionName: "Results & Marking",
+          path: "/admin/results/compiled",
+          icon: "bx-line-chart",
+        },
+        {
+          name: "Broadsheet / Reports",
+          permissionName: "Results & Marking",
+          path: "/admin/results/broadsheet",
+          icon: "bx-spreadsheet",
         },
         {
           name: "Marking Workbench",

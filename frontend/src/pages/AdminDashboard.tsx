@@ -4,6 +4,7 @@ import { AdminLayout } from '../components';
 import AdminOverview from './admin/AdminOverview';
 import QuestionBank from './admin/QuestionBank';
 import ExamManagement from './admin/ExamManagement';
+import ExamSittings from './admin/ExamSittings';
 import StudentManagement from './admin/StudentManagement';
 import SubjectManagement from './admin/SubjectManagementNew';
 import ResultsAnalytics from './admin/ResultsAnalytics';
@@ -42,6 +43,7 @@ const AdminDashboard: React.FC = () => {
         <Route index element={<RequirePagePermission permissionName="Overview"><AdminOverview /></RequirePagePermission>} />
         <Route path="questions" element={<RequirePagePermission permissionName="Questions"><QuestionBank /></RequirePagePermission>} />
         <Route path="exams" element={<RequirePagePermission permissionName="Exams"><ExamManagement /></RequirePagePermission>} />
+        <Route path="exams/sittings" element={<RequirePagePermission permissionName="Exams"><ExamSittings /></RequirePagePermission>} />
         <Route path="exam-access" element={<RequirePagePermission permissionName="Exam Access"><ExamAccess /></RequirePagePermission>} />
         <Route path="announcements" element={<RequirePagePermission permissionName="Announcements"><AdminAnnouncements /></RequirePagePermission>} />
         <Route path="students" element={<RequirePagePermission permissionName="Students"><StudentManagement /></RequirePagePermission>} />
@@ -54,6 +56,10 @@ const AdminDashboard: React.FC = () => {
         <Route path="my-teaching-assignment" element={<RequireRole roles={["Teacher"]}><MyTeachingAssignment /></RequireRole>} />
         <Route path="teacher-scope-requests" element={<RequireRole roles={["Main Admin"]}><TeacherScopeRequests /></RequireRole>} />
         <Route path="results" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />
+        <Route path="results/ca" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />
+        <Route path="results/exam" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />
+        <Route path="results/compiled" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />
+        <Route path="results/broadsheet" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />
         <Route path="marking" element={<RequirePagePermission permissionName="Marking Workbench"><MarkingWorkbench /></RequirePagePermission>} />
         <Route path="sync" element={<RequirePagePermission permissionName="Offline Sync"><SyncDashboard /></RequirePagePermission>} />
         <Route path="users" element={<RequireRole roles={["Main Admin"]}><AdminUserManagement /></RequireRole>} />

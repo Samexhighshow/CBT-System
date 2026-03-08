@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\ExamQuestionRandomizationController;
 use App\Http\Controllers\Api\BankQuestionController;
 use App\Http\Controllers\Api\ExamQuestionController;
 use App\Http\Controllers\Api\ExamAccessController;
+use App\Http\Controllers\Api\ExamSittingController;
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\MarkingController;
 use App\Http\Controllers\Api\CbtOfflineController;
@@ -102,6 +103,7 @@ Route::middleware('auth:sanctum')->post('/student/complete-registration', [Stude
 Route::prefix('students')->group(function () {
     Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
         Route::get('/', [StudentController::class, 'index']);
+        Route::post('/admin-register', [StudentController::class, 'store']);
         Route::get('/by-reg-number', [StudentController::class, 'getByRegistrationNumber']);
         Route::get('/by-reg-number/{regNumber}', [StudentController::class, 'getByRegistrationNumber']);
         Route::get('/{id}', [StudentController::class, 'show']);
@@ -135,6 +137,7 @@ Route::prefix('exams')->group(function () {
 
         Route::get('/{id}/questions', [ExamController::class, 'getQuestions']);
         Route::get('/{id}/statistics', [ExamController::class, 'getStatistics']);
+        Route::get('/{id}/sittings', [ExamSittingController::class, 'index']);
 
         // Question randomization and selection (read-only)
         Route::get('/{id}/randomization/preview', [ExamQuestionRandomizationController::class, 'previewSelection']);
@@ -150,6 +153,11 @@ Route::prefix('exams')->group(function () {
         Route::post('/', [ExamController::class, 'store']);
         Route::put('/{id}', [ExamController::class, 'update']);
         Route::delete('/{id}', [ExamController::class, 'destroy']);
+        Route::post('/{id}/sittings', [ExamSittingController::class, 'store']);
+        Route::put('/{id}/sittings/{sittingId}', [ExamSittingController::class, 'update']);
+        Route::delete('/{id}/sittings/{sittingId}', [ExamSittingController::class, 'destroy']);
+        Route::post('/{id}/sittings/{sittingId}/duplicate', [ExamSittingController::class, 'duplicate']);
+        Route::post('/{id}/sittings/bulk-status', [ExamSittingController::class, 'bulkStatusUpdate']);
 
         // PHASE 8: Results visibility control
         Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility']);
@@ -341,6 +349,14 @@ Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.sco
     Route::get('/exam/{examId}/excel', [ReportController::class, 'downloadExamReportExcel']);
     Route::get('/term/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadTermAggregatePdf']);
     Route::get('/term/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadTermAggregateExcel']);
+    Route::get('/broadsheet/class/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadClassBroadsheetPdf']);
+    Route::get('/broadsheet/class/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadClassBroadsheetExcel']);
+    Route::get('/report-cards/class/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadClassReportCardsPdf']);
+    Route::get('/report-cards/class/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadClassReportCardsExcel']);
+    Route::get('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadStudentReportCardPdf']);
+    Route::get('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadStudentReportCardExcel']);
+    Route::get('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/remarks', [ReportController::class, 'getStudentReportCardRemarks']);
+    Route::post('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/remarks', [ReportController::class, 'saveStudentReportCardRemarks']);
     Route::get('/student/{studentId}/pdf', [ReportController::class, 'downloadStudentResultsPdf']);
     Route::get('/student/{studentId}/excel', [ReportController::class, 'downloadStudentResultsExcel']);
 });

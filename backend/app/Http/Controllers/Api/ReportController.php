@@ -8,6 +8,7 @@ use App\Models\Exam;
 use App\Models\Question;
 use App\Models\SchoolClass;
 use App\Models\Student;
+use App\Models\StudentReportCardRemark;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -16,6 +17,9 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\ExamResultsExport;
 use App\Exports\StudentResultsExport;
 use App\Exports\TermAggregateExport;
+use App\Exports\ClassBroadsheetExport;
+use App\Exports\ClassReportCardsExport;
+use App\Exports\StudentReportCardExport;
 use App\Services\RoleScopeService;
 
 class ReportController extends Controller
@@ -60,7 +64,9 @@ class ReportController extends Controller
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
-        $attempts = $this->loadExamReportAttempts($exam)->map(function (ExamAttempt $attempt) {
+        $mode = $this->normalizeAssessmentModeFilter($request->query('mode'));
+
+        $attempts = $this->loadExamReportAttempts($exam, $mode)->map(function (ExamAttempt $attempt) {
             $score = (float) ($attempt->score ?? 0);
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
@@ -121,12 +127,16 @@ class ReportController extends Controller
         return $pdf->download('exam_report_' . $exam->id . '.pdf');
     }
 
-    private function loadExamReportAttempts(Exam $exam): Collection
+    private function loadExamReportAttempts(Exam $exam, ?string $mode = null): Collection
     {
         $baseQuery = ExamAttempt::query()
             ->with(['student.department'])
             ->where('exam_id', $exam->id)
             ->whereNotNull('score');
+
+        if ($mode !== null) {
+            $baseQuery->where('assessment_mode', $mode);
+        }
 
         // Preferred statuses for final report rows.
         $attempts = (clone $baseQuery)
@@ -169,8 +179,15 @@ class ReportController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $exam = \App\Models\Exam::findOrFail($examId);
+        if (!$this->roleScopeService->canManageExam($request->user(), $exam)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $mode = $this->normalizeAssessmentModeFilter($request->query('mode'));
+
         return Excel::download(
-            new ExamResultsExport($examId), 
+            new ExamResultsExport($examId, $mode), 
             'exam_report_' . $examId . '.xlsx'
         );
     }
@@ -208,8 +225,9 @@ class ReportController extends Controller
 
         $pdf = Pdf::loadView('reports.term-aggregate', $data);
         $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
 
-        return $pdf->download('term_aggregate_' . $normalizedSession . '_' . $slugTerm . '_class_' . $classId . '.pdf');
+        return $pdf->download('term_aggregate_' . $safeSession . '_' . $slugTerm . '_class_' . $classId . '.pdf');
     }
 
     /**
@@ -234,11 +252,347 @@ class ReportController extends Controller
 
         $rows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
         $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
 
         return Excel::download(
             new TermAggregateExport($rows),
-            'term_aggregate_' . $normalizedSession . '_' . $slugTerm . '_class_' . $classId . '.xlsx'
+            'term_aggregate_' . $safeSession . '_' . $slugTerm . '_class_' . $classId . '.xlsx'
         );
+    }
+
+    /**
+     * Download full class broadsheet as PDF
+     */
+    public function downloadClassBroadsheetPdf(string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+
+        $data = [
+            'academic_session' => $normalizedSession,
+            'term' => $normalizedTerm,
+            'class_name' => $class->name,
+            'subjects' => $broadsheet['subjects'],
+            'rows' => $broadsheet['rows'],
+            'total_students' => $broadsheet['rows']->count(),
+            'generated_at' => now()->format('Y-m-d H:i:s'),
+        ];
+
+        $pdf = Pdf::loadView('reports.class-broadsheet', $data);
+        $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
+
+        return $pdf->download('class_broadsheet_' . $safeSession . '_' . $slugTerm . '_class_' . $classId . '.pdf');
+    }
+
+    /**
+     * Download full class broadsheet as Excel
+     */
+    public function downloadClassBroadsheetExcel(string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+        $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
+
+        return Excel::download(
+            new ClassBroadsheetExport($broadsheet['subjects'], $broadsheet['rows']),
+            'class_broadsheet_' . $safeSession . '_' . $slugTerm . '_class_' . $classId . '.xlsx'
+        );
+    }
+
+    /**
+     * Download class report-card summary as PDF
+     */
+    public function downloadClassReportCardsPdf(string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+        $reportRows = $this->buildClassReportCardRows($broadsheet['rows'], $broadsheet['subjects']);
+
+        $data = [
+            'academic_session' => $normalizedSession,
+            'term' => $normalizedTerm,
+            'class_name' => $class->name,
+            'subjects' => $broadsheet['subjects'],
+            'rows' => $reportRows,
+            'total_students' => $reportRows->count(),
+            'generated_at' => now()->format('Y-m-d H:i:s'),
+        ];
+
+        $pdf = Pdf::loadView('reports.class-report-cards', $data);
+        $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
+
+        return $pdf->download('class_report_cards_' . $safeSession . '_' . $slugTerm . '_class_' . $classId . '.pdf');
+    }
+
+    /**
+     * Download class report-card summary as Excel
+     */
+    public function downloadClassReportCardsExcel(string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+        $reportRows = $this->buildClassReportCardRows($broadsheet['rows'], $broadsheet['subjects']);
+        $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
+
+        return Excel::download(
+            new ClassReportCardsExport($broadsheet['subjects'], $reportRows),
+            'class_report_cards_' . $safeSession . '_' . $slugTerm . '_class_' . $classId . '.xlsx'
+        );
+    }
+
+    /**
+     * Download a single student's report card as PDF.
+     */
+    public function downloadStudentReportCardPdf(int $studentId, string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+        $reportRows = $this->buildClassReportCardRows($broadsheet['rows'], $broadsheet['subjects']);
+
+        $selected = $reportRows->first(function (array $row) use ($studentId) {
+            return (int) ($row['student_id'] ?? 0) === $studentId;
+        });
+
+        if (!$selected) {
+            return response()->json(['message' => 'Student report card not found for selected class/session/term scope.'], 404);
+        }
+
+        $storedRemarks = $this->fetchStoredReportCardRemarks($studentId, $classId, $normalizedSession, $normalizedTerm);
+        $selected['teacher_remark'] = $this->resolveRemarkValue($storedRemarks['teacher_remark'], $request->query('teacher_remark'));
+        $selected['principal_remark'] = $this->resolveRemarkValue($storedRemarks['principal_remark'], $request->query('principal_remark'));
+
+        $data = [
+            'academic_session' => $normalizedSession,
+            'term' => $normalizedTerm,
+            'class_name' => $class->name,
+            'subjects' => $broadsheet['subjects'],
+            'row' => $selected,
+            'generated_at' => now()->format('Y-m-d H:i:s'),
+        ];
+
+        $pdf = Pdf::loadView('reports.student-report-card', $data);
+        $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
+
+        return $pdf->download('student_report_card_' . $studentId . '_' . $safeSession . '_' . $slugTerm . '.pdf');
+    }
+
+    /**
+     * Download a single student's report card as Excel.
+     */
+    public function downloadStudentReportCardExcel(int $studentId, string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+        $reportRows = $this->buildClassReportCardRows($broadsheet['rows'], $broadsheet['subjects']);
+
+        $selected = $reportRows->first(function (array $row) use ($studentId) {
+            return (int) ($row['student_id'] ?? 0) === $studentId;
+        });
+
+        if (!$selected) {
+            return response()->json(['message' => 'Student report card not found for selected class/session/term scope.'], 404);
+        }
+
+        $storedRemarks = $this->fetchStoredReportCardRemarks($studentId, $classId, $normalizedSession, $normalizedTerm);
+        $selected['teacher_remark'] = $this->resolveRemarkValue($storedRemarks['teacher_remark'], $request->query('teacher_remark'));
+        $selected['principal_remark'] = $this->resolveRemarkValue($storedRemarks['principal_remark'], $request->query('principal_remark'));
+
+        $slugTerm = strtolower(str_replace(' ', '_', $normalizedTerm));
+        $safeSession = $this->safeFilenameSession($normalizedSession);
+
+        return Excel::download(
+            new StudentReportCardExport($broadsheet['subjects'], $selected),
+            'student_report_card_' . $studentId . '_' . $safeSession . '_' . $slugTerm . '.xlsx'
+        );
+    }
+
+    public function getStudentReportCardRemarks(int $studentId, string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+        $reportRows = $this->buildClassReportCardRows($broadsheet['rows'], $broadsheet['subjects']);
+        $selected = $reportRows->first(fn (array $row) => (int) ($row['student_id'] ?? 0) === $studentId);
+        if (!$selected) {
+            return response()->json(['message' => 'Student report card not found for selected class/session/term scope.'], 404);
+        }
+
+        $stored = $this->fetchStoredReportCardRemarks($studentId, $classId, $normalizedSession, $normalizedTerm);
+
+        return response()->json([
+            'data' => [
+                'student_id' => $studentId,
+                'class_id' => $classId,
+                'academic_session' => $normalizedSession,
+                'term' => $normalizedTerm,
+                'teacher_remark' => $stored['teacher_remark'],
+                'principal_remark' => $stored['principal_remark'],
+            ],
+        ]);
+    }
+
+    public function saveStudentReportCardRemarks(int $studentId, string $session, string $term, int $classId, Request $request)
+    {
+        if (!$this->isStaffRole($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $normalizedSession = $this->normalizeSessionSlug($session);
+        $normalizedTerm = $this->normalizeTerm($term);
+        if (!in_array($normalizedTerm, ['First Term', 'Second Term', 'Third Term'], true)) {
+            return response()->json(['message' => 'Invalid term supplied.'], 422);
+        }
+
+        $class = SchoolClass::findOrFail($classId);
+        if (!$this->roleScopeService->canManageClass($request->user(), $class)) {
+            return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
+        }
+
+        $termRows = $this->buildTermAggregateRows($normalizedSession, $normalizedTerm, $class, $request->user());
+        $broadsheet = $this->buildClassBroadsheetRows($termRows);
+        $reportRows = $this->buildClassReportCardRows($broadsheet['rows'], $broadsheet['subjects']);
+        $selected = $reportRows->first(fn (array $row) => (int) ($row['student_id'] ?? 0) === $studentId);
+        if (!$selected) {
+            return response()->json(['message' => 'Student report card not found for selected class/session/term scope.'], 404);
+        }
+
+        $teacherRemark = $this->sanitizeRemark($request->input('teacher_remark'));
+        $principalRemark = $this->sanitizeRemark($request->input('principal_remark'));
+
+        StudentReportCardRemark::query()->updateOrCreate(
+            [
+                'student_id' => $studentId,
+                'class_id' => $classId,
+                'academic_session' => $normalizedSession,
+                'term' => $normalizedTerm,
+            ],
+            [
+                'teacher_remark' => $teacherRemark,
+                'principal_remark' => $principalRemark,
+                'updated_by' => (int) ($request->user()->id ?? 0) ?: null,
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Report-card remarks saved successfully.',
+            'data' => [
+                'student_id' => $studentId,
+                'class_id' => $classId,
+                'academic_session' => $normalizedSession,
+                'term' => $normalizedTerm,
+                'teacher_remark' => $teacherRemark,
+                'principal_remark' => $principalRemark,
+            ],
+        ]);
     }
 
     /**
@@ -571,6 +925,7 @@ class ReportController extends Controller
             $first = collect($studentRecords)->first();
             foreach ($subjectRows as $subjectRow) {
                 $rows->push([
+                    'student_id' => (int) ($first['student_id'] ?? 0),
                     'student_name' => (string) ($first['student_name'] ?? 'Unknown'),
                     'registration_number' => (string) ($first['registration_number'] ?? '-'),
                     'class_level' => (string) ($first['class_level'] ?? '-'),
@@ -632,6 +987,167 @@ class ReportController extends Controller
         }
 
         return round($weightedTotal / $totalWeight, 2);
+    }
+
+    /**
+     * Pivot subject-level aggregate rows into full class broadsheet rows.
+     */
+    private function buildClassBroadsheetRows(Collection $termRows): array
+    {
+        $subjects = $termRows
+            ->pluck('subject')
+            ->map(fn ($subject) => trim((string) $subject))
+            ->filter(fn ($subject) => $subject !== '')
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $rows = $termRows
+            ->groupBy(function (array $row) {
+                $reg = strtolower(trim((string) ($row['registration_number'] ?? '')));
+                $name = strtolower(trim((string) ($row['student_name'] ?? '')));
+                return $reg . '|' . $name;
+            })
+            ->map(function (Collection $studentRows) use ($subjects) {
+                $first = $studentRows->first();
+                $subjectScores = [];
+                $available = [];
+
+                foreach ($subjects as $subject) {
+                    $score = $studentRows
+                        ->filter(fn (array $row) => (string) ($row['subject'] ?? '') === $subject)
+                        ->pluck('compiled_score')
+                        ->filter(fn ($value) => $value !== null)
+                        ->map(fn ($value) => (float) $value)
+                        ->first();
+
+                    $subjectScores[$subject] = $score !== null ? round($score, 2) : null;
+                    if ($score !== null) {
+                        $available[] = (float) $score;
+                    }
+                }
+
+                $average = count($available) > 0
+                    ? round(array_sum($available) / count($available), 2)
+                    : null;
+
+                return [
+                    'student_id' => (int) ($first['student_id'] ?? 0),
+                    'student_name' => (string) ($first['student_name'] ?? 'Unknown'),
+                    'registration_number' => (string) ($first['registration_number'] ?? '-'),
+                    'class_level' => (string) ($first['class_level'] ?? '-'),
+                    'subject_scores' => $subjectScores,
+                    'average_score' => $average,
+                    'position' => null,
+                    'overall_grade' => '-',
+                ];
+            })
+            ->values()
+            ->sortBy([
+                ['student_name', 'asc'],
+            ])
+            ->values();
+
+        $ranked = $rows->sortByDesc(function (array $row) {
+            return $row['average_score'] ?? -1;
+        })->values();
+
+        $position = 0;
+        $index = 0;
+        $previousScore = null;
+        $ranked = $ranked->map(function (array $row) use (&$position, &$index, &$previousScore) {
+            $index++;
+            $score = $row['average_score'];
+            if ($score === null) {
+                $row['position'] = null;
+                $row['overall_grade'] = '-';
+                return $row;
+            }
+
+            $scoreFloat = (float) $score;
+            if ($previousScore === null || abs($scoreFloat - $previousScore) > 0.00001) {
+                $position = $index;
+                $previousScore = $scoreFloat;
+            }
+
+            $row['position'] = $position;
+            $row['overall_grade'] = $this->gradeFromPercentage($scoreFloat);
+            return $row;
+        });
+
+        $sortedRows = $ranked
+            ->sortBy([
+                ['position', 'asc'],
+                ['student_name', 'asc'],
+            ])
+            ->values();
+
+        return [
+            'subjects' => $subjects,
+            'rows' => $sortedRows,
+        ];
+    }
+
+    private function gradeFromPercentage(float $percentage): string
+    {
+        if ($percentage >= 70) {
+            return 'A';
+        }
+        if ($percentage >= 60) {
+            return 'B';
+        }
+        if ($percentage >= 50) {
+            return 'C';
+        }
+        if ($percentage >= 45) {
+            return 'D';
+        }
+        if ($percentage >= 40) {
+            return 'E';
+        }
+        return 'F';
+    }
+
+    private function buildClassReportCardRows(Collection $rows, array $subjects): Collection
+    {
+        return $rows->map(function (array $row) use ($subjects) {
+            $scores = collect($subjects)
+                ->map(fn (string $subject) => data_get($row, 'subject_scores.' . $subject))
+                ->filter(fn ($score) => $score !== null)
+                ->map(fn ($score) => (float) $score)
+                ->values();
+
+            $totalSubjects = $scores->count();
+            $passedSubjects = $scores->filter(fn (float $score) => $score >= 50.0)->count();
+            $passRate = $totalSubjects > 0 ? round(($passedSubjects / $totalSubjects) * 100, 1) : null;
+
+            $average = isset($row['average_score']) && $row['average_score'] !== null
+                ? (float) $row['average_score']
+                : null;
+
+            if ($average === null) {
+                $remarks = 'No score available';
+            } elseif ($average >= 70) {
+                $remarks = 'Excellent';
+            } elseif ($average >= 60) {
+                $remarks = 'Very Good';
+            } elseif ($average >= 50) {
+                $remarks = 'Good';
+            } elseif ($average >= 45) {
+                $remarks = 'Fair';
+            } elseif ($average >= 40) {
+                $remarks = 'Needs Improvement';
+            } else {
+                $remarks = 'Poor';
+            }
+
+            $row['total_subjects'] = $totalSubjects;
+            $row['passed_subjects'] = $passedSubjects;
+            $row['pass_rate'] = $passRate;
+            $row['remarks'] = $remarks;
+            return $row;
+        })->values();
     }
 
     private function resolveAttemptTotalMarks(ExamAttempt $attempt): float
@@ -800,6 +1316,61 @@ class ReportController extends Controller
         }
 
         return str_replace('_', '/', $decoded);
+    }
+
+    private function safeFilenameSession(string $session): string
+    {
+        $value = trim($session);
+        if ($value === '') {
+            return 'session';
+        }
+
+        return str_replace(['/', '\\', ' '], ['-', '-', '_'], $value);
+    }
+
+    private function sanitizeRemark(mixed $value): string
+    {
+        $text = trim((string) ($value ?? ''));
+        if ($text === '') {
+            return '-';
+        }
+
+        return mb_substr($text, 0, 500);
+    }
+
+    private function fetchStoredReportCardRemarks(int $studentId, int $classId, string $session, string $term): array
+    {
+        $row = StudentReportCardRemark::query()
+            ->where('student_id', $studentId)
+            ->where('class_id', $classId)
+            ->where('academic_session', $session)
+            ->where('term', $term)
+            ->first();
+
+        return [
+            'teacher_remark' => $this->sanitizeRemark($row?->teacher_remark),
+            'principal_remark' => $this->sanitizeRemark($row?->principal_remark),
+        ];
+    }
+
+    private function resolveRemarkValue(?string $storedValue, mixed $requestValue): string
+    {
+        $incoming = trim((string) ($requestValue ?? ''));
+        if ($incoming !== '') {
+            return $this->sanitizeRemark($incoming);
+        }
+
+        return $this->sanitizeRemark($storedValue);
+    }
+
+    private function normalizeAssessmentModeFilter(mixed $mode): ?string
+    {
+        $value = strtolower(trim((string) ($mode ?? '')));
+        return match ($value) {
+            'ca', 'ca_test', 'catest' => 'ca_test',
+            'exam', 'final_exam', 'final exam' => 'exam',
+            default => null,
+        };
     }
 
     private function boundedSetting(string $key, float $default, float $min, float $max): float

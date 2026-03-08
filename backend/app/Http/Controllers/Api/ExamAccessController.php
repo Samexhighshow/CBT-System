@@ -89,6 +89,13 @@ class ExamAccessController extends Controller
 
             if ($request->has('student_id')) {
                 $student = Student::findOrFail($request->student_id);
+                $eligibility = $this->validateStudentExamAssignment($exam, $student);
+                if (!($eligibility['eligible'] ?? false)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $eligibility['message'] ?? 'Student is not eligible for this exam.',
+                    ], 422);
+                }
                 $expiresAt = $this->resolveExpiryForExam($exam);
 
                 [$access, $rotatedCount] = DB::transaction(function () use ($exam, $student, $expiresAt) {
@@ -146,6 +153,12 @@ class ExamAccessController extends Controller
 
                 if (!$student) {
                     $errors[] = "Student with reg number {$regNumber} not found";
+                    continue;
+                }
+
+                $eligibility = $this->validateStudentExamAssignment($exam, $student);
+                if (!($eligibility['eligible'] ?? false)) {
+                    $errors[] = "{$regNumber}: " . ($eligibility['message'] ?? 'Student is not eligible for this exam.');
                     continue;
                 }
                 $expiresAt = $this->resolveExpiryForExam($exam);
@@ -287,6 +300,16 @@ class ExamAccessController extends Controller
             $student = $access->student;
             $exam = Exam::find($access->exam_id);
             $attemptMode = $this->resolveAttemptMode($exam);
+
+            if ($student && $exam) {
+                $eligibility = $this->validateStudentExamAssignment($exam, $student);
+                if (!($eligibility['eligible'] ?? false)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $eligibility['message'] ?? 'Student is not eligible for this exam.',
+                    ], 403);
+                }
+            }
 
             if ($regNumber !== '' && $student && strtoupper((string) $student->registration_number) !== $regNumber) {
                 return response()->json([
@@ -611,5 +634,32 @@ class ExamAccessController extends Controller
             $q->where('assessment_mode', 'exam')
                 ->orWhereNull('assessment_mode');
         });
+    }
+
+    private function validateStudentExamAssignment(Exam $exam, Student $student): array
+    {
+        if (!$exam->isStudentClassEligible($student)) {
+            $details = $exam->classEligibilityDetails($student);
+            return [
+                'eligible' => false,
+                'message' => sprintf(
+                    'Class mismatch. Exam is for %s, student is in %s.',
+                    $details['required_class'] ?? 'Unknown',
+                    $details['your_class'] ?? 'Unknown'
+                ),
+            ];
+        }
+
+        if ($exam->subject_id) {
+            $hasSubject = $student->subjects()->where('subject_id', $exam->subject_id)->exists();
+            if (!$hasSubject) {
+                return [
+                    'eligible' => false,
+                    'message' => 'Student is not assigned to this subject.',
+                ];
+            }
+        }
+
+        return ['eligible' => true];
     }
 }

@@ -197,6 +197,36 @@ class RoleScopeService
             ->all();
     }
 
+    public function activeScopesForRole(User $user, string $roleName): Collection
+    {
+        if ($this->isAdminBypass($user)) {
+            return collect();
+        }
+
+        $normalizedRole = strtolower(trim($roleName));
+        if ($normalizedRole === '') {
+            return collect();
+        }
+
+        return RoleScope::query()
+            ->where('user_id', $user->id)
+            ->where('is_active', true)
+            ->where('status', 'approved')
+            ->where('role_name', $normalizedRole)
+            ->get();
+    }
+
+    public function scopedClassIdsForRole(User $user, string $roleName): array
+    {
+        return $this->activeScopesForRole($user, $roleName)
+            ->pluck('class_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     public function scopedExamIds(User $user): array
     {
         return $this->activeScopesForUser($user)
@@ -301,23 +331,35 @@ class RoleScopeService
             return $query;
         }
 
-        $examIds = $this->scopedExamIds($user);
-        $subjectIds = $this->scopedSubjectIds($user);
-        $classIds = $this->scopedClassIds($user);
-
-        if (empty($examIds) && empty($subjectIds) && empty($classIds)) {
+        $scopes = $this->activeScopesForUser($user);
+        if ($scopes->isEmpty()) {
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->where(function ($q) use ($examIdColumn, $subjectIdColumn, $classIdColumn, $examIds, $subjectIds, $classIds) {
-            if (!empty($examIds)) {
-                $q->orWhereIn($examIdColumn, $examIds);
-            }
-            if (!empty($subjectIds)) {
-                $q->orWhereIn($subjectIdColumn, $subjectIds);
-            }
-            if ($classIdColumn && !empty($classIds)) {
-                $q->orWhereIn($classIdColumn, $classIds);
+        return $query->where(function ($outer) use ($scopes, $examIdColumn, $subjectIdColumn, $classIdColumn) {
+            foreach ($scopes as $scope) {
+                $outer->orWhere(function ($inner) use ($scope, $examIdColumn, $subjectIdColumn, $classIdColumn) {
+                    $hasConstraint = false;
+
+                    if (!is_null($scope->exam_id)) {
+                        $inner->where($examIdColumn, (int) $scope->exam_id);
+                        $hasConstraint = true;
+                    }
+
+                    if (!is_null($scope->subject_id)) {
+                        $inner->where($subjectIdColumn, (int) $scope->subject_id);
+                        $hasConstraint = true;
+                    }
+
+                    if ($classIdColumn && !is_null($scope->class_id)) {
+                        $inner->where($classIdColumn, (int) $scope->class_id);
+                        $hasConstraint = true;
+                    }
+
+                    if (!$hasConstraint) {
+                        $inner->whereRaw('1 = 0');
+                    }
+                });
             }
         });
     }

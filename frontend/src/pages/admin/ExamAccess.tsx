@@ -4,7 +4,11 @@ import { showSuccess, showError } from '../../utils/alerts';
 import useConnectivity from '../../hooks/useConnectivity';
 import offlineDB, { AccessCodeRecord } from '../../services/offlineDB';
 import syncService from '../../services/syncService';
-import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
+import {
+  AssessmentDisplayMode,
+  defaultAssessmentDisplayConfig,
+  fetchAssessmentDisplayConfig,
+} from '../../services/assessmentDisplay';
 import { runWithRetry } from '../../utils/requestRetry';
 
 interface Exam {
@@ -58,6 +62,7 @@ const ExamAccess: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterUsed, setFilterUsed] = useState<'all' | 'used' | 'unused'>('all');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [assessmentMode, setAssessmentMode] = useState<AssessmentDisplayMode>(defaultAssessmentDisplayConfig.mode);
   const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
 
   // Bulk generation states
@@ -188,6 +193,7 @@ const ExamAccess: React.FC = () => {
     const loadAssessmentLabels = async () => {
       const config = await fetchAssessmentDisplayConfig();
       setAssessmentLabels(config.labels);
+      setAssessmentMode(config.mode);
     };
 
     loadAssessmentLabels();
@@ -746,6 +752,28 @@ const ExamAccess: React.FC = () => {
     return matchesSearch && matchesFilter;
   });
 
+  const modeMeta = (() => {
+    if (assessmentMode === 'ca_test') {
+      return {
+        badge: 'CA TEST WINDOW',
+        text: 'All newly generated codes and attempts are currently treated as CA Test records.',
+        classes: 'border-amber-200 bg-amber-50 text-amber-900',
+      };
+    }
+    if (assessmentMode === 'exam') {
+      return {
+        badge: 'FINAL EXAM WINDOW',
+        text: 'All newly generated codes and attempts are currently treated as Final Exam records.',
+        classes: 'border-blue-200 bg-blue-50 text-blue-900',
+      };
+    }
+    return {
+      badge: 'AUTO WINDOW',
+      text: 'Assessment mode is set to Auto. Attempts follow per-exam fallback mode resolution.',
+      classes: 'border-slate-200 bg-slate-50 text-slate-900',
+    };
+  })();
+
   return (
     <div className="app-shell py-6">
       <div className="space-y-6">
@@ -776,6 +804,11 @@ const ExamAccess: React.FC = () => {
               <span>Generate Bulk Codes</span>
             </button>
           </div>
+        </div>
+
+        <div className={`rounded-lg border px-4 py-3 text-sm ${modeMeta.classes}`}>
+          <p className="font-semibold tracking-wide">{modeMeta.badge}</p>
+          <p className="mt-1">{modeMeta.text}</p>
         </div>
 
         {/* Main Form Card */}

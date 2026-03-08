@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, SkeletonCard, SkeletonList } from '../../components';
 import { api } from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
@@ -78,8 +78,9 @@ const normalizeAssessmentWindowMode = (value: unknown): AssessmentWindowMode => 
 
 const ResultsAnalytics: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'exam' | 'term'>('exam');
+  const [activeTab, setActiveTab] = useState<'ca' | 'exam' | 'compiled' | 'broadsheet'>('exam');
   const [exportLoading, setExportLoading] = useState(false);
   const [analytics, setAnalytics] = useState<AnalyticsData>({
     average_score: 0,
@@ -105,7 +106,51 @@ const ResultsAnalytics: React.FC = () => {
   const [assessmentWindowMode, setAssessmentWindowMode] = useState<AssessmentWindowMode>('auto');
   const [examResults, setExamResults] = useState<AttemptSummary[]>([]);
   const [resultsPage, setResultsPage] = useState(1);
+  const [reportCardStudentId, setReportCardStudentId] = useState<string>('');
+  const [teacherRemark, setTeacherRemark] = useState<string>('');
+  const [principalRemark, setPrincipalRemark] = useState<string>('');
+  const [remarksLoading, setRemarksLoading] = useState(false);
+  const [remarksSaving, setRemarksSaving] = useState(false);
   const resultsPerPage = 10;
+
+  const activeRouteTab = useMemo<'ca' | 'exam' | 'compiled' | 'broadsheet'>(() => {
+    const path = location.pathname.toLowerCase();
+    if (path.endsWith('/ca')) return 'ca';
+    if (path.endsWith('/compiled')) return 'compiled';
+    if (path.endsWith('/broadsheet')) return 'broadsheet';
+    return 'exam';
+  }, [location.pathname]);
+
+  useEffect(() => {
+    setActiveTab(activeRouteTab);
+    setResultsPage(1);
+  }, [activeRouteTab]);
+
+  const tabRoutePath = (tab: 'ca' | 'exam' | 'compiled' | 'broadsheet'): string => {
+    if (tab === 'ca') return '/admin/results/ca';
+    if (tab === 'compiled') return '/admin/results/compiled';
+    if (tab === 'broadsheet') return '/admin/results/broadsheet';
+    return '/admin/results/exam';
+  };
+
+  const goToTab = (tab: 'ca' | 'exam' | 'compiled' | 'broadsheet') => {
+    const nextPath = tabRoutePath(tab);
+    const params = new URLSearchParams(location.search);
+    if (examId) {
+      params.set('examId', examId);
+    }
+    const search = params.toString();
+    navigate(search ? `${nextPath}?${search}` : nextPath);
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const routeExamId = params.get('examId');
+    if (routeExamId && routeExamId !== examId) {
+      setExamId(routeExamId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   useEffect(() => {
     let isActive = true;
@@ -529,6 +574,84 @@ const ResultsAnalytics: React.FC = () => {
   const selectedClassId = Number(selectedExam?.class_id || 0);
   const canExportTermAggregate = !!selectedExam && !!selectedTerm && !!selectedSession && selectedClassId > 0;
 
+  const reportCardStudents = useMemo(() => {
+    const map = new Map<number, { id: number; student_name: string; registration_number: string; class_level: string }>();
+    compiledRows.forEach((row) => {
+      const sid = Number(row.student_id || 0);
+      if (sid <= 0 || map.has(sid)) return;
+      map.set(sid, {
+        id: sid,
+        student_name: row.student_name || 'Unknown',
+        registration_number: row.registration_number || '-',
+        class_level: row.class_level || '-',
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.student_name.localeCompare(b.student_name));
+  }, [compiledRows]);
+
+  useEffect(() => {
+    if (reportCardStudents.length === 0) {
+      setReportCardStudentId('');
+      return;
+    }
+
+    const exists = reportCardStudents.some((student) => String(student.id) === reportCardStudentId);
+    if (!exists) {
+      setReportCardStudentId(String(reportCardStudents[0].id));
+    }
+  }, [reportCardStudents, reportCardStudentId]);
+
+  useEffect(() => {
+    const loadRemarks = async () => {
+      if (!canExportTermAggregate || !reportCardStudentId) {
+        setTeacherRemark('');
+        setPrincipalRemark('');
+        return;
+      }
+
+      try {
+        setRemarksLoading(true);
+        const response = await api.get(
+          `/reports/report-cards/student/${encodeURIComponent(reportCardStudentId)}/session/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/remarks`
+        );
+        const data = response.data?.data || {};
+        setTeacherRemark(String(data.teacher_remark || '').replace(/^-$/, ''));
+        setPrincipalRemark(String(data.principal_remark || '').replace(/^-$/, ''));
+      } catch (error: any) {
+        setTeacherRemark('');
+        setPrincipalRemark('');
+        showError(error?.response?.data?.message || 'Failed to load saved remarks.');
+      } finally {
+        setRemarksLoading(false);
+      }
+    };
+
+    loadRemarks();
+  }, [canExportTermAggregate, reportCardStudentId, selectedSession, selectedTerm, selectedClassId]);
+
+  const saveReportCardRemarks = async () => {
+    if (!canExportTermAggregate || !reportCardStudentId) {
+      showError('Select exam context and a student before saving remarks.');
+      return;
+    }
+
+    try {
+      setRemarksSaving(true);
+      await api.post(
+        `/reports/report-cards/student/${encodeURIComponent(reportCardStudentId)}/session/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/remarks`,
+        {
+          teacher_remark: teacherRemark,
+          principal_remark: principalRemark,
+        }
+      );
+      showSuccess('Report-card remarks saved.');
+    } catch (error: any) {
+      showError(error?.response?.data?.message || 'Failed to save report-card remarks.');
+    } finally {
+      setRemarksSaving(false);
+    }
+  };
+
   const releaseSelectedExam = async (release: boolean) => {
     if (!selectedExam) {
       showError('Select an exam first.');
@@ -558,11 +681,32 @@ const ResultsAnalytics: React.FC = () => {
     });
   }, [examResults, studentName]);
 
-  const totalResultPages = Math.max(1, Math.ceil(filteredExamResults.length / resultsPerPage));
+  const isCaAttemptRow = (row: AttemptSummary): boolean => {
+    const label = String(row.assessment_type || '').trim().toLowerCase();
+    return label === 'ca test' || label === 'ca' || label.includes('continuous assessment') || label.includes('quiz') || label.includes('midterm');
+  };
+
+  const caOnlyRows = useMemo(
+    () => filteredExamResults.filter((row) => isCaAttemptRow(row)),
+    [filteredExamResults]
+  );
+
+  const examOnlyRows = useMemo(
+    () => filteredExamResults.filter((row) => !isCaAttemptRow(row)),
+    [filteredExamResults]
+  );
+
+  const selectedAttemptRows = useMemo(() => {
+    if (activeTab === 'ca') return caOnlyRows;
+    if (activeTab === 'exam') return examOnlyRows;
+    return filteredExamResults;
+  }, [activeTab, caOnlyRows, examOnlyRows, filteredExamResults]);
+
+  const totalResultPages = Math.max(1, Math.ceil(selectedAttemptRows.length / resultsPerPage));
   const currentResultRows = useMemo(() => {
     const start = (resultsPage - 1) * resultsPerPage;
-    return filteredExamResults.slice(start, start + resultsPerPage);
-  }, [filteredExamResults, resultsPage]);
+    return selectedAttemptRows.slice(start, start + resultsPerPage);
+  }, [selectedAttemptRows, resultsPage]);
 
   const normalizeResultStatus = (row: AttemptSummary): 'Submitted' | 'Marked' | 'Finalized' | 'Released' => {
     if (selectedExam?.results_released) return 'Released';
@@ -832,55 +976,94 @@ const ResultsAnalytics: React.FC = () => {
         <Card className="panel-compact">
           <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
             <button
+              className={`btn-compact ${activeTab === 'ca' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
+              onClick={() => goToTab('ca')}
+              title="CA Test Results tab shows only CA/Test attempts"
+            >
+              CA Test Results
+            </button>
+            <button
               className={`btn-compact ${activeTab === 'exam' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
-              onClick={() => setActiveTab('exam')}
-              title="Exam Results tab shows single-attempt ranking and status per selected exam"
+              onClick={() => goToTab('exam')}
+              title="Exam Results tab shows only final exam attempts"
             >
               Exam Results
             </button>
             <button
-              className={`btn-compact ${activeTab === 'term' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
-              onClick={() => setActiveTab('term')}
-              title="Term Aggregate tab shows CA + Exam compiled scores by subject for selected exam context"
+              className={`btn-compact ${activeTab === 'compiled' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
+              onClick={() => goToTab('compiled')}
+              title="Compiled Results tab shows CA + Exam compiled scores by subject for selected exam context"
             >
-              Term Aggregate
+              Compiled Results
+            </button>
+            <button
+              className={`btn-compact ${activeTab === 'broadsheet' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
+              onClick={() => goToTab('broadsheet')}
+              title="Broadsheet and report actions"
+            >
+              Broadsheet / Reports
             </button>
           </div>
         </Card>
 
-        {activeTab === 'exam' && <Card className="panel-compact">
+        <Card className="panel-compact border border-slate-200/90 bg-gradient-to-br from-slate-50 via-white to-slate-100/40">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Workflow Shortcuts</h2>
+              <p className="text-xs text-slate-600 mt-1">Open dedicated pages for CA, Exam, Compiled, and Broadsheet workflows.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-compact bg-sky-600 text-white hover:bg-sky-700" onClick={() => goToTab('ca')}>Open CA Workflow</button>
+              <button className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700" onClick={() => goToTab('exam')}>Open Exam Workflow</button>
+              <button className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => goToTab('compiled')}>Open Compiled Workflow</button>
+              <button className="btn-compact bg-slate-700 text-white hover:bg-slate-800" onClick={() => goToTab('broadsheet')}>Open Broadsheet</button>
+            </div>
+          </div>
+        </Card>
+
+        {(activeTab === 'ca' || activeTab === 'exam') && <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">
-                {selectedExam ? `Exam Results – ${selectedExam.title}` : 'Result Summary'}
+                {selectedExam
+                  ? `${activeTab === 'ca' ? 'CA Test Results' : 'Exam Results'} – ${selectedExam.title}`
+                  : 'Result Summary'}
               </h2>
               <p className="text-xs text-slate-500">
-                Subject Position is ranked within this exam result list.
+                {activeTab === 'ca'
+                  ? 'CA-only attempt list. Use this for CA export, print, and review.'
+                  : 'Exam-only attempt list. Use this for final exam export, print, and review.'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {!!examId && (
                 <span className="text-xs text-slate-500">
-                  {filteredExamResults.length} row(s) • Page {Math.min(resultsPage, totalResultPages)} of {totalResultPages}
+                  {selectedAttemptRows.length} row(s) • Page {Math.min(resultsPage, totalResultPages)} of {totalResultPages}
                 </span>
               )}
               {!!examId && (
                 <>
                   <button
                     className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                    onClick={() => downloadReport(`/reports/exam/${examId}/pdf`, `exam_report_${examId}.pdf`)}
+                    onClick={() => downloadReport(
+                      `/reports/exam/${examId}/pdf?mode=${activeTab === 'ca' ? 'ca_test' : 'exam'}`,
+                      `${activeTab === 'ca' ? 'ca' : 'exam'}_report_${examId}.pdf`
+                    )}
                     disabled={exportLoading}
-                    title="Download printable exam result sheet (PDF)"
+                    title={activeTab === 'ca' ? 'Download printable CA result sheet (PDF)' : 'Download printable exam result sheet (PDF)'}
                   >
-                    Print Sheet (PDF)
+                    {activeTab === 'ca' ? 'Print CA Sheet (PDF)' : 'Print Exam Sheet (PDF)'}
                   </button>
                   <button
                     className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                    onClick={() => downloadReport(`/reports/exam/${examId}/excel`, `exam_report_${examId}.xlsx`)}
+                    onClick={() => downloadReport(
+                      `/reports/exam/${examId}/excel?mode=${activeTab === 'ca' ? 'ca_test' : 'exam'}`,
+                      `${activeTab === 'ca' ? 'ca' : 'exam'}_report_${examId}.xlsx`
+                    )}
                     disabled={exportLoading}
-                    title="Export exam result sheet (Excel)"
+                    title={activeTab === 'ca' ? 'Export CA result sheet (Excel)' : 'Export exam result sheet (Excel)'}
                   >
-                    Export Excel
+                    {activeTab === 'ca' ? 'Export CA Excel' : 'Export Exam Excel'}
                   </button>
                 </>
               )}
@@ -888,11 +1071,13 @@ const ResultsAnalytics: React.FC = () => {
           </div>
 
           {!examId ? (
-            <p className="text-sm text-slate-500">Select an exam to view exam results.</p>
+            <p className="text-sm text-slate-500">Select an exam to view results.</p>
           ) : loading ? (
             <SkeletonList items={4} />
-          ) : filteredExamResults.length === 0 ? (
-            <p className="text-sm text-slate-500">No exam results found for this filter.</p>
+          ) : selectedAttemptRows.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              {activeTab === 'ca' ? 'No CA test results found for this filter.' : 'No exam results found for this filter.'}
+            </p>
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -901,9 +1086,8 @@ const ResultsAnalytics: React.FC = () => {
                     <tr className="bg-gray-50 text-gray-700 border-b">
                       <th className="px-3 py-2 text-left font-semibold">Student</th>
                       <th className="px-3 py-2 text-left font-semibold">Class</th>
-                      <th className="px-3 py-2 text-left font-semibold">Score (%)</th>
+                      <th className="px-3 py-2 text-left font-semibold">{activeTab === 'ca' ? 'CA Score (%)' : 'Exam Score (%)'}</th>
                       <th className="px-3 py-2 text-left font-semibold">Grade</th>
-                      <th className="px-3 py-2 text-left font-semibold">Assessment Type</th>
                       <th className="px-3 py-2 text-left font-semibold">Subject Position</th>
                       <th className="px-3 py-2 text-left font-semibold">Status</th>
                       <th className="px-3 py-2 text-left font-semibold">Total Questions</th>
@@ -925,7 +1109,6 @@ const ResultsAnalytics: React.FC = () => {
                             {Number(row.score ?? 0).toFixed(1)}/{Number(row.total_marks ?? 0).toFixed(1)} ({Number(row.percentage ?? 0).toFixed(1)}%)
                           </td>
                           <td className="px-3 py-2 text-sm text-slate-700">{row.grade || '-'}</td>
-                          <td className="px-3 py-2 text-sm text-slate-700">{row.assessment_type || 'Final Exam'}</td>
                           <td className="px-3 py-2 text-sm text-slate-700">{row.rank_label || '-'}</td>
                           <td className="px-3 py-2 text-sm text-slate-700">
                             <span
@@ -979,7 +1162,7 @@ const ResultsAnalytics: React.FC = () => {
           )}
         </Card>}
 
-        {activeTab === 'term' && <Card className="panel-compact">
+        {activeTab === 'compiled' && <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
               <h2 className="text-lg font-semibold">Subject Term Aggregate (CA + Exam)</h2>
@@ -1078,6 +1261,207 @@ const ResultsAnalytics: React.FC = () => {
               </table>
             </div>
           )}
+        </Card>}
+
+        {activeTab === 'broadsheet' && <Card className="panel-compact border border-slate-200/90 bg-gradient-to-br from-slate-50 via-white to-indigo-50/30">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Broadsheet / Reports Workspace</h2>
+              <p className="text-xs text-slate-600">
+                Generate subject broadsheet outputs from the current exam context and access reporting actions.
+              </p>
+            </div>
+            <div className="text-xs text-slate-500">
+              {!examId ? 'Select an exam above to enable report actions.' : `Exam #${examId} selected`}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <h3 className="text-sm font-semibold text-slate-900">Subject Broadsheet</h3>
+              <p className="text-xs text-slate-600 mt-1">Exports compiled subject rows (CA + Exam + Total) for selected class/session/term context.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+                  disabled={!canExportTermAggregate || exportLoading}
+                  onClick={() => {
+                    if (!canExportTermAggregate) return;
+                    downloadReport(
+                      `/reports/term/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf`,
+                      `subject_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
+                    );
+                  }}
+                >
+                  Print Subject Broadsheet
+                </button>
+                <button
+                  className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  disabled={!canExportTermAggregate || exportLoading}
+                  onClick={() => {
+                    if (!canExportTermAggregate) return;
+                    downloadReport(
+                      `/reports/term/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel`,
+                      `subject_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
+                    );
+                  }}
+                >
+                  Export Subject Broadsheet
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <h3 className="text-sm font-semibold text-slate-900">Class Reports</h3>
+              <p className="text-xs text-slate-600 mt-1">Generate full class broadsheet reports for the selected term/class/session context.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+                  disabled={!canExportTermAggregate || exportLoading}
+                  title={canExportTermAggregate
+                    ? 'Download full class broadsheet (PDF)'
+                    : 'Select an exam with class, term and session metadata to enable class broadsheet export.'}
+                  onClick={() => {
+                    if (!canExportTermAggregate) return;
+                    downloadReport(
+                      `/reports/broadsheet/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf`,
+                      `class_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
+                    );
+                  }}
+                >
+                  Print Full Class Broadsheet
+                </button>
+                <button
+                  className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  disabled={!canExportTermAggregate || exportLoading}
+                  title={canExportTermAggregate
+                    ? 'Download full class broadsheet (Excel)'
+                    : 'Select an exam with class, term and session metadata to enable class broadsheet export.'}
+                  onClick={() => {
+                    if (!canExportTermAggregate) return;
+                    downloadReport(
+                      `/reports/broadsheet/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel`,
+                      `class_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
+                    );
+                  }}
+                >
+                  Export Full Class Broadsheet
+                </button>
+                <button
+                  className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  disabled={!canExportTermAggregate || exportLoading}
+                  title={canExportTermAggregate
+                    ? 'Download class report cards summary (Excel)'
+                    : 'Select an exam with class, term and session metadata to enable report-card export.'}
+                  onClick={() => {
+                    if (!canExportTermAggregate) return;
+                    downloadReport(
+                      `/reports/report-cards/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel`,
+                      `class_report_cards_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
+                    );
+                  }}
+                >
+                  Generate Report Cards (Excel)
+                </button>
+                <button
+                  className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+                  disabled={!canExportTermAggregate || exportLoading}
+                  title={canExportTermAggregate
+                    ? 'Download class report cards summary (PDF)'
+                    : 'Select an exam with class, term and session metadata to enable report-card print.'}
+                  onClick={() => {
+                    if (!canExportTermAggregate) return;
+                    downloadReport(
+                      `/reports/report-cards/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf`,
+                      `class_report_cards_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
+                    );
+                  }}
+                >
+                  Print Report Cards (PDF)
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-700">Single Student Report Card</p>
+                <p className="text-[11px] text-slate-600 mt-1">Select a student and optionally add remarks before generating their report card.</p>
+                <div className="mt-2 grid grid-cols-1 gap-2">
+                  <select
+                    className="input-compact border border-slate-200 text-sm bg-white"
+                    value={reportCardStudentId}
+                    onChange={(e) => setReportCardStudentId(e.target.value)}
+                    disabled={!canExportTermAggregate || reportCardStudents.length === 0 || exportLoading}
+                  >
+                    {reportCardStudents.length === 0 ? (
+                      <option value="">No students available</option>
+                    ) : (
+                      reportCardStudents.map((student) => (
+                        <option key={student.id} value={String(student.id)}>
+                          {student.student_name} ({student.registration_number})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <input
+                    className="input-compact border border-slate-200 text-sm bg-white"
+                    placeholder="Teacher remark (optional)"
+                    value={teacherRemark}
+                    onChange={(e) => setTeacherRemark(e.target.value)}
+                    disabled={!canExportTermAggregate || reportCardStudents.length === 0 || exportLoading || remarksLoading}
+                  />
+                  <input
+                    className="input-compact border border-slate-200 text-sm bg-white"
+                    placeholder="Principal remark (optional)"
+                    value={principalRemark}
+                    onChange={(e) => setPrincipalRemark(e.target.value)}
+                    disabled={!canExportTermAggregate || reportCardStudents.length === 0 || exportLoading || remarksLoading}
+                  />
+                </div>
+
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    className="btn-compact bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50"
+                    disabled={!canExportTermAggregate || !reportCardStudentId || exportLoading || remarksSaving || remarksLoading}
+                    onClick={saveReportCardRemarks}
+                  >
+                    {remarksSaving ? 'Saving...' : 'Save Remarks'}
+                  </button>
+                  <button
+                    className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    disabled={!canExportTermAggregate || !reportCardStudentId || exportLoading}
+                    onClick={() => {
+                      if (!canExportTermAggregate || !reportCardStudentId) return;
+                      const params = new URLSearchParams();
+                      if (teacherRemark.trim()) params.set('teacher_remark', teacherRemark.trim());
+                      if (principalRemark.trim()) params.set('principal_remark', principalRemark.trim());
+                      const suffix = params.toString();
+                      downloadReport(
+                        `/reports/report-cards/student/${encodeURIComponent(reportCardStudentId)}/session/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel${suffix ? `?${suffix}` : ''}`,
+                        `student_report_card_${reportCardStudentId}_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
+                      );
+                    }}
+                  >
+                    Export Student Card (Excel)
+                  </button>
+                  <button
+                    className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+                    disabled={!canExportTermAggregate || !reportCardStudentId || exportLoading}
+                    onClick={() => {
+                      if (!canExportTermAggregate || !reportCardStudentId) return;
+                      const params = new URLSearchParams();
+                      if (teacherRemark.trim()) params.set('teacher_remark', teacherRemark.trim());
+                      if (principalRemark.trim()) params.set('principal_remark', principalRemark.trim());
+                      const suffix = params.toString();
+                      downloadReport(
+                        `/reports/report-cards/student/${encodeURIComponent(reportCardStudentId)}/session/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf${suffix ? `?${suffix}` : ''}`,
+                        `student_report_card_${reportCardStudentId}_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
+                      );
+                    }}
+                  >
+                    Print Student Card (PDF)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </Card>}
       </div>
     </div>

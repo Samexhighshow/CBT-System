@@ -7,6 +7,7 @@ use App\Models\Student;
 use App\Models\SystemSetting;
 use App\Models\Question;
 use App\Models\User;
+use App\Models\Exam;
 use App\Models\SchoolClass;
 use App\Mail\StudentOnboardingMail;
 use App\Services\GradingService;
@@ -27,18 +28,46 @@ class StudentController extends Controller
     ) {
     }
 
+    private function currentAuthenticatedUser(Request $request): ?User
+    {
+        $user = $request->user();
+        if ($user instanceof User) {
+            return $user;
+        }
+
+        $sanctumUser = $request->user('sanctum');
+        return $sanctumUser instanceof User ? $sanctumUser : null;
+    }
+
     private function enforceStudentScope(Request $request, Student $student): ?\Illuminate\Http\JsonResponse
     {
-        if (!$this->roleScopeService->isScopedActor($request->user())) {
+        $user = $this->currentAuthenticatedUser($request);
+        if (!$user) {
+            return response()->json(['message' => 'Authentication required.'], 401);
+        }
+
+        if ($this->isTeacherScopedUser($user)) {
+            [$classIds, $classLevels] = $this->resolveTeacherClassAccess($user);
+            if (empty($classIds) && empty($classLevels)) {
+                return response()->json(['message' => 'Forbidden: no approved class scope assigned.'], 403);
+            }
+
+            $allowed = $this->studentMatchesAllowedClasses($student, $classIds, $classLevels);
+            return $allowed
+                ? null
+                : response()->json(['message' => 'Forbidden: student outside your class scope.'], 403);
+        }
+
+        if (!$this->roleScopeService->isScopedActor($user)) {
             return null;
         }
 
-        $allowed = $this->roleScopeService->canAccessSubjectClass(
-            $request->user(),
-            null,
-            (string) ($student->class_level ?? ''),
-            (int) ($student->class_id ?? 0)
-        );
+        [$classIds, $classLevels] = $this->resolveScopedClassAccess($user);
+        if (empty($classIds) && empty($classLevels)) {
+            return response()->json(['message' => 'Forbidden: no approved class scope assigned.'], 403);
+        }
+
+        $allowed = $this->studentMatchesAllowedClasses($student, $classIds, $classLevels);
 
         if ($allowed) {
             return null;
@@ -100,11 +129,37 @@ class StudentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Student::with(['department', 'exams']);
+        $query = Student::with(['department', 'exams', 'schoolClass']);
 
-        if ($this->roleScopeService->isScopedActor($request->user())) {
-            $classIds = $this->roleScopeService->scopedClassIds($request->user());
-            $classLevels = $this->roleScopeService->scopedClassLevels($request->user());
+        $user = $this->currentAuthenticatedUser($request);
+        if ($user && $this->isTeacherScopedUser($user)) {
+            [$classIds, $classLevels] = $this->resolveTeacherClassAccess($user);
+
+            if (empty($classIds) && empty($classLevels)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where(function ($q) use ($classIds, $classLevels) {
+                    if (!empty($classIds)) {
+                        $q->orWhereIn('class_id', $classIds);
+                    }
+
+                    if (!empty($classLevels)) {
+                        $variants = collect($classLevels)
+                            ->flatMap(function ($level) {
+                                $raw = trim((string) $level);
+                                $compact = str_replace(' ', '', $raw);
+                                return [$raw, strtolower($raw), strtoupper($raw), $compact, strtolower($compact), strtoupper($compact)];
+                            })
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->all();
+                        $q->orWhereIn('class_level', $variants);
+                    }
+                });
+            }
+        } elseif ($user && $this->roleScopeService->isScopedActor($user)) {
+            [$classIds, $classLevels] = $this->resolveScopedClassAccess($user);
 
             if (empty($classIds) && empty($classLevels)) {
                 $query->whereRaw('1 = 0');
@@ -161,8 +216,20 @@ class StudentController extends Controller
         $perPage = $request->input('limit', 15);
         $students = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
+        $items = collect($students->items())
+            ->map(function (Student $student) {
+                $effectiveClass = trim((string) ($student->schoolClass?->name ?? ''));
+                if ($effectiveClass !== '') {
+                    $student->class_level = $effectiveClass;
+                }
+
+                return $student;
+            })
+            ->values()
+            ->all();
+
         return response()->json([
-            'data' => $students->items(),
+            'data' => $items,
             'current_page' => $students->currentPage(),
             'last_page' => $students->lastPage(),
             'per_page' => $students->perPage(),
@@ -245,8 +312,36 @@ class StudentController extends Controller
             $validated['class_level'] = strtoupper((string) ($validated['class_level'] ?? 'JSS1'));
         }
 
-        $user = $request->user();
-        if ($user && $this->roleScopeService->isScopedActor($user)) {
+        $user = $this->currentAuthenticatedUser($request);
+        if ($quickRegister) {
+            if (!$user || !$user->hasAnyRole(['Admin', 'Main Admin', 'Teacher'])) {
+                return response()->json([
+                    'message' => 'Forbidden: quick registration is only allowed for authenticated staff users.'
+                ], 403);
+            }
+        }
+
+        if ($user && $this->isTeacherScopedUser($user)) {
+            [$classIds, $classLevels] = $this->resolveTeacherClassAccess($user);
+            if (empty($classIds) && empty($classLevels)) {
+                return response()->json([
+                    'message' => 'Forbidden: no approved class scope assigned.'
+                ], 403);
+            }
+
+            $allowed = $this->classInputMatchesAllowedClasses(
+                (int) ($validated['class_id'] ?? 0),
+                (string) ($validated['class_level'] ?? ''),
+                $classIds,
+                $classLevels
+            );
+
+            if (!$allowed) {
+                return response()->json([
+                    'message' => 'Forbidden: you can only register students in your assigned class(es).'
+                ], 403);
+            }
+        } elseif ($user && $this->roleScopeService->isScopedActor($user)) {
             $allowed = $this->roleScopeService->canAccessSubjectClass(
                 $user,
                 null,
@@ -379,15 +474,16 @@ class StudentController extends Controller
      */
     private function getClassLevel($className): string
     {
-        $name = strtoupper($className);
-        
-        if (strpos($name, 'JSS1') !== false || strpos($name, 'JUNIOR 1') !== false) return 'JSS1';
-        if (strpos($name, 'JSS2') !== false || strpos($name, 'JUNIOR 2') !== false) return 'JSS2';
-        if (strpos($name, 'JSS3') !== false || strpos($name, 'JUNIOR 3') !== false) return 'JSS3';
-        if (strpos($name, 'SSS1') !== false || strpos($name, 'SS1') !== false || strpos($name, 'SENIOR 1') !== false) return 'SS1';
-        if (strpos($name, 'SSS2') !== false || strpos($name, 'SS2') !== false || strpos($name, 'SENIOR 2') !== false) return 'SS2';
-        if (strpos($name, 'SSS3') !== false || strpos($name, 'SS3') !== false || strpos($name, 'SENIOR 3') !== false) return 'SS3';
-        
+        $raw = strtoupper(trim((string) $className));
+        $compact = str_replace(' ', '', $raw);
+
+        if (strpos($compact, 'JSS1') !== false || strpos($raw, 'JUNIOR 1') !== false) return 'JSS1';
+        if (strpos($compact, 'JSS2') !== false || strpos($raw, 'JUNIOR 2') !== false) return 'JSS2';
+        if (strpos($compact, 'JSS3') !== false || strpos($raw, 'JUNIOR 3') !== false) return 'JSS3';
+        if (strpos($compact, 'SSS1') !== false || preg_match('/(^|[^A-Z])SS1($|[^0-9])/', $compact) || strpos($raw, 'SENIOR 1') !== false) return 'SS1';
+        if (strpos($compact, 'SSS2') !== false || preg_match('/(^|[^A-Z])SS2($|[^0-9])/', $compact) || strpos($raw, 'SENIOR 2') !== false) return 'SS2';
+        if (strpos($compact, 'SSS3') !== false || preg_match('/(^|[^A-Z])SS3($|[^0-9])/', $compact) || strpos($raw, 'SENIOR 3') !== false) return 'SS3';
+
         return 'JSS1'; // Default
     }
 
@@ -723,6 +819,11 @@ class StudentController extends Controller
             ], 404);
         }
 
+        $scopeError = $this->enforceStudentScope($request, $student);
+        if ($scopeError) {
+            return $scopeError;
+        }
+
         return response()->json([
             'id' => $student->id,
             'name' => $student->first_name . ' ' . $student->last_name,
@@ -848,5 +949,139 @@ class StudentController extends Controller
             ->keys()
             ->values()
             ->all();
+    }
+
+    private function isTeacherScopedUser(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        $roles = $this->roleScopeService->roleNames($user);
+        return in_array('teacher', $roles, true);
+    }
+
+    private function resolveScopedClassAccess(User $user): array
+    {
+        $classIds = $this->roleScopeService->scopedClassIds($user);
+        $classLevels = $this->roleScopeService->scopedClassLevels($user);
+        $examIds = $this->roleScopeService->scopedExamIds($user);
+
+        if (!empty($examIds)) {
+            $examRows = Exam::query()
+                ->whereIn('id', $examIds)
+                ->get(['class_id', 'class_level_id', 'class_level']);
+
+            $derivedClassIds = $examRows
+                ->flatMap(function ($row) {
+                    return [
+                        (int) ($row->class_id ?? 0),
+                        (int) ($row->class_level_id ?? 0),
+                    ];
+                })
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($derivedClassIds)) {
+                $classIds = collect(array_merge($classIds, $derivedClassIds))
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $derivedLevels = SchoolClass::query()
+                    ->whereIn('id', $derivedClassIds)
+                    ->pluck('name')
+                    ->filter()
+                    ->map(fn ($value) => trim((string) $value))
+                    ->values()
+                    ->all();
+
+                $classLevels = array_merge($classLevels, $derivedLevels);
+            }
+
+            $classLevels = array_merge(
+                $classLevels,
+                $examRows->pluck('class_level')
+                    ->filter()
+                    ->map(fn ($value) => trim((string) $value))
+                    ->values()
+                    ->all()
+            );
+        }
+
+        $classIds = collect($classIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $classLevels = collect($classLevels)
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return [$classIds, $classLevels];
+    }
+
+    private function resolveTeacherClassAccess(User $user): array
+    {
+        $classIds = $this->roleScopeService->scopedClassIdsForRole($user, 'teacher');
+        if (empty($classIds)) {
+            return [[], []];
+        }
+
+        $classLevels = SchoolClass::query()
+            ->whereIn('id', $classIds)
+            ->pluck('name')
+            ->filter()
+            ->map(fn ($value) => trim((string) $value))
+            ->unique()
+            ->values()
+            ->all();
+
+        return [$classIds, $classLevels];
+    }
+
+    private function studentMatchesAllowedClasses(Student $student, array $classIds, array $classLevels): bool
+    {
+        $studentClassId = (int) ($student->class_id ?? 0);
+        if ($studentClassId > 0 && in_array($studentClassId, $classIds, true)) {
+            return true;
+        }
+
+        $studentLevel = trim((string) ($student->class_level ?? $student->schoolClass?->name ?? ''));
+        if ($studentLevel === '') {
+            return false;
+        }
+
+        $studentLevelNormalized = strtoupper(str_replace(' ', '', $studentLevel));
+        return collect($classLevels)
+            ->map(fn ($level) => strtoupper(str_replace(' ', '', trim((string) $level))))
+            ->filter()
+            ->contains($studentLevelNormalized);
+    }
+
+    private function classInputMatchesAllowedClasses(int $classId, string $classLevel, array $classIds, array $classLevels): bool
+    {
+        if ($classId > 0 && in_array($classId, $classIds, true)) {
+            return true;
+        }
+
+        $normalized = strtoupper(str_replace(' ', '', trim($classLevel)));
+        if ($normalized === '') {
+            return false;
+        }
+
+        return collect($classLevels)
+            ->map(fn ($level) => strtoupper(str_replace(' ', '', trim((string) $level))))
+            ->filter()
+            ->contains($normalized);
     }
 }

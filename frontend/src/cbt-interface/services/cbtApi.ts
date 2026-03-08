@@ -53,7 +53,7 @@ export const cbtApi = {
     return response.data?.data || [];
   },
 
-  verifyExamAccess: async (examId: number, payload: { reg_number: string; access_code: string; device_id?: string }): Promise<CbtAttemptVerifyResponse> => {
+  verifyExamAccess: async (examId: number, payload: { reg_number: string; access_code: string; device_id?: string; sitting_id?: number }): Promise<CbtAttemptVerifyResponse> => {
     const baseURL = await resolveBaseUrl();
     const response = await cbtClient.post<{ data: CbtAttemptVerifyResponse }>(`/cbt/exams/${examId}/verify`, payload, { baseURL });
     return response.data.data;

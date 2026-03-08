@@ -36,6 +36,7 @@ const CbtExamLogin: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSittingId, setSelectedSittingId] = useState<number>(0);
   const [assessmentLabels, setAssessmentLabels] = useState(defaultAssessmentDisplayConfig.labels);
   const connectivity = useConnectivity();
 
@@ -91,6 +92,8 @@ const CbtExamLogin: React.FC = () => {
           setError('The selected exam is not currently available.');
         }
         setExam(selected);
+        const firstSitting = (selected?.sittings || [])[0];
+        setSelectedSittingId(firstSitting?.id ? Number(firstSitting.id) : 0);
       } catch (err: any) {
         setError(err?.response?.data?.message || 'Failed to load exam details.');
         setExam(null);
@@ -113,13 +116,16 @@ const CbtExamLogin: React.FC = () => {
 
   const examWindowText = useMemo(() => {
     if (!exam) return 'Window not set';
-    const start = formatExamWindow(exam.start_datetime);
-    const end = formatExamWindow(exam.end_datetime);
-    const examDate = formatExamDate(exam.start_datetime);
+    const selectedSitting = (exam.sittings || []).find((row) => row.id === selectedSittingId);
+    const startSource = selectedSitting?.start_at || exam.start_datetime;
+    const endSource = selectedSitting?.end_at || exam.end_datetime;
+    const start = formatExamWindow(startSource);
+    const end = formatExamWindow(endSource);
+    const examDate = formatExamDate(startSource);
     if (start && end && examDate) return `${start} - ${end} · ${examDate}`;
     if (start && end) return `${start} - ${end}`;
     return examDate || 'Today';
-  }, [exam]);
+  }, [exam, selectedSittingId]);
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -207,6 +213,7 @@ const CbtExamLogin: React.FC = () => {
         reg_number: regNumber.trim().toUpperCase(),
         access_code: accessCode.trim().toUpperCase(),
         device_id: deviceId,
+        sitting_id: selectedSittingId > 0 ? selectedSittingId : undefined,
       });
 
       saveStoredSession({
@@ -314,6 +321,30 @@ const CbtExamLogin: React.FC = () => {
                     disabled={verified}
                   />
                 </div>
+
+                {!!exam?.sittings?.length && (
+                  <div>
+                    <label
+                      className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.1em]"
+                      style={{ color: cbtTheme.body }}
+                    >
+                      Assessment Sitting
+                    </label>
+                    <select
+                      value={selectedSittingId || ''}
+                      onChange={(e) => setSelectedSittingId(Number(e.target.value || 0))}
+                      className="h-12 w-full border-b-2 border-x-0 border-t-0 bg-transparent px-0 text-sm outline-none transition focus:border-blue-600"
+                      style={{ borderBottomColor: '#CBD5E1' }}
+                      disabled={verified}
+                    >
+                      {(exam.sittings || []).map((sitting) => (
+                        <option key={sitting.id} value={sitting.id}>
+                          {`#${sitting.id} ${sitting.assessment_mode_snapshot === 'ca_test' ? 'CA Test' : 'Exam'} (${sitting.status})`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div>
                   <label

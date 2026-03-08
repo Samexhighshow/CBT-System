@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SkeletonTable } from '../../components';
 import { api } from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { runWithRetry } from '../../utils/requestRetry';
-import QuestionRandomization from './QuestionRandomization';
+import {
+  AssessmentDisplayMode,
+  defaultAssessmentDisplayConfig,
+  fetchAssessmentDisplayConfig,
+} from '../../services/assessmentDisplay';
 
 /*
  * Admin Exam Management (Phase 5 UI)
@@ -34,6 +37,22 @@ interface ExamRow {
   subject?: { id: number; name: string } | null;
   school_class?: { id: number; name: string } | null;
   metadata?: { question_count?: number } | null;
+  academic_session?: string;
+  term?: 'First Term' | 'Second Term' | 'Third Term' | null;
+}
+
+interface ExamSittingRow {
+  id: number;
+  exam_id: number;
+  session?: string | null;
+  term?: 'First Term' | 'Second Term' | 'Third Term' | null;
+  assessment_mode_snapshot: 'ca_test' | 'exam';
+  question_count?: number | null;
+  duration_minutes?: number | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  status: 'draft' | 'scheduled' | 'active' | 'closed';
+  results_released?: boolean;
 }
 
 const formatDate = (value?: string) => {
@@ -43,42 +62,18 @@ const formatDate = (value?: string) => {
   return d.toLocaleString();
 };
 
-const toApiDateTime = (value?: string): string | null => {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
-    return `${raw.replace('T', ' ')}:00`;
-  }
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return raw;
-
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const year = parsed.getFullYear();
-  const month = pad(parsed.getMonth() + 1);
-  const day = pad(parsed.getDate());
-  const hours = pad(parsed.getHours());
-  const minutes = pad(parsed.getMinutes());
-  const seconds = pad(parsed.getSeconds());
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-};
-
-const getDisplayStatus = (exam: ExamRow): ExamStatus => exam.effective_status || exam.status;
-
 const ExamManagement: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState<ExamRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showInactive, setShowInactive] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'title-asc' | 'title-desc' | 'start-recent' | 'start-oldest'>('title-asc');
   const [perPage, setPerPage] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
   const [selectedExams, setSelectedExams] = useState<number[]>([]);
-  // Floating row actions menu state
-  const [openRowMenu, setOpenRowMenu] = useState<{ exam: ExamRow, top: number, left: number } | null>(null);
+  const [assessmentMode, setAssessmentMode] = useState<AssessmentDisplayMode>(defaultAssessmentDisplayConfig.mode);
   const [classLevelFilter, setClassLevelFilter] = useState<string>('');
   
   // PHASE 8: Delete confirmation modal
@@ -86,14 +81,12 @@ const ExamManagement: React.FC = () => {
   const [examToDelete, setExamToDelete] = useState<ExamRow | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
-  // Question Randomization modal
-  const [showRandomizationModal, setShowRandomizationModal] = useState(false);
-  const [selectedExamForRandomization, setSelectedExamForRandomization] = useState<number | null>(null);
-
   // View exam detail modal
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingExam, setViewingExam] = useState<any>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  const [examSittings, setExamSittings] = useState<ExamSittingRow[]>([]);
+  const [sittingsLoading, setSittingsLoading] = useState(false);
 
   // Exam ↔ Questions linking state
   const [examQuestions, setExamQuestions] = useState<any[]>([]);
@@ -105,6 +98,7 @@ const ExamManagement: React.FC = () => {
   const manageSubjectIdRef = useRef<number | null>(null);
   const manageExamIdRef = useRef<number | null>(null);
   const searchDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handledQuestionExamIdRef = useRef<number>(0);
 
   // Modal and form state
   const [showExamModal, setShowExamModal] = useState(false);
@@ -117,9 +111,6 @@ const ExamManagement: React.FC = () => {
     class_id: '',
     subject_id: '',
     duration_minutes: 60,
-    assessment_weight: '',
-    start_datetime: '',
-    end_datetime: '',
     instructions: '',
   });
 
@@ -182,6 +173,15 @@ const ExamManagement: React.FC = () => {
     }
   };
 
+  const loadAssessmentMode = async () => {
+    try {
+      const config = await fetchAssessmentDisplayConfig();
+      setAssessmentMode(config.mode);
+    } catch {
+      setAssessmentMode(defaultAssessmentDisplayConfig.mode);
+    }
+  };
+
   const handleSelectAllExams = () => {
     const pageIds = paged.map((exam) => exam.id);
     if (pageIds.length === 0) return;
@@ -209,12 +209,8 @@ const ExamManagement: React.FC = () => {
       'Assessment Type',
       'Class Level',
       'Subject',
-      'Duration (mins)',
-      'Status',
-      'Published',
-      'Results Released',
-      'Start DateTime',
-      'End DateTime',
+      'Default Duration (mins)',
+      'Question Count',
     ];
 
     const lines = selectedRows.map((exam) => [
@@ -224,11 +220,7 @@ const ExamManagement: React.FC = () => {
       exam.school_class?.name || '',
       exam.subject?.name || '',
       exam.duration_minutes,
-      exam.status,
-      exam.published ? 'Yes' : 'No',
-      exam.results_released ? 'Yes' : 'No',
-      exam.start_datetime || exam.start_time || '',
-      exam.end_datetime || exam.end_time || '',
+      exam.metadata?.question_count ?? '',
     ].map(csvEscape).join(','));
 
     const csv = [headers.map(csvEscape).join(','), ...lines].join('\n');
@@ -327,9 +319,6 @@ const ExamManagement: React.FC = () => {
       class_id: '',
       subject_id: '',
       duration_minutes: 60,
-      assessment_weight: '',
-      start_datetime: '',
-      end_datetime: '',
       instructions: '',
     });
     setEditingExam(null);
@@ -348,9 +337,6 @@ const ExamManagement: React.FC = () => {
       class_id: exam.school_class?.id?.toString() || '',
       subject_id: exam.subject?.id?.toString() || '',
       duration_minutes: exam.duration_minutes,
-      assessment_weight: exam.assessment_weight?.toString() || '',
-      start_datetime: exam.start_datetime || exam.start_time || '',
-      end_datetime: exam.end_datetime || exam.end_time || '',
       instructions: '',
     });
     if (exam.school_class?.name) {
@@ -375,27 +361,12 @@ const ExamManagement: React.FC = () => {
     }
 
     try {
-      const normalizedStart = toApiDateTime(examForm.start_datetime);
-      const normalizedEnd = toApiDateTime(examForm.end_datetime);
-
-      if (normalizedStart && normalizedEnd) {
-        const startTs = new Date(normalizedStart).getTime();
-        const endTs = new Date(normalizedEnd).getTime();
-        if (!Number.isNaN(startTs) && !Number.isNaN(endTs) && endTs <= startTs) {
-          showError('End Date & Time must be after Start Date & Time.');
-          return;
-        }
-      }
-
       const payload = {
         title: examForm.title,
         description: examForm.description,
         class_id: Number(examForm.class_id),
         subject_id: Number(examForm.subject_id),
         duration_minutes: examForm.duration_minutes,
-        assessment_weight: examForm.assessment_weight ? Number(examForm.assessment_weight) : null,
-        start_datetime: normalizedStart,
-        end_datetime: normalizedEnd,
         instructions: examForm.instructions,
       };
 
@@ -426,7 +397,7 @@ const ExamManagement: React.FC = () => {
     let isActive = true;
 
     const loadInitialData = async () => {
-      await Promise.all([loadExams(), loadClasses()]);
+      await Promise.all([loadExams(), loadClasses(), loadAssessmentMode()]);
     };
 
     loadInitialData();
@@ -466,10 +437,8 @@ const ExamManagement: React.FC = () => {
       (exam.subject?.name || '').toLowerCase().includes(term) ||
       (exam.school_class?.name || '').toLowerCase().includes(term)
     );
-    const displayStatus = getDisplayStatus(exam);
-    const isInactive = displayStatus === 'completed' || displayStatus === 'cancelled';
     const matchesClassLevel = classLevelFilter ? exam.school_class?.name === classLevelFilter : true;
-    return matchesSearch && (showInactive ? true : !isInactive) && matchesClassLevel;
+    return matchesSearch && matchesClassLevel;
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -495,6 +464,27 @@ const ExamManagement: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const currentPage = Math.min(page, totalPages);
   const paged = sorted.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const modeMeta = (() => {
+    if (assessmentMode === 'ca_test') {
+      return {
+        badge: 'CA TEST WINDOW',
+        text: 'All attempts started now are recorded as CA Test until this mode changes.',
+        classes: 'border-amber-200 bg-amber-50 text-amber-900',
+      };
+    }
+    if (assessmentMode === 'exam') {
+      return {
+        badge: 'FINAL EXAM WINDOW',
+        text: 'All attempts started now are recorded as Final Exam until this mode changes.',
+        classes: 'border-blue-200 bg-blue-50 text-blue-900',
+      };
+    }
+    return {
+      badge: 'AUTO WINDOW',
+      text: 'System mode is Auto. Attempt mode falls back to per-exam configuration.',
+      classes: 'border-slate-200 bg-slate-50 text-slate-900',
+    };
+  })();
 
   const getPageNumbers = (current: number, total: number) => {
     const pages: (number | string)[] = [];
@@ -520,65 +510,6 @@ const ExamManagement: React.FC = () => {
     return pages;
   };
 
-  const handlePublish = async (exam: ExamRow) => {
-    try {
-      await api.put(`/exams/${exam.id}`, {
-        published: true,
-        status: exam.status === 'draft' ? 'scheduled' : exam.status,
-        start_datetime: exam.start_datetime || exam.start_time,
-        end_datetime: exam.end_datetime || exam.end_time,
-      });
-      showSuccess('Exam published');
-      loadExams();
-    } catch (error) {
-      showError('Publish failed. Ensure time window and class/subject mapping are valid.');
-    }
-  };
-
-  const handleUnpublish = async (exam: ExamRow) => {
-    try {
-      await api.put(`/exams/${exam.id}`, {
-        published: false,
-      });
-      showSuccess('Exam unpublished');
-      loadExams();
-    } catch (error: any) {
-      const message = error?.response?.data?.message || 'Unpublish failed';
-      showError(message);
-    }
-  };
-
-  const handleClose = async (exam: ExamRow | any) => {
-    try {
-      await api.put(`/exams/${exam.id}`, {
-        status: 'completed',
-        published: exam.published,
-      });
-      showSuccess('Exam closed');
-      loadExams();
-      setShowViewModal(false);
-    } catch (error) {
-      showError('Close failed');
-    }
-  };
-
-  const openActionsMenu = (exam: ExamRow, ev: React.MouseEvent<HTMLButtonElement>) => {
-    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    const menuWidth = 224; // approximate menu width
-    const menuHeight = 320; // approximate menu height for placement calc
-    const viewportW = window.innerWidth;
-    const viewportH = window.innerHeight;
-    // Prefer opening ABOVE the trigger; if not enough space, open below.
-    let top = rect.top - menuHeight - 12;
-    if (top < 8) top = Math.min(rect.bottom + 8, viewportH - menuHeight - 8);
-    // Keep within viewport horizontally (prefer right-aligned to trigger)
-    let left = Math.max(8, rect.right - menuWidth);
-    if (left + menuWidth > viewportW - 8) left = viewportW - menuWidth - 8;
-    setOpenRowMenu({ exam, top, left });
-  };
-
-  const closeActionsMenu = () => setOpenRowMenu(null);
-
   const handleView = async (id: number) => {
     try {
       setViewLoading(true);
@@ -586,6 +517,7 @@ const ExamManagement: React.FC = () => {
       setViewingExam(response.data);
       // fetch assigned questions via dedicated endpoint
       await loadExamQuestions(id);
+      await loadExamSittings(id);
       setShowViewModal(true);
     } catch (error) {
       showError('Failed to load exam details');
@@ -594,29 +526,52 @@ const ExamManagement: React.FC = () => {
       setExamQuestionsLoading(false);
     }
   };
+
+  const loadExamSittings = async (examId: number) => {
+    try {
+      setSittingsLoading(true);
+      const response = await api.get(`/exams/${examId}/sittings`);
+      const sittings = response.data?.sittings || response.data?.data || [];
+      setExamSittings(Array.isArray(sittings) ? sittings : []);
+      return Array.isArray(sittings) ? sittings : [];
+    } catch (error: any) {
+      if (error?.response?.status !== 503) {
+        showError(error?.response?.data?.message || 'Failed to load exam sittings');
+      }
+      setExamSittings([]);
+      return [];
+    } finally {
+      setSittingsLoading(false);
+    }
+  };
+
+  const createExamSitting = async (mode: 'ca_test' | 'exam') => {
+    if (!viewingExam?.id) return;
+
+    const payload = {
+      assessment_mode_snapshot: mode,
+      duration_minutes: Number(viewingExam.duration_minutes || 60),
+      start_at: viewingExam.start_datetime || viewingExam.start_time || null,
+      end_at: viewingExam.end_datetime || viewingExam.end_time || null,
+      status: 'scheduled',
+      term: viewingExam.term || null,
+      session: viewingExam.academic_session || null,
+    };
+
+    try {
+      await api.post(`/exams/${viewingExam.id}/sittings`, payload);
+      showSuccess(mode === 'ca_test' ? 'CA sitting created' : 'Exam sitting created');
+      await loadExamSittings(viewingExam.id);
+    } catch (error: any) {
+      showError(error?.response?.data?.message || 'Failed to create exam sitting');
+    }
+  };
   const handleEdit = (exam: ExamRow) => {
     if (exam.status === 'completed' || exam.status === 'cancelled') {
       showError('Cannot edit closed or cancelled exams');
       return;
     }
     handleOpenEditModal(exam);
-  };
-
-  const renderStatus = (exam: ExamRow) => {
-    const status = getDisplayStatus(exam);
-    const color = {
-      draft: 'text-gray-600 bg-gray-100',
-      scheduled: 'text-blue-700 bg-blue-100',
-      active: 'text-green-700 bg-green-100',
-      completed: 'text-purple-700 bg-purple-100',
-      cancelled: 'text-red-700 bg-red-100',
-    }[status] || 'text-gray-600 bg-gray-100';
-
-    return (
-      <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${color}`}>
-        {status}
-      </span>
-    );
   };
 
   // ------- Exam ↔ Question helpers -------
@@ -657,6 +612,23 @@ const ExamManagement: React.FC = () => {
     const assigned = await loadExamQuestions(exam.id);
     await loadBankQuestions('', subjId ?? undefined, exam.id, assigned);
   };
+
+  useEffect(() => {
+    const questionExamId = Number(searchParams.get('questionExamId') || 0);
+    if (!questionExamId || exams.length === 0) return;
+    if (handledQuestionExamIdRef.current === questionExamId) return;
+
+    const exam = exams.find((row) => row.id === questionExamId);
+    if (!exam) return;
+
+    handledQuestionExamIdRef.current = questionExamId;
+    openManageForExam(exam);
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('questionExamId');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exams, searchParams, setSearchParams]);
 
   const loadBankQuestions = async (
     search: string,
@@ -828,11 +800,23 @@ const ExamManagement: React.FC = () => {
           <p className="text-xs md:text-sm text-gray-600 mt-1">Create and manage exams</p>
         </div>
 
+        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${modeMeta.classes}`}>
+          <p className="font-semibold tracking-wide">{modeMeta.badge}</p>
+          <p className="mt-1">{modeMeta.text}</p>
+        </div>
+
         {/* Actions */}
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs text-gray-600">
             {exams.length} total exams
           </div>
+          <button
+            onClick={() => navigate('/admin/exams/sittings')}
+            className="px-3 py-2 rounded-md bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
+            title="Open dedicated Assessment Sittings workspace"
+          >
+            Open Sittings Workspace
+          </button>
         </div>
 
         {/* Action Cards */}
@@ -860,10 +844,6 @@ const ExamManagement: React.FC = () => {
                 <p className="text-xs text-gray-600">{sorted.length} matching exams</p>
               </div>
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-xs text-gray-700">
-                  <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }} />
-                  Show inactive
-                </label>
                 <div className="relative">
                   <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
                   <input
@@ -968,7 +948,7 @@ const ExamManagement: React.FC = () => {
 
           {/* Table Container */}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1220px] text-xs border-collapse bg-white">
+            <table className="w-full min-w-[980px] text-xs border-collapse bg-white">
               <thead>
                 <tr className="sticky top-0 z-10 bg-gray-50 text-gray-700 border-b">
                   <th className="px-3 py-2 w-10">
@@ -982,29 +962,21 @@ const ExamManagement: React.FC = () => {
                   <th className="px-3 py-2 text-left font-semibold">Exam Title</th>
                   <th className="px-3 py-2 text-left font-semibold">Class Level</th>
                   <th className="px-3 py-2 text-left font-semibold">Subject</th>
-                  <th className="px-3 py-2 text-left font-semibold">Duration</th>
-                  <th className="px-3 py-2 text-left font-semibold">Status</th>
-                  <th className="px-3 py-2 text-left font-semibold">Start DateTime</th>
-                  <th className="px-3 py-2 text-left font-semibold">End DateTime</th>
-                  <th className="px-3 py-2 text-left font-semibold">Question Count</th>
-                    <th className="px-3 py-2 text-left font-semibold">Results Released</th>
+                  <th className="px-3 py-2 text-left font-semibold">Default Duration</th>
                   <th className="px-3 py-2 text-left font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                      <td colSpan={11} className="p-3"><SkeletonTable rows={6} cols={11} /></td>
+                      <td colSpan={6} className="p-3"><SkeletonTable rows={6} cols={6} /></td>
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                      <td colSpan={11} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
+                      <td colSpan={6} className="px-3 py-6 text-center text-gray-500 text-sm">No exams found.</td>
                   </tr>
                 ) : (
                   paged.map((exam, index) => {
-                    const start = exam.start_datetime || exam.start_time;
-                    const end = exam.end_datetime || exam.end_time;
-                    const questionCount = exam.metadata?.question_count ?? '-';
                     return (
                       <tr key={exam.id} className={`border-b border-gray-200 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'} ${selectedExams.includes(exam.id) ? 'bg-blue-50' : 'hover:bg-blue-50/60'}`}>
                         <td className="px-3 py-2">
@@ -1027,45 +999,32 @@ const ExamManagement: React.FC = () => {
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.school_class?.name || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.subject?.name || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-800">{exam.duration_minutes} mins</td>
-                        <td className="px-3 py-2">{renderStatus(exam)}</td>
-                        <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{formatDate(start)}</td>
-                        <td className="px-3 py-2 text-sm text-gray-700 whitespace-nowrap">{formatDate(end)}</td>
-                        <td className="px-3 py-2 text-sm text-gray-700 text-center">{questionCount}</td>
-                          <td className="px-3 py-2">
-                            {exam.results_released ? (
-                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold text-green-700 bg-green-100">
-                                Released
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold text-gray-600 bg-gray-100">
-                                Hidden
-                              </span>
-                            )}
-                          </td>
                         <td className="px-3 py-2 text-xs text-gray-800">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Edit - Blue */}
+                            <button
+                              onClick={() => handleView(exam.id)}
+                              className="p-2 text-cyan-700 bg-cyan-50 hover:bg-cyan-100 rounded-lg transition-all duration-200"
+                              title="View template details"
+                            >
+                              <i className='bx bx-show text-base'></i>
+                            </button>
+                            <button
+                              onClick={() => navigate(`/admin/exams/sittings?examId=${exam.id}`)}
+                              className="p-2 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200"
+                              title="Manage sittings"
+                            >
+                              <i className='bx bx-calendar-check text-base'></i>
+                            </button>
                             <button
                               onClick={() => handleEdit(exam)}
-                              className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200 transform hover:scale-110"
-                              title="Edit exam"
+                              className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                              title="Edit template"
                             >
                               <i className='bx bx-edit text-base'></i>
                             </button>
-
-                            {/* Floating Actions Menu trigger (uses body portal to avoid clipping) */}
-                            <button
-                              onClick={(ev) => openActionsMenu(exam, ev)}
-                              className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200 transform hover:scale-110"
-                              title="More actions"
-                            >
-                              <i className='bx bx-dots-vertical-rounded text-base'></i>
-                            </button>
-
-                            {/* Delete - Red */}
                             <button
                               onClick={() => handleDeleteExam(exam)}
-                              className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200 transform hover:scale-110"
+                              className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200"
                               title="Delete exam"
                             >
                               <i className='bx bx-trash text-base'></i>
@@ -1124,71 +1083,6 @@ const ExamManagement: React.FC = () => {
             )}
           </div>
         </div>
-
-        {/* Body-portal row actions menu */}
-        {openRowMenu && createPortal(
-          <div className="fixed inset-0 z-[9999]" onClick={closeActionsMenu}>
-            <div
-              className="absolute w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
-              style={{ top: openRowMenu.top, left: openRowMenu.left }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => { handleView(openRowMenu.exam.id); closeActionsMenu(); }}
-                className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-              >
-                <i className='bx bx-show text-blue-500'></i>
-                <span className="font-medium">View</span>
-              </button>
-              {!openRowMenu.exam.published ? (
-                <button
-                  onClick={() => { handlePublish(openRowMenu.exam); closeActionsMenu(); }}
-                  className="w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                >
-                  <i className='bx bx-upload text-green-500'></i>
-                  <span className="font-medium">Publish</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => { handleUnpublish(openRowMenu.exam); closeActionsMenu(); }}
-                  className="w-full text-left px-4 py-3 text-sm text-orange-700 hover:bg-orange-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-                >
-                  <i className='bx bx-download text-orange-500'></i>
-                  <span className="font-medium">Unpublish</span>
-                </button>
-              )}
-              <button
-                onClick={() => { handleClose(openRowMenu.exam); closeActionsMenu(); }}
-                className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-              >
-                <i className='bx bx-lock text-amber-500'></i>
-                <span className="font-medium">Close</span>
-              </button>
-              <button
-                onClick={async () => { await openManageForExam(openRowMenu.exam); closeActionsMenu(); }}
-                className="w-full text-left px-4 py-3 text-sm text-purple-700 hover:bg-purple-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-              >
-                <i className='bx bx-plus text-purple-500'></i>
-                <span className="font-medium">Add Questions</span>
-              </button>
-              <button
-                onClick={() => { setSelectedExamForRandomization(openRowMenu.exam.id); setShowRandomizationModal(true); closeActionsMenu(); }}
-                className="w-full text-left px-4 py-3 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
-              >
-                <i className='bx bx-shuffle text-indigo-500'></i>
-                <span className="font-medium">Configure Randomization</span>
-              </button>
-              <button
-                onClick={() => { navigate(`/admin/results?examId=${openRowMenu.exam.id}`); closeActionsMenu(); }}
-                className="w-full text-left px-4 py-3 text-sm text-cyan-700 hover:bg-cyan-50 flex items-center gap-3 transition-colors"
-              >
-                <i className='bx bx-bar-chart-alt-2 text-cyan-500'></i>
-                <span className="font-medium">View Results</span>
-              </button>
-            </div>
-          </div>,
-          document.body
-        )}
 
         {/* Exam Modal */}
         {showExamModal && (
@@ -1305,7 +1199,7 @@ const ExamManagement: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Duration (minutes) *
+                    Default Duration (minutes) *
                   </label>
                   <input
                     type="number"
@@ -1316,55 +1210,7 @@ const ExamManagement: React.FC = () => {
                     required
                     disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
                   />
-                  <p className="text-xs text-gray-500 mt-1">How long students have to complete the exam</p>
-                </div>
-
-                {/* Assessment Structure Fields */}
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Assessment Weight (Optional)
-                    </label>
-                    <input
-                      type="number"
-                      value={examForm.assessment_weight}
-                      onChange={(e) => setExamForm({ ...examForm, assessment_weight: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      min="1"
-                      max="100"
-                      placeholder="e.g., 40"
-                      disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Weight % (e.g., CA=40, Final=60). Assessment type is auto-assigned from system mode.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Start Date & Time
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={examForm.start_datetime}
-                      onChange={(e) => setExamForm({ ...examForm, start_datetime: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      End Date & Time
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={examForm.end_datetime}
-                      onChange={(e) => setExamForm({ ...examForm, end_datetime: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      disabled={editingExam?.status === 'completed' || editingExam?.status === 'cancelled'}
-                    />
-                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Used as the default duration for new sittings. Scheduling is handled in Assessment Sittings.</p>
                 </div>
 
                 <div>
@@ -1486,6 +1332,7 @@ const ExamManagement: React.FC = () => {
                 onClick={() => {
                   setShowViewModal(false);
                   setViewingExam(null);
+                  setExamSittings([]);
                 }}
                 className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
               >
@@ -1734,6 +1581,78 @@ const ExamManagement: React.FC = () => {
                         <i className='bx bx-help-circle'></i>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Sitting / Instance Layer */}
+                  <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl p-6 border border-slate-200">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                          <i className='bx bx-calendar-check text-indigo-600'></i>
+                          Assessment Sittings (Instances)
+                        </h3>
+                        <p className="text-xs text-gray-600 mt-1">Each CA/Test or Exam event should use a separate sitting.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => createExamSitting('ca_test')}
+                          className="px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600"
+                          disabled={viewingExam.status === 'completed' || viewingExam.status === 'cancelled'}
+                        >
+                          Create CA Sitting
+                        </button>
+                        <button
+                          onClick={() => createExamSitting('exam')}
+                          className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                          disabled={viewingExam.status === 'completed' || viewingExam.status === 'cancelled'}
+                        >
+                          Create Exam Sitting
+                        </button>
+                      </div>
+                    </div>
+
+                    {sittingsLoading ? (
+                      <div className="text-sm text-gray-500 py-3">Loading sittings...</div>
+                    ) : examSittings.length === 0 ? (
+                      <div className="text-sm text-gray-500 py-3">No sittings found. Create one to schedule this assessment instance.</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-gray-600 border-b">
+                              <th className="py-2 pr-3">ID</th>
+                              <th className="py-2 pr-3">Mode</th>
+                              <th className="py-2 pr-3">Duration</th>
+                              <th className="py-2 pr-3">Window</th>
+                              <th className="py-2 pr-3">Status</th>
+                              <th className="py-2 pr-3">Session/Term</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {examSittings.map((sitting) => (
+                              <tr key={sitting.id} className="border-b last:border-0">
+                                <td className="py-2 pr-3 font-semibold text-gray-700">#{sitting.id}</td>
+                                <td className="py-2 pr-3">
+                                  <span className={`px-2 py-1 rounded text-[11px] font-semibold ${sitting.assessment_mode_snapshot === 'ca_test' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                                    {sitting.assessment_mode_snapshot === 'ca_test' ? 'CA Test' : 'Exam'}
+                                  </span>
+                                </td>
+                                <td className="py-2 pr-3 text-gray-700">{sitting.duration_minutes || '-'} mins</td>
+                                <td className="py-2 pr-3 text-gray-700">
+                                  {formatDate(sitting.start_at || undefined)} - {formatDate(sitting.end_at || undefined)}
+                                </td>
+                                <td className="py-2 pr-3">
+                                  <span className="px-2 py-1 rounded text-[11px] font-semibold bg-slate-100 text-slate-700">
+                                    {sitting.status}
+                                  </span>
+                                </td>
+                                <td className="py-2 pr-3 text-gray-700">{(sitting.session || '-') + ' / ' + (sitting.term || '-')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
 
                   {/* Questions Tab (simple list) */}
@@ -2016,42 +1935,6 @@ const ExamManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Question Randomization Modal */}
-      {showRandomizationModal && selectedExamForRandomization && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <i className='bx bx-shuffle text-3xl'></i>
-                <div>
-                  <h2 className="text-2xl font-bold">Question Randomization</h2>
-                  <p className="text-indigo-100 text-sm mt-1">Configure intelligent question selection and distribution</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowRandomizationModal(false);
-                  setSelectedExamForRandomization(null);
-                }}
-                className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
-                title="Close"
-              >
-                <i className='bx bx-x text-3xl'></i>
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-6">
-              <QuestionRandomization 
-                examId={selectedExamForRandomization}
-                onClose={() => {
-                  setShowRandomizationModal(false);
-                  setSelectedExamForRandomization(null);
-                  loadExams(); // Refresh exam list
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Exam;
 use App\Models\ExamAttempt;
+use App\Models\ExamSitting;
 use App\Services\ExamScoringService;
 use Illuminate\Support\Facades\DB;
 
@@ -30,14 +32,20 @@ class ExamSyncController extends Controller
 
         DB::beginTransaction();
         try {
+            $exam = Exam::findOrFail((int) $payload['exam_id']);
+            $mode = strtolower(trim((string) ($exam->assessment_type ?? ''))) === 'ca test' ? 'ca_test' : 'exam';
+            $sitting = ExamSitting::resolveOrCreateDefault($exam, $mode);
+
             $attempt = ExamAttempt::create([
                 'attempt_uuid' => $payload['attempt_uuid'],
                 'exam_id' => $payload['exam_id'],
+                'exam_sitting_id' => $sitting->id,
                 'student_id' => $payload['student_id'],
                 'device_id' => $payload['device_id'],
                 'started_at' => $payload['started_at'],
                 'ended_at' => $payload['ended_at'],
                 'duration_seconds' => $payload['duration_seconds'],
+                'assessment_mode' => $sitting->assessment_mode_snapshot ?? $mode,
                 'status' => 'received'
             ]);
 
