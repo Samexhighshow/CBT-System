@@ -18,6 +18,14 @@ class ExamSitting extends Model
         'term',
         'assessment_mode_snapshot',
         'question_count',
+        'question_selection_mode',
+        'shuffle_question_order',
+        'shuffle_option_order',
+        'question_distribution',
+        'difficulty_distribution',
+        'marks_distribution',
+        'topic_filters',
+        'question_reuse_policy',
         'duration_minutes',
         'start_at',
         'end_at',
@@ -33,6 +41,11 @@ class ExamSitting extends Model
         'end_at' => 'datetime',
         'results_released' => 'boolean',
         'question_count' => 'integer',
+        'shuffle_question_order' => 'boolean',
+        'shuffle_option_order' => 'boolean',
+        'difficulty_distribution' => 'array',
+        'marks_distribution' => 'array',
+        'topic_filters' => 'array',
         'duration_minutes' => 'integer',
         'created_by' => 'integer',
     ];
@@ -49,13 +62,19 @@ class ExamSitting extends Model
 
     public static function resolveForExam(Exam $exam): ?self
     {
+        return self::resolveForExamByMode($exam, null);
+    }
+
+    public static function resolveForExamByMode(Exam $exam, ?string $mode = null): ?self
+    {
         if (!Schema::hasTable('exam_sittings')) {
             return null;
         }
 
+        $normalizedMode = in_array((string) $mode, ['ca_test', 'exam'], true) ? (string) $mode : null;
         $now = now();
 
-        $active = self::query()
+        $activeQuery = self::query()
             ->where('exam_id', $exam->id)
             ->whereIn('status', ['active', 'scheduled'])
             ->where(function ($q) use ($now) {
@@ -65,18 +84,28 @@ class ExamSitting extends Model
                 $q->whereNull('end_at')->orWhere('end_at', '>=', $now);
             })
             ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END")
-            ->orderByDesc('id')
-            ->first();
+            ->orderByDesc('id');
+
+        if ($normalizedMode !== null) {
+            $activeQuery->where('assessment_mode_snapshot', $normalizedMode);
+        }
+
+        $active = $activeQuery->first();
 
         if ($active) {
             return $active;
         }
 
-        $fallback = self::query()
+        $fallbackQuery = self::query()
             ->where('exam_id', $exam->id)
             ->orderByRaw("CASE status WHEN 'scheduled' THEN 0 WHEN 'draft' THEN 1 WHEN 'active' THEN 2 ELSE 3 END")
-            ->orderByDesc('id')
-            ->first();
+            ->orderByDesc('id');
+
+        if ($normalizedMode !== null) {
+            $fallbackQuery->where('assessment_mode_snapshot', $normalizedMode);
+        }
+
+        $fallback = $fallbackQuery->first();
 
         return $fallback;
     }
@@ -87,7 +116,11 @@ class ExamSitting extends Model
             return new self(self::templateAttributes($exam, $fallbackMode));
         }
 
-        $existing = self::resolveForExam($exam);
+        $strictMode = in_array((string) $fallbackMode, ['ca_test', 'exam'], true)
+            ? (string) $fallbackMode
+            : null;
+
+        $existing = self::resolveForExamByMode($exam, $strictMode);
         if ($existing) {
             return $existing;
         }
@@ -132,6 +165,14 @@ class ExamSitting extends Model
             'term' => $exam->term,
             'assessment_mode_snapshot' => $mode,
             'question_count' => $questionCount,
+            'question_selection_mode' => $exam->question_selection_mode,
+            'shuffle_question_order' => ($exam->shuffle_question_order ?? $exam->randomize_questions ?? $exam->shuffle_questions),
+            'shuffle_option_order' => ($exam->shuffle_option_order ?? $exam->randomize_options),
+            'question_distribution' => $exam->question_distribution,
+            'difficulty_distribution' => $exam->difficulty_distribution,
+            'marks_distribution' => $exam->marks_distribution,
+            'topic_filters' => $exam->topic_filters,
+            'question_reuse_policy' => $exam->question_reuse_policy,
             'duration_minutes' => (int) ($exam->duration_minutes ?? 0) > 0 ? (int) $exam->duration_minutes : null,
             'start_at' => $exam->start_datetime ?? $exam->start_time,
             'end_at' => $exam->end_datetime ?? $exam->end_time,

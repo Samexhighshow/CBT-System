@@ -963,7 +963,7 @@ const ExamManagement: React.FC = () => {
                   <th className="px-3 py-2 text-left font-semibold">Class Level</th>
                   <th className="px-3 py-2 text-left font-semibold">Subject</th>
                   <th className="px-3 py-2 text-left font-semibold">Default Duration</th>
-                  <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1007,6 +1007,13 @@ const ExamManagement: React.FC = () => {
                               title="View template details"
                             >
                               <i className='bx bx-show text-base'></i>
+                            </button>
+                            <button
+                              onClick={() => openManageForExam(exam)}
+                              className="p-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                              title="Add questions"
+                            >
+                              <i className='bx bx-plus text-base'></i>
                             </button>
                             <button
                               onClick={() => navigate(`/admin/exams/sittings?examId=${exam.id}`)}

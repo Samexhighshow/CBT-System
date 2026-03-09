@@ -62,12 +62,13 @@ class CbtInterfaceController extends Controller
         $sittingsByExam = collect();
         if (Schema::hasTable('exam_sittings') && $exams->isNotEmpty()) {
             $examIds = $exams->pluck('id')->map(fn ($id) => (int) $id)->all();
-            $sittings = ExamSitting::query()
+            $displayMode = $this->assessmentDisplayMode();
+            $sittingsQuery = ExamSitting::query()
                 ->whereIn('exam_id', $examIds)
                 ->whereIn('status', ['scheduled', 'active'])
                 ->orderBy('start_at')
                 ->orderBy('id')
-                ->get([
+                ->select([
                     'id',
                     'exam_id',
                     'assessment_mode_snapshot',
@@ -76,6 +77,12 @@ class CbtInterfaceController extends Controller
                     'end_at',
                     'status',
                 ]);
+
+            if (in_array($displayMode, ['ca_test', 'exam'], true)) {
+                $sittingsQuery->where('assessment_mode_snapshot', $displayMode);
+            }
+
+            $sittings = $sittingsQuery->get();
 
             $sittingsByExam = $sittings->groupBy('exam_id');
         }
@@ -199,13 +206,24 @@ class CbtInterfaceController extends Controller
         }
 
         $resolvedMode = $this->resolveAttemptMode($exam);
+        $systemDisplayMode = $this->assessmentDisplayMode();
+        $strictMode = in_array($systemDisplayMode, ['ca_test', 'exam'], true) ? $systemDisplayMode : null;
         $requestedSittingId = (int) ($validated['sitting_id'] ?? 0);
-        $sitting = $requestedSittingId > 0
-            ? ExamSitting::where('exam_id', $exam->id)->where('id', $requestedSittingId)->first()
-            : ExamSitting::resolveOrCreateDefault($exam, $resolvedMode);
+        $sitting = null;
+        if ($requestedSittingId > 0) {
+            $query = ExamSitting::where('exam_id', $exam->id)->where('id', $requestedSittingId);
+            if ($strictMode !== null) {
+                $query->where('assessment_mode_snapshot', $strictMode);
+            }
+            $sitting = $query->first();
+        } else {
+            $sitting = ExamSitting::resolveOrCreateDefault($exam, $strictMode ?? $resolvedMode);
+        }
         if (!$sitting) {
             return response()->json([
-                'message' => 'Invalid sitting selected for this exam.',
+                'message' => $strictMode
+                    ? sprintf('Invalid sitting selected. System mode is %s and only matching sittings are allowed.', strtoupper(str_replace('_', ' ', $strictMode)))
+                    : 'Invalid sitting selected for this exam.',
                 'reason' => 'invalid_sitting',
             ], 422);
         }
@@ -298,14 +316,14 @@ class CbtInterfaceController extends Controller
 
             $questionSeed = null;
             if (
-                strtolower((string) ($exam->question_selection_mode ?? 'fixed')) === 'random'
-                || $this->shouldShuffleQuestionOrder($exam)
+                $this->effectiveQuestionSelectionMode($exam, $sitting) === 'random'
+                || $this->shouldShuffleQuestionOrder($exam, $sitting)
             ) {
                 // Fresh seed per attempt ensures a new randomized selection/order on each restart.
                 $questionSeed = Str::random(24);
             }
 
-            $questionOrder = $this->buildQuestionOrder($exam, (int) $student->id, $questionSeed);
+            $questionOrder = $this->buildQuestionOrder($exam, $sitting, (int) $student->id, $questionSeed);
             if (count($questionOrder) === 0) {
                 return response()->json([
                     'message' => 'Exam has no questions assigned yet.',
@@ -578,7 +596,10 @@ class CbtInterfaceController extends Controller
 
     public function questions(Request $request, int $attemptId): JsonResponse
     {
-        $attempt = ExamAttempt::with('exam:id,title,randomize_options,shuffle_option_order,randomize_questions,shuffle_question_order,question_selection_mode,total_questions_to_serve,question_distribution,difficulty_distribution,marks_distribution,question_reuse_policy')->findOrFail($attemptId);
+        $attempt = ExamAttempt::with([
+            'exam:id,title,randomize_options,shuffle_option_order,randomize_questions,shuffle_question_order,question_selection_mode,total_questions_to_serve,question_distribution,difficulty_distribution,marks_distribution,question_reuse_policy',
+            'examSitting:id,question_count,question_selection_mode,shuffle_question_order,shuffle_option_order',
+        ])->findOrFail($attemptId);
 
         $session = $this->validateSession($request, $attempt);
         if ($session instanceof JsonResponse) {
@@ -588,7 +609,7 @@ class CbtInterfaceController extends Controller
         $questionIds = collect($attempt->question_order ?: [])->map(fn ($id) => (int) $id)->filter()->values();
 
         if ($questionIds->isEmpty()) {
-            $questionIds = collect($this->buildQuestionOrder($attempt->exam, (int) $attempt->student_id));
+            $questionIds = collect($this->buildQuestionOrder($attempt->exam, $attempt->examSitting, (int) $attempt->student_id));
             $attempt->question_order = $questionIds->values()->all();
             $attempt->save();
         }
@@ -1029,7 +1050,7 @@ class CbtInterfaceController extends Controller
         return $session;
     }
 
-    private function buildQuestionOrder(Exam $exam, ?int $studentId = null, ?string $seedNonce = null): array
+    private function buildQuestionOrder(Exam $exam, ?ExamSitting $sitting = null, ?int $studentId = null, ?string $seedNonce = null): array
     {
         $questions = Question::with('bankQuestion:id,difficulty,marks,status')
             ->where('exam_id', $exam->id)
@@ -1047,8 +1068,8 @@ class CbtInterfaceController extends Controller
             return [];
         }
 
-        $selectionMode = strtolower((string) ($exam->question_selection_mode ?? 'fixed'));
-        $distributionMode = strtolower((string) ($exam->question_distribution ?? ''));
+        $selectionMode = $this->effectiveQuestionSelectionMode($exam, $sitting);
+        $distributionMode = $this->effectiveQuestionDistributionMode($exam, $sitting);
         if (!in_array($distributionMode, ['same_for_all', 'unique_per_student'], true)) {
             // Default to student-unique distribution for CBT security.
             $distributionMode = 'unique_per_student';
@@ -1065,7 +1086,7 @@ class CbtInterfaceController extends Controller
         $selected = $questions->values();
 
         if ($selectionMode === 'random') {
-            $targetCount = (int) ($exam->total_questions_to_serve ?? 0);
+            $targetCount = (int) ($sitting?->question_count ?? $exam->total_questions_to_serve ?? 0);
             if ($targetCount <= 0 || $targetCount > $questions->count()) {
                 $targetCount = $questions->count();
             }
@@ -1073,8 +1094,8 @@ class CbtInterfaceController extends Controller
             $selected = collect();
             $remaining = $questions->values();
 
-            $difficultyDistribution = $this->normalizeDifficultyDistribution($exam->difficulty_distribution);
-            $marksDistribution = $this->normalizeMarksDistribution($exam->marks_distribution);
+            $difficultyDistribution = $this->effectiveDifficultyDistribution($exam, $sitting);
+            $marksDistribution = $this->effectiveMarksDistribution($exam, $sitting);
 
             if (!empty($difficultyDistribution)) {
                 foreach ($difficultyDistribution as $difficulty => $count) {
@@ -1136,7 +1157,7 @@ class CbtInterfaceController extends Controller
                 $remaining = $remaining->reject(fn (Question $q) => in_array((int) $q->id, $fillIds, true))->values();
             }
 
-            if (($exam->question_reuse_policy ?? 'allow_reuse') === 'no_reuse_until_exhausted' && $studentId) {
+            if ($this->effectiveQuestionReusePolicy($exam, $sitting) === 'no_reuse_until_exhausted' && $studentId) {
                 $usedByOtherStudents = ExamAttempt::where('exam_id', $exam->id)
                     ->where('student_id', '!=', $studentId)
                     ->whereNotNull('question_order')
@@ -1184,9 +1205,14 @@ class CbtInterfaceController extends Controller
             if ($selected->count() > $targetCount) {
                 $selected = $selected->take($targetCount)->values();
             }
+        } else {
+            $fixedTargetCount = (int) ($sitting?->question_count ?? 0);
+            if ($fixedTargetCount > 0 && $fixedTargetCount < $selected->count()) {
+                $selected = $selected->take($fixedTargetCount)->values();
+            }
         }
 
-        if ($this->shouldShuffleQuestionOrder($exam)) {
+        if ($this->shouldShuffleQuestionOrder($exam, $sitting)) {
             $selected = $this->stableSortQuestions($selected, "{$seedScope}:order")->values();
         } else {
             $selected = $selected
@@ -1323,7 +1349,7 @@ class CbtInterfaceController extends Controller
     {
         $questionIds = collect($attempt->question_order ?: []);
         if ($questionIds->isEmpty()) {
-            $questionIds = collect($this->buildQuestionOrder($attempt->exam, (int) $attempt->student_id));
+            $questionIds = collect($this->buildQuestionOrder($attempt->exam, $attempt->examSitting, (int) $attempt->student_id));
         }
 
         $questions = Question::with(['options', 'bankQuestion.options'])
@@ -1503,7 +1529,7 @@ class CbtInterfaceController extends Controller
     private function questionOptionsForAttempt(ExamAttempt $attempt, Question $question)
     {
         $options = $this->questionOptions($question);
-        if (!$attempt->exam || !$this->shouldShuffleOptions($attempt->exam)) {
+        if (!$attempt->exam || !$this->shouldShuffleOptions($attempt->exam, $attempt->examSitting)) {
             return $options;
         }
 
@@ -1511,8 +1537,18 @@ class CbtInterfaceController extends Controller
         return $options->sortBy(fn ($opt) => sha1($seed . ':' . (int) $opt->id))->values();
     }
 
-    private function shouldShuffleQuestionOrder(Exam $exam): bool
+    private function effectiveQuestionSelectionMode(Exam $exam, ?ExamSitting $sitting = null): string
     {
+        $mode = strtolower(trim((string) ($sitting?->question_selection_mode ?? $exam->question_selection_mode ?? 'fixed')));
+        return in_array($mode, ['fixed', 'random'], true) ? $mode : 'fixed';
+    }
+
+    private function shouldShuffleQuestionOrder(Exam $exam, ?ExamSitting $sitting = null): bool
+    {
+        if ($sitting && $sitting->shuffle_question_order !== null) {
+            return (bool) $sitting->shuffle_question_order;
+        }
+
         return (bool) (
             ($exam->shuffle_question_order ?? false)
             || ($exam->randomize_questions ?? false)
@@ -1520,12 +1556,38 @@ class CbtInterfaceController extends Controller
         );
     }
 
-    private function shouldShuffleOptions(Exam $exam): bool
+    private function shouldShuffleOptions(Exam $exam, ?ExamSitting $sitting = null): bool
     {
+        if ($sitting && $sitting->shuffle_option_order !== null) {
+            return (bool) $sitting->shuffle_option_order;
+        }
+
         return (bool) (
             ($exam->shuffle_option_order ?? false)
             || ($exam->randomize_options ?? false)
         );
+    }
+
+    private function effectiveQuestionDistributionMode(Exam $exam, ?ExamSitting $sitting = null): string
+    {
+        $mode = strtolower(trim((string) ($sitting?->question_distribution ?? $exam->question_distribution ?? '')));
+        return in_array($mode, ['same_for_all', 'unique_per_student'], true) ? $mode : 'unique_per_student';
+    }
+
+    private function effectiveDifficultyDistribution(Exam $exam, ?ExamSitting $sitting = null): array
+    {
+        return $this->normalizeDifficultyDistribution($sitting?->difficulty_distribution ?? $exam->difficulty_distribution);
+    }
+
+    private function effectiveMarksDistribution(Exam $exam, ?ExamSitting $sitting = null): array
+    {
+        return $this->normalizeMarksDistribution($sitting?->marks_distribution ?? $exam->marks_distribution);
+    }
+
+    private function effectiveQuestionReusePolicy(Exam $exam, ?ExamSitting $sitting = null): string
+    {
+        $policy = strtolower(trim((string) ($sitting?->question_reuse_policy ?? $exam->question_reuse_policy ?? 'allow_reuse')));
+        return in_array($policy, ['allow_reuse', 'no_reuse_until_exhausted'], true) ? $policy : 'allow_reuse';
     }
 
     private function normalizeDifficultyDistribution(mixed $distribution): array

@@ -58,24 +58,30 @@ class MarkingController extends Controller
         return response()->json(['data' => $exams]);
     }
 
-    public function attempts(int $examId): JsonResponse
+    public function attempts(Request $request, int $examId): JsonResponse
     {
         $exam = Exam::findOrFail($examId);
         if (!$this->roleScopeService->canManageExam(request()->user(), $exam)) {
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
-        $rankings = $this->attemptRankingMapForExam($examId);
+        $sittingId = (int) $request->input('sitting_id', 0);
+        $rankings = $this->attemptRankingMapForExam($examId, $sittingId > 0 ? $sittingId : null);
 
-        $attempts = ExamAttempt::with([
+        $attemptQuery = ExamAttempt::with([
                 'student:id,registration_number,first_name,last_name,class_level',
                 'exam:id,assessment_type',
             ])
             ->where('exam_id', $examId)
             ->whereNotIn('status', ['voided'])
             ->orderByRaw("CASE WHEN status = 'submitted' THEN 0 ELSE 1 END")
-            ->orderByDesc('updated_at')
-            ->get()
+            ->orderByDesc('updated_at');
+
+        if ($sittingId > 0) {
+            $attemptQuery->where('exam_sitting_id', $sittingId);
+        }
+
+        $attempts = $attemptQuery->get()
             ->map(function (ExamAttempt $attempt) use ($rankings) {
                 $summary = $this->attemptScoreSummary($attempt);
                 $score = (float) ($attempt->score ?? 0);
@@ -126,15 +132,20 @@ class MarkingController extends Controller
         ]);
     }
 
-    private function attemptRankingMapForExam(int $examId): array
+    private function attemptRankingMapForExam(int $examId, ?int $sittingId = null): array
     {
-        $attempts = ExamAttempt::query()
+        $query = ExamAttempt::query()
             ->where('exam_id', $examId)
             ->whereIn('status', ['completed', 'submitted'])
             ->orderByDesc('score')
             ->orderBy('completed_at')
-            ->orderBy('id')
-            ->get(['id', 'score']);
+            ->orderBy('id');
+
+        if ($sittingId && $sittingId > 0) {
+            $query->where('exam_sitting_id', $sittingId);
+        }
+
+        $attempts = $query->get(['id', 'score']);
 
         $rankMap = [];
         $currentRank = 0;

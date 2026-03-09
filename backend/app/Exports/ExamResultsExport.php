@@ -12,11 +12,13 @@ class ExamResultsExport implements FromCollection, WithHeadings, WithMapping
 {
     protected $examId;
     protected ?string $mode;
+    protected ?int $sittingId;
 
-    public function __construct($examId, ?string $mode = null)
+    public function __construct($examId, ?string $mode = null, ?int $sittingId = null)
     {
         $this->examId = $examId;
         $this->mode = $this->normalizeAssessmentModeFilter($mode);
+        $this->sittingId = ($sittingId && $sittingId > 0) ? (int) $sittingId : null;
     }
 
     public function collection()
@@ -28,6 +30,10 @@ class ExamResultsExport implements FromCollection, WithHeadings, WithMapping
 
         if ($this->mode !== null) {
             $query->where('assessment_mode', $this->mode);
+        }
+
+        if ($this->sittingId !== null) {
+            $query->where('exam_sitting_id', $this->sittingId);
         }
 
         return $query->get();

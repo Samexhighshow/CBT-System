@@ -1,11 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Modal, Input, Alert } from '../../components';
 import { showSuccess, showError, showConfirm } from '../../utils/alerts';
 import { examApi } from '../../services/laravelApi';
+import { api } from '../../services/api';
 
 interface QuestionRandomizationProps {
   examId: number;
   onClose: () => void;
+  sittingContext?: {
+    sittingId: number;
+    title?: string;
+    initialSettings?: {
+      question_selection_mode?: 'fixed' | 'random' | null;
+      question_count?: number | null;
+      shuffle_question_order?: boolean | null;
+      shuffle_option_order?: boolean | null;
+      question_distribution?: 'same_for_all' | 'unique_per_student' | null;
+      difficulty_distribution?: { easy?: number; medium?: number; hard?: number } | null;
+      marks_distribution?: { [key: number]: number } | null;
+      topic_filters?: string[] | null;
+      question_reuse_policy?: 'allow_reuse' | 'no_reuse_until_exhausted' | null;
+    };
+    onSaved?: () => void;
+  };
 }
 
 interface RandomizationSettings {
@@ -67,7 +84,8 @@ interface Stats {
   };
 }
 
-const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, onClose }) => {
+const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, onClose, sittingContext }) => {
+  const isSittingMode = !!sittingContext;
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState<RandomizationSettings>({
     question_selection_mode: 'fixed',
@@ -96,11 +114,72 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
   const [marksDistribution, setMarksDistribution] = useState<Array<{ marks: number; count: number }>>([]);
   const [useMarksDistribution, setUseMarksDistribution] = useState(false);
 
-  useEffect(() => {
-    loadStats();
+  const loadStats = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await examApi.getRandomizationStats(examId);
+      // Handle both nested (data.data) and direct response formats
+      const statsData = res.data.data || res.data;
+      console.log('Loaded stats:', statsData); // Debug log
+      setStats(statsData);
+    } catch (error: any) {
+      showError(error?.response?.data?.message || 'Failed to load randomization stats');
+      console.error('Error loading stats:', error);
+    } finally {
+      setLoading(false);
+    }
   }, [examId]);
 
   useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    if (isSittingMode) {
+      const sittingSettings = sittingContext?.initialSettings;
+      if (!sittingSettings) return;
+
+      setSettings((prev) => ({
+        ...prev,
+        question_selection_mode: sittingSettings.question_selection_mode || 'fixed',
+        total_questions_to_serve: sittingSettings.question_count || null,
+        shuffle_question_order: !!sittingSettings.shuffle_question_order,
+        shuffle_option_order: !!sittingSettings.shuffle_option_order,
+        question_distribution: sittingSettings.question_distribution || 'same_for_all',
+        difficulty_distribution: sittingSettings.difficulty_distribution || null,
+        marks_distribution: sittingSettings.marks_distribution || null,
+        topic_filters: sittingSettings.topic_filters || null,
+        question_reuse_policy: sittingSettings.question_reuse_policy || 'allow_reuse',
+        questions_locked: false,
+        questions_locked_at: null,
+      }));
+
+      if (sittingSettings.difficulty_distribution) {
+        setUseDifficultyDistribution(true);
+        setEasyCount(sittingSettings.difficulty_distribution.easy || 0);
+        setMediumCount(sittingSettings.difficulty_distribution.medium || 0);
+        setHardCount(sittingSettings.difficulty_distribution.hard || 0);
+      } else {
+        setUseDifficultyDistribution(false);
+        setEasyCount(0);
+        setMediumCount(0);
+        setHardCount(0);
+      }
+
+      if (sittingSettings.marks_distribution && typeof sittingSettings.marks_distribution === 'object') {
+        setUseMarksDistribution(true);
+        const marksArray = Object.entries(sittingSettings.marks_distribution).map(([marks, count]) => ({
+          marks: parseInt(marks),
+          count: count as number,
+        }));
+        setMarksDistribution(marksArray);
+      } else {
+        setUseMarksDistribution(false);
+        setMarksDistribution([]);
+      }
+      return;
+    }
+
     if (stats && stats.settings) {
       // Map backend response format to internal state format
       const backendSettings = stats.settings;
@@ -145,23 +224,7 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
         setMarksDistribution([]);
       }
     }
-  }, [stats]);
-
-  const loadStats = async () => {
-    try {
-      setLoading(true);
-      const res = await examApi.getRandomizationStats(examId);
-      // Handle both nested (data.data) and direct response formats
-      const statsData = res.data.data || res.data;
-      console.log('Loaded stats:', statsData); // Debug log
-      setStats(statsData);
-    } catch (error: any) {
-      showError(error?.response?.data?.message || 'Failed to load randomization stats');
-      console.error('Error loading stats:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [isSittingMode, sittingContext, stats]);
 
   const handleSaveSettings = async () => {
     try {
@@ -204,13 +267,30 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
         payload.marks_distribution = null;
       }
 
-      const res = await examApi.updateRandomizationSettings(examId, payload);
-      const savedStats = res.data.data || res.data;
-      
-      // Update state directly with returned data
-      setStats(savedStats);
-      
-      showSuccess('Randomization settings saved successfully');
+      if (isSittingMode && sittingContext) {
+        await api.put(`/exams/${examId}/sittings/${sittingContext.sittingId}`, {
+          question_count: payload.total_questions_to_serve,
+          question_selection_mode: payload.question_selection_mode,
+          shuffle_question_order: payload.shuffle_question_order,
+          shuffle_option_order: payload.shuffle_option_order,
+          question_distribution: payload.question_distribution,
+          difficulty_distribution: payload.difficulty_distribution,
+          marks_distribution: payload.marks_distribution,
+          topic_filters: payload.topic_filters,
+          question_reuse_policy: payload.question_reuse_policy,
+        });
+        showSuccess(`Randomization settings saved for sitting #${sittingContext.sittingId}`);
+        if (typeof sittingContext.onSaved === 'function') {
+          await Promise.resolve(sittingContext.onSaved());
+        }
+      } else {
+        const res = await examApi.updateRandomizationSettings(examId, payload);
+        const savedStats = res.data.data || res.data;
+
+        // Update state directly with returned data
+        setStats(savedStats);
+        showSuccess('Randomization settings saved successfully');
+      }
     } catch (error: any) {
       showError(error?.response?.data?.message || 'Failed to save settings');
       console.error('Error saving settings:', error);
@@ -289,44 +369,51 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
   };
 
   return (
-    <Modal isOpen={true} onClose={onClose} title="Question Randomization & Selection" size="xl">
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={isSittingMode ? `Question Randomization & Selection - ${sittingContext?.title || `Sitting #${sittingContext?.sittingId}`}` : 'Question Randomization & Selection'}
+      size="xl"
+    >
       <div className="space-y-6">
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700">
-          <button
-            className={`px-4 py-2 font-medium ${
-              activeTab === 'settings'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 dark:text-gray-400'
-            }`}
-            onClick={() => setActiveTab('settings')}
-          >
-            Settings
-          </button>
-          <button
-            className={`px-4 py-2 font-medium ${
-              activeTab === 'preview'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 dark:text-gray-400'
-            }`}
-            onClick={() => setActiveTab('preview')}
-          >
-            Preview
-          </button>
-          <button
-            className={`px-4 py-2 font-medium ${
-              activeTab === 'stats'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 dark:text-gray-400'
-            }`}
-            onClick={() => setActiveTab('stats')}
-          >
-            Statistics
-          </button>
-        </div>
+        {!isSittingMode && (
+          <div className="flex border-b border-gray-200 dark:border-gray-700">
+            <button
+              className={`px-4 py-2 font-medium ${
+                activeTab === 'settings'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 dark:text-gray-400'
+              }`}
+              onClick={() => setActiveTab('settings')}
+            >
+              Settings
+            </button>
+            <button
+              className={`px-4 py-2 font-medium ${
+                activeTab === 'preview'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 dark:text-gray-400'
+              }`}
+              onClick={() => setActiveTab('preview')}
+            >
+              Preview
+            </button>
+            <button
+              className={`px-4 py-2 font-medium ${
+                activeTab === 'stats'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 dark:text-gray-400'
+              }`}
+              onClick={() => setActiveTab('stats')}
+            >
+              Statistics
+            </button>
+          </div>
+        )}
 
         {/* Lock Status */}
-        {settings.questions_locked && (
+        {!isSittingMode && settings.questions_locked && (
           <Alert
             type="warning"
             message={`Questions are locked since ${new Date(settings.questions_locked_at!).toLocaleString()}. Unlock to modify settings.`}
@@ -334,7 +421,7 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
         )}
 
         {/* Settings Tab */}
-        {activeTab === 'settings' && (
+        {(isSittingMode || activeTab === 'settings') && (
           <div className="space-y-6">
             {/* Question Source Section */}
             <div className="border-l-4 border-blue-500 pl-4 py-2">
@@ -762,24 +849,28 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
               <Button onClick={handleSaveSettings} loading={loading} disabled={settings.questions_locked}>
                 Save Settings
               </Button>
-              <Button variant="outline" onClick={handleGeneratePreview} loading={loading}>
-                Generate Preview
-              </Button>
-              {!settings.questions_locked ? (
-                <Button variant="success" onClick={handleLockQuestions} loading={loading}>
-                  Lock Questions
-                </Button>
-              ) : (
-                <Button variant="danger" onClick={handleUnlockQuestions} loading={loading}>
-                  Unlock Questions
-                </Button>
+              {!isSittingMode && (
+                <>
+                  <Button variant="outline" onClick={handleGeneratePreview} loading={loading}>
+                    Generate Preview
+                  </Button>
+                  {!settings.questions_locked ? (
+                    <Button variant="success" onClick={handleLockQuestions} loading={loading}>
+                      Lock Questions
+                    </Button>
+                  ) : (
+                    <Button variant="danger" onClick={handleUnlockQuestions} loading={loading}>
+                      Unlock Questions
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>
         )}
 
         {/* Preview Tab */}
-        {activeTab === 'preview' && (
+        {!isSittingMode && activeTab === 'preview' && (
           <div className="space-y-4">
             {!preview && (
               <p className="text-gray-600 dark:text-gray-400">Click "Generate Preview" to see question selection preview</p>
@@ -897,7 +988,7 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
         )}
 
         {/* Stats Tab */}
-        {activeTab === 'stats' && stats && (
+        {!isSittingMode && activeTab === 'stats' && stats && (
           <div className="space-y-4">
             <Card>
               <h3 className="text-lg font-semibold mb-4 dark:text-white">Exam Statistics</h3>

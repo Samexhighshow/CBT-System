@@ -56,7 +56,7 @@ class ResultController extends Controller
         $student = Student::findOrFail($studentId);
         $grading = $this->gradingService();
         
-        $query = ExamAttempt::with(['exam.subject'])
+        $query = ExamAttempt::with(['exam.subject', 'examSitting'])
             ->where('student_id', $studentId)
             ->whereIn('status', ['completed', 'submitted'])
             ->orderBy('completed_at', 'desc');
@@ -79,7 +79,7 @@ class ResultController extends Controller
             ->all();
 
         $results = $attempts->getCollection()->map(function($attempt) use ($grading, $examRankingMaps, $isStudent) {
-            if ($isStudent && !((bool) ($attempt->exam?->results_released ?? false))) {
+            if ($isStudent && !$this->isAttemptResultReleased($attempt)) {
                 return [
                     'id' => $attempt->id,
                     'exam_title' => $attempt->exam->title,
@@ -139,7 +139,7 @@ class ResultController extends Controller
 
         // IMPORTANT: compile against the student's full completed history,
         // not only the current paginated page.
-        $allCompletedAttemptsQuery = ExamAttempt::with(['exam.subject'])
+        $allCompletedAttemptsQuery = ExamAttempt::with(['exam.subject', 'examSitting'])
             ->where('student_id', $studentId)
             ->whereIn('status', ['completed', 'submitted']);
         if ($isStaff && $this->roleScopeService->isScopedActor($user)) {
@@ -147,12 +147,12 @@ class ResultController extends Controller
                 $this->roleScopeService->applyExamScope($examQuery, $user);
             });
         }
-        if ($isStudent) {
-            $allCompletedAttemptsQuery->whereHas('exam', function ($q) {
-                $q->where('results_released', true);
-            });
-        }
         $allCompletedAttempts = $allCompletedAttemptsQuery->get();
+        if ($isStudent) {
+            $allCompletedAttempts = $allCompletedAttempts
+                ->filter(fn (ExamAttempt $attempt) => $this->isAttemptResultReleased($attempt))
+                ->values();
+        }
 
         $termCompilation = $this->buildTermCompilationForStudent($allCompletedAttempts);
         $compiledResults = $this->flattenCompiledResults($termCompilation);
@@ -180,6 +180,8 @@ class ResultController extends Controller
             return response()->json(['message' => 'Forbidden: outside role scope.'], 403);
         }
 
+        $sittingId = (int) $request->input('sitting_id', 0);
+
         $grading = $this->gradingService();
         
         $query = ExamAttempt::with(['student.department'])
@@ -187,9 +189,13 @@ class ResultController extends Controller
             ->where('status', 'completed')
             ->orderBy('score', 'desc');
 
+        if ($sittingId > 0) {
+            $query->where('exam_sitting_id', $sittingId);
+        }
+
         $perPage = $request->input('limit', 15);
         $attempts = $query->paginate($perPage);
-        $rankings = $this->buildExamRankingMap((int) $examId);
+        $rankings = $this->buildExamRankingMap((int) $examId, $sittingId > 0 ? $sittingId : null);
 
         $results = $attempts->getCollection()->map(function($attempt) use ($exam, $grading, $rankings) {
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
@@ -247,6 +253,10 @@ class ResultController extends Controller
         // Filter by exam
         if ($request->has('exam_id')) {
             $query->where('exam_id', $request->exam_id);
+        }
+
+        if ($request->has('sitting_id')) {
+            $query->where('exam_sitting_id', (int) $request->sitting_id);
         }
 
         // Filter by student
@@ -370,6 +380,7 @@ class ResultController extends Controller
         $grading = $this->gradingService();
         $attempt = ExamAttempt::with([
             'exam.subject',
+            'examSitting',
             'student.department',
             'examAnswers.question.options'
         ])->findOrFail($attemptId);
@@ -384,7 +395,7 @@ class ResultController extends Controller
                 return response()->json(['message' => 'You can only access your own attempt results.'], 403);
             }
 
-            if (!(bool) ($attempt->exam?->results_released ?? false)) {
+            if (!$this->isAttemptResultReleased($attempt)) {
                 return response()->json([
                     'status' => 'not_released',
                     'message' => 'Results have not been released yet.',
@@ -874,15 +885,20 @@ class ResultController extends Controller
         return $year . '/' . ($year + 1);
     }
 
-    private function buildExamRankingMap(int $examId): array
+    private function buildExamRankingMap(int $examId, ?int $sittingId = null): array
     {
-        $attempts = ExamAttempt::query()
+        $query = ExamAttempt::query()
             ->where('exam_id', $examId)
             ->where('status', 'completed')
             ->orderByDesc('score')
             ->orderBy('completed_at')
-            ->orderBy('id')
-            ->get(['id', 'score']);
+            ->orderBy('id');
+
+        if ($sittingId && $sittingId > 0) {
+            $query->where('exam_sitting_id', $sittingId);
+        }
+
+        $attempts = $query->get(['id', 'score']);
 
         $rankMap = [];
         $currentRank = 0;
@@ -902,6 +918,15 @@ class ResultController extends Controller
         }
 
         return $rankMap;
+    }
+
+    private function isAttemptResultReleased(ExamAttempt $attempt): bool
+    {
+        if ($attempt->relationLoaded('examSitting') && $attempt->examSitting) {
+            return (bool) ($attempt->examSitting->results_released ?? false);
+        }
+
+        return (bool) ($attempt->exam?->results_released ?? false);
     }
 
     private function flattenCompiledResults(array $termCompilation): array

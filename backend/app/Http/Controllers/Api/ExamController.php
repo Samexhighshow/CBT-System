@@ -894,12 +894,20 @@ class ExamController extends Controller
 
     private function resolveRequestedSitting(Request $request, Exam $exam, string $resolvedMode): ?ExamSitting
     {
+        $systemMode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        $strictMode = in_array($systemMode, ['ca_test', 'exam'], true) ? $systemMode : null;
+
         $requestedId = (int) ($request->input('exam_sitting_id') ?? 0);
         if ($requestedId > 0) {
-            return ExamSitting::where('exam_id', $exam->id)->where('id', $requestedId)->first();
+            $query = ExamSitting::where('exam_id', $exam->id)->where('id', $requestedId);
+            if ($strictMode !== null) {
+                $query->where('assessment_mode_snapshot', $strictMode);
+            }
+
+            return $query->first();
         }
 
-        return ExamSitting::resolveOrCreateDefault($exam, $resolvedMode);
+        return ExamSitting::resolveOrCreateDefault($exam, $strictMode ?? $resolvedMode);
     }
 
     private function resolveAttemptMode(Exam $exam): string

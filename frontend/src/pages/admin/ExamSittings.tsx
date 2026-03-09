@@ -6,6 +6,7 @@ import QuestionRandomization from './QuestionRandomization';
 
 type SittingMode = 'ca_test' | 'exam';
 type SittingStatus = 'draft' | 'scheduled' | 'active' | 'closed';
+type QuestionSelectionMode = 'fixed' | 'random';
 type TermValue = 'First Term' | 'Second Term' | 'Third Term';
 
 interface ExamRow {
@@ -30,6 +31,13 @@ interface SittingRow {
   term?: TermValue | null;
   assessment_mode_snapshot: SittingMode;
   question_count?: number | null;
+  question_selection_mode?: QuestionSelectionMode | null;
+  shuffle_question_order?: boolean | null;
+  shuffle_option_order?: boolean | null;
+  question_distribution?: 'same_for_all' | 'unique_per_student' | null;
+  difficulty_distribution?: { easy?: number; medium?: number; hard?: number } | null;
+  marks_distribution?: Record<string, number> | null;
+  question_reuse_policy?: 'allow_reuse' | 'no_reuse_until_exhausted' | null;
   duration_minutes?: number | null;
   start_at?: string | null;
   end_at?: string | null;
@@ -42,6 +50,9 @@ interface SittingDraft {
   term: TermValue | '';
   assessment_mode_snapshot: SittingMode;
   question_count: string;
+  question_selection_mode: QuestionSelectionMode;
+  shuffle_question_order: boolean;
+  shuffle_option_order: boolean;
   duration_minutes: string;
   start_at: string;
   end_at: string;
@@ -86,12 +97,16 @@ const ExamSittings: React.FC = () => {
   const [selectedSittingIds, setSelectedSittingIds] = useState<number[]>([]);
   const [bulkStatus, setBulkStatus] = useState<SittingStatus>('scheduled');
   const [editRows, setEditRows] = useState<Record<number, SittingDraft>>({});
-  const [showRandomizationModal, setShowRandomizationModal] = useState(false);
+  const [showSittingRandomizationModal, setShowSittingRandomizationModal] = useState(false);
+  const [activeRandomizationSitting, setActiveRandomizationSitting] = useState<SittingRow | null>(null);
   const [createDraft, setCreateDraft] = useState<SittingDraft>({
     session: '',
     term: '',
     assessment_mode_snapshot: 'exam',
     question_count: '',
+    question_selection_mode: 'fixed',
+    shuffle_question_order: false,
+    shuffle_option_order: false,
     duration_minutes: '',
     start_at: '',
     end_at: '',
@@ -136,6 +151,9 @@ const ExamSittings: React.FC = () => {
     term: (row.term || '') as TermValue | '',
     assessment_mode_snapshot: row.assessment_mode_snapshot,
     question_count: row.question_count ? String(row.question_count) : '',
+    question_selection_mode: (row.question_selection_mode || 'fixed') as QuestionSelectionMode,
+    shuffle_question_order: !!row.shuffle_question_order,
+    shuffle_option_order: !!row.shuffle_option_order,
     duration_minutes: row.duration_minutes ? String(row.duration_minutes) : '',
     start_at: toDateInput(row.start_at),
     end_at: toDateInput(row.end_at),
@@ -182,6 +200,9 @@ const ExamSittings: React.FC = () => {
       term: (exam?.term || '') as TermValue | '',
       assessment_mode_snapshot: 'exam',
       question_count: exam?.metadata?.question_count ? String(exam.metadata.question_count) : '',
+      question_selection_mode: 'fixed',
+      shuffle_question_order: false,
+      shuffle_option_order: false,
       duration_minutes: exam?.duration_minutes ? String(exam.duration_minutes) : '60',
       start_at: toDateInput(exam?.start_datetime || exam?.start_time),
       end_at: toDateInput(exam?.end_datetime || exam?.end_time),
@@ -241,6 +262,9 @@ const ExamSittings: React.FC = () => {
       term: createDraft.term || null,
       assessment_mode_snapshot: createDraft.assessment_mode_snapshot,
       question_count: createDraft.question_count ? Number(createDraft.question_count) : null,
+      question_selection_mode: createDraft.question_selection_mode,
+      shuffle_question_order: !!createDraft.shuffle_question_order,
+      shuffle_option_order: !!createDraft.shuffle_option_order,
       duration_minutes: createDraft.duration_minutes ? Number(createDraft.duration_minutes) : null,
       start_at: toApiDate(createDraft.start_at),
       end_at: toApiDate(createDraft.end_at),
@@ -274,7 +298,6 @@ const ExamSittings: React.FC = () => {
       session: row.session || null,
       term: row.term || null,
       assessment_mode_snapshot: row.assessment_mode_snapshot,
-      question_count: row.question_count ? Number(row.question_count) : null,
       duration_minutes: row.duration_minutes ? Number(row.duration_minutes) : null,
       start_at: toApiDate(row.start_at),
       end_at: toApiDate(row.end_at),
@@ -367,6 +390,11 @@ const ExamSittings: React.FC = () => {
     setSelectedSittingIds((prev) => prev.filter((x) => x !== id));
   };
 
+  const openSittingRandomization = (row: SittingRow) => {
+    setActiveRandomizationSitting(row);
+    setShowSittingRandomizationModal(true);
+  };
+
   return (
     <div className="app-shell section-shell py-4 space-y-4">
       <div>
@@ -448,15 +476,6 @@ const ExamSittings: React.FC = () => {
               </select>
 
               <input
-                value={createDraft.question_count}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, question_count: e.target.value }))}
-                type="number"
-                min={1}
-                placeholder="Question Count"
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              />
-
-              <input
                 value={createDraft.duration_minutes}
                 onChange={(e) => setCreateDraft((prev) => ({ ...prev, duration_minutes: e.target.value }))}
                 type="number"
@@ -512,12 +531,6 @@ const ExamSittings: React.FC = () => {
                     Add Questions
                   </button>
                   <button
-                    onClick={() => setShowRandomizationModal(true)}
-                    className="px-3 py-1.5 rounded bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700"
-                  >
-                    Randomization
-                  </button>
-                  <button
                     onClick={() => navigate(`/admin/results?examId=${selectedExamId}`)}
                     className="px-3 py-1.5 rounded bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-700"
                   >
@@ -564,7 +577,6 @@ const ExamSittings: React.FC = () => {
                       <th className="px-3 py-2 text-left">Status</th>
                       <th className="px-3 py-2 text-left">Session</th>
                       <th className="px-3 py-2 text-left">Term</th>
-                      <th className="px-3 py-2 text-left">Q Count</th>
                       <th className="px-3 py-2 text-left">Duration</th>
                       <th className="px-3 py-2 text-left">Start</th>
                       <th className="px-3 py-2 text-left">End</th>
@@ -629,15 +641,6 @@ const ExamSittings: React.FC = () => {
                             <input
                               type="number"
                               min={1}
-                              value={edit.question_count}
-                              onChange={(e) => setEditRows((prev) => ({ ...prev, [row.id]: { ...edit, question_count: e.target.value } }))}
-                              className="w-24 px-2 py-1 border border-gray-300 rounded"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min={1}
                               value={edit.duration_minutes}
                               onChange={(e) => setEditRows((prev) => ({ ...prev, [row.id]: { ...edit, duration_minutes: e.target.value } }))}
                               className="w-24 px-2 py-1 border border-gray-300 rounded"
@@ -674,23 +677,38 @@ const ExamSittings: React.FC = () => {
                               <button
                                 onClick={() => updateSitting(row.id)}
                                 disabled={saving}
-                                className="px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-60"
+                                title="Save"
+                                aria-label="Save"
                               >
-                                Save
+                                <i className='bx bx-save text-sm'></i>
+                              </button>
+                              <button
+                                onClick={() => openSittingRandomization(row)}
+                                disabled={saving}
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-md bg-violet-50 text-violet-600 hover:bg-violet-100 disabled:opacity-60"
+                                title="Randomization"
+                                aria-label="Randomization"
+                              >
+                                <i className='bx bx-shuffle text-sm'></i>
                               </button>
                               <button
                                 onClick={() => duplicateSitting(row.id)}
                                 disabled={saving}
-                                className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-60"
+                                title="Duplicate"
+                                aria-label="Duplicate"
                               >
-                                Duplicate
+                                <i className='bx bx-copy text-sm'></i>
                               </button>
                               <button
                                 onClick={() => deleteSitting(row.id)}
                                 disabled={saving}
-                                className="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60"
+                                title="Delete"
+                                aria-label="Delete"
                               >
-                                Delete
+                                <i className='bx bx-trash text-sm'></i>
                               </button>
                             </div>
                           </td>
@@ -705,36 +723,33 @@ const ExamSittings: React.FC = () => {
         </>
       )}
 
-      {showRandomizationModal && selectedExamId > 0 && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <i className='bx bx-shuffle text-3xl'></i>
-                <div>
-                  <h2 className="text-2xl font-bold">Question Randomization</h2>
-                  <p className="text-indigo-100 text-sm mt-1">Configure randomization for this exam template before running sittings.</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowRandomizationModal(false)}
-                className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
-                title="Close"
-              >
-                <i className='bx bx-x text-3xl'></i>
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-6">
-              <QuestionRandomization
-                examId={selectedExamId}
-                onClose={() => {
-                  setShowRandomizationModal(false);
-                  loadSittings(selectedExamId);
-                }}
-              />
-            </div>
-          </div>
-        </div>
+      {showSittingRandomizationModal && activeRandomizationSitting && selectedExamId > 0 && (
+        <QuestionRandomization
+          examId={selectedExamId}
+          onClose={() => {
+            setShowSittingRandomizationModal(false);
+            setActiveRandomizationSitting(null);
+          }}
+          sittingContext={{
+            sittingId: activeRandomizationSitting.id,
+            title: `Sitting #${activeRandomizationSitting.id}`,
+            initialSettings: {
+              question_selection_mode: activeRandomizationSitting.question_selection_mode,
+              question_count: activeRandomizationSitting.question_count,
+              shuffle_question_order: activeRandomizationSitting.shuffle_question_order,
+              shuffle_option_order: activeRandomizationSitting.shuffle_option_order,
+              question_distribution: activeRandomizationSitting.question_distribution,
+              difficulty_distribution: activeRandomizationSitting.difficulty_distribution,
+              marks_distribution: activeRandomizationSitting.marks_distribution as any,
+              question_reuse_policy: activeRandomizationSitting.question_reuse_policy,
+            },
+            onSaved: async () => {
+              if (selectedExamId > 0) {
+                await loadSittings(selectedExamId);
+              }
+            },
+          }}
+        />
       )}
     </div>
   );

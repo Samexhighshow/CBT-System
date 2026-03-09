@@ -65,8 +65,9 @@ class ReportController extends Controller
         }
 
         $mode = $this->normalizeAssessmentModeFilter($request->query('mode'));
+        $sittingId = (int) $request->query('sitting_id', 0);
 
-        $attempts = $this->loadExamReportAttempts($exam, $mode)->map(function (ExamAttempt $attempt) {
+        $attempts = $this->loadExamReportAttempts($exam, $mode, $sittingId > 0 ? $sittingId : null)->map(function (ExamAttempt $attempt) {
             $score = (float) ($attempt->score ?? 0);
             $totalMarks = $this->resolveAttemptTotalMarks($attempt);
             $passingMarks = $this->resolveAttemptPassingMarks($attempt, $totalMarks);
@@ -127,12 +128,16 @@ class ReportController extends Controller
         return $pdf->download('exam_report_' . $exam->id . '.pdf');
     }
 
-    private function loadExamReportAttempts(Exam $exam, ?string $mode = null): Collection
+    private function loadExamReportAttempts(Exam $exam, ?string $mode = null, ?int $sittingId = null): Collection
     {
         $baseQuery = ExamAttempt::query()
             ->with(['student.department'])
             ->where('exam_id', $exam->id)
             ->whereNotNull('score');
+
+        if ($sittingId && $sittingId > 0) {
+            $baseQuery->where('exam_sitting_id', $sittingId);
+        }
 
         if ($mode !== null) {
             $baseQuery->where('assessment_mode', $mode);
@@ -185,9 +190,10 @@ class ReportController extends Controller
         }
 
         $mode = $this->normalizeAssessmentModeFilter($request->query('mode'));
+        $sittingId = (int) $request->query('sitting_id', 0);
 
         return Excel::download(
-            new ExamResultsExport($examId, $mode), 
+            new ExamResultsExport($examId, $mode, $sittingId > 0 ? $sittingId : null), 
             'exam_report_' . $examId . '.xlsx'
         );
     }

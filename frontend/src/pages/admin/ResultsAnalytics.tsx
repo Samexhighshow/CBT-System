@@ -45,6 +45,15 @@ interface ExamOption {
   results_released?: boolean;
 }
 
+interface SittingOption {
+  id: number;
+  assessment_mode_snapshot?: 'ca_test' | 'exam' | string;
+  status?: 'draft' | 'scheduled' | 'active' | 'closed' | string;
+  results_released?: boolean;
+  session?: string | null;
+  term?: string | null;
+}
+
 interface MarkingSummary {
   pending_manual: number;
   completed_marked: number;
@@ -80,7 +89,7 @@ const ResultsAnalytics: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'ca' | 'exam' | 'compiled' | 'broadsheet'>('exam');
+  const [activeTab, setActiveTab] = useState<'results' | 'compiled' | 'broadsheet'>('results');
   const [exportLoading, setExportLoading] = useState(false);
   const [analytics, setAnalytics] = useState<AnalyticsData>({
     average_score: 0,
@@ -88,6 +97,8 @@ const ResultsAnalytics: React.FC = () => {
     total_attempts: 0,
   });
   const [examId, setExamId] = useState<string>('');
+  const [sittingId, setSittingId] = useState<string>('');
+  const [sittings, setSittings] = useState<SittingOption[]>([]);
   const [studentName, setStudentName] = useState<string>('');
   const [exams, setExams] = useState<ExamOption[]>([]);
   const [markingSummary, setMarkingSummary] = useState<MarkingSummary>({
@@ -97,9 +108,6 @@ const ResultsAnalytics: React.FC = () => {
     exams_with_pending: 0,
   });
   const [loadingMarkingSummary, setLoadingMarkingSummary] = useState(false);
-  const [releaseClass, setReleaseClass] = useState<string>('');
-  const [releaseSubject, setReleaseSubject] = useState<string>('');
-  const [releaseExamId, setReleaseExamId] = useState<string>('');
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [compiledRows, setCompiledRows] = useState<CompiledAdminRow[]>([]);
   const [loadingCompiledRows, setLoadingCompiledRows] = useState(false);
@@ -113,12 +121,11 @@ const ResultsAnalytics: React.FC = () => {
   const [remarksSaving, setRemarksSaving] = useState(false);
   const resultsPerPage = 10;
 
-  const activeRouteTab = useMemo<'ca' | 'exam' | 'compiled' | 'broadsheet'>(() => {
+  const activeRouteTab = useMemo<'results' | 'compiled' | 'broadsheet'>(() => {
     const path = location.pathname.toLowerCase();
-    if (path.endsWith('/ca')) return 'ca';
     if (path.endsWith('/compiled')) return 'compiled';
     if (path.endsWith('/broadsheet')) return 'broadsheet';
-    return 'exam';
+    return 'results';
   }, [location.pathname]);
 
   useEffect(() => {
@@ -126,18 +133,20 @@ const ResultsAnalytics: React.FC = () => {
     setResultsPage(1);
   }, [activeRouteTab]);
 
-  const tabRoutePath = (tab: 'ca' | 'exam' | 'compiled' | 'broadsheet'): string => {
-    if (tab === 'ca') return '/admin/results/ca';
+  const tabRoutePath = (tab: 'results' | 'compiled' | 'broadsheet'): string => {
     if (tab === 'compiled') return '/admin/results/compiled';
     if (tab === 'broadsheet') return '/admin/results/broadsheet';
     return '/admin/results/exam';
   };
 
-  const goToTab = (tab: 'ca' | 'exam' | 'compiled' | 'broadsheet') => {
+  const goToTab = (tab: 'results' | 'compiled' | 'broadsheet') => {
     const nextPath = tabRoutePath(tab);
     const params = new URLSearchParams(location.search);
     if (examId) {
       params.set('examId', examId);
+    }
+    if (sittingId) {
+      params.set('sittingId', sittingId);
     }
     const search = params.toString();
     navigate(search ? `${nextPath}?${search}` : nextPath);
@@ -146,11 +155,44 @@ const ResultsAnalytics: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const routeExamId = params.get('examId');
+    const routeSittingId = params.get('sittingId');
     if (routeExamId && routeExamId !== examId) {
       setExamId(routeExamId);
     }
+    if ((routeSittingId || '') !== sittingId) {
+      setSittingId(routeSittingId || '');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
+
+  useEffect(() => {
+    const loadSittings = async () => {
+      if (!examId) {
+        setSittings([]);
+        setSittingId('');
+        return;
+      }
+
+      try {
+        const response = await runWithRetry(() =>
+          api.get(`/exams/${examId}/sittings`, { skipGlobalLoading: true } as any)
+        );
+        const rows = response.data?.sittings || response.data?.data || [];
+        const list: SittingOption[] = Array.isArray(rows) ? rows : [];
+        setSittings(list);
+
+        if (sittingId && !list.some((row) => String(row.id) === sittingId)) {
+          setSittingId('');
+        }
+      } catch (error) {
+        console.error('Failed to load sittings for selected exam', error);
+        setSittings([]);
+        setSittingId('');
+      }
+    };
+
+    loadSittings();
+  }, [examId, sittingId]);
 
   useEffect(() => {
     let isActive = true;
@@ -189,79 +231,63 @@ const ResultsAnalytics: React.FC = () => {
   };
 
   const loadExams = async () => {
+    const normalizeExamRows = (payload: any): any[] => {
+      const root = payload?.data ?? payload;
+      if (Array.isArray(root)) return root;
+      if (Array.isArray(root?.data)) return root.data;
+      return [];
+    };
+
+    const mapExam = (e: any): ExamOption => ({
+      id: Number(e.id),
+      title: String(e.title || `Exam #${e.id}`),
+      class_id: e.class_id,
+      subject_name: e.subject?.name || '',
+      class_name: e.school_class?.name || '',
+      term: e.term || '',
+      academic_session: e.academic_session || '',
+      results_released: !!e.results_released,
+    });
+
     try {
       const response = await runWithRetry(() => api.get('/exams', { skipGlobalLoading: true } as any));
-      const data = response.data?.data || response.data || [];
-      setExams(Array.isArray(data) ? data.map((e: any) => ({
-        id: e.id,
-        title: e.title,
-        class_id: e.class_id,
-        subject_name: e.subject?.name || '',
-        class_name: e.school_class?.name || '',
-        term: e.term || '',
-        academic_session: e.academic_session || '',
-        results_released: !!e.results_released,
-      })) : []);
+      let rows = normalizeExamRows(response.data);
+
+      if (rows.length === 0) {
+        const markingExams = await runWithRetry(() => api.get('/marking/exams', { skipGlobalLoading: true } as any));
+        const markingRows = Array.isArray(markingExams.data?.data) ? markingExams.data.data : [];
+        rows = markingRows
+          .map((row: any) => ({
+            id: Number(row.exam_id || row.id || 0),
+            title: String(row.exam_title || row.title || '').trim(),
+            class_id: Number(row.class_id || 0) || undefined,
+            term: row.term || '',
+            academic_session: row.session || row.academic_session || '',
+            results_released: !!row.results_released,
+            subject: { name: row.subject_name || '' },
+            school_class: { name: row.class_name || '' },
+          }))
+          .filter((row: any) => row.id > 0 && row.title);
+      }
+
+      const mapped = rows
+        .map(mapExam)
+        .filter((row) => Number.isFinite(row.id) && row.id > 0)
+        .sort((a, b) => a.title.localeCompare(b.title));
+
+      // Preserve selected context even when exam list endpoint is role-restricted.
+      if (examId && !mapped.some((row) => String(row.id) === examId)) {
+        mapped.unshift({
+          id: Number(examId),
+          title: `Exam #${examId}`,
+          results_released: false,
+        });
+      }
+
+      setExams(mapped);
     } catch (error: any) {
       console.error('Failed to fetch exams:', error);
       setExams([]);
-    }
-  };
-
-  const classOptions = useMemo(
-    () => Array.from(new Set(exams.map((e) => String(e.class_name || '').trim()).filter(Boolean))).sort(),
-    [exams]
-  );
-
-  const subjectOptions = useMemo(
-    () => Array.from(new Set(exams.map((e) => String(e.subject_name || '').trim()).filter(Boolean))).sort(),
-    [exams]
-  );
-
-  const releaseCandidates = useMemo(() => {
-    if (releaseExamId) {
-      return exams.filter((e) => String(e.id) === releaseExamId);
-    }
-    return exams.filter((e) => {
-      const classOk = releaseClass ? (e.class_name || '') === releaseClass : true;
-      const subjectOk = releaseSubject ? (e.subject_name || '') === releaseSubject : true;
-      return classOk && subjectOk;
-    });
-  }, [exams, releaseClass, releaseSubject, releaseExamId]);
-
-  const handleReleaseVisibility = async (release: boolean) => {
-    if (releaseCandidates.length === 0) {
-      showError('No exams matched the selected exam/subject/class filter.');
-      return;
-    }
-
-    try {
-      setReleaseLoading(true);
-      const settled = await Promise.allSettled(
-        releaseCandidates.map((exam) =>
-          api.post(`/exams/${exam.id}/toggle-results`, { results_released: release })
-        )
-      );
-
-      const successCount = settled.filter((item) => item.status === 'fulfilled').length;
-      const failCount = settled.length - successCount;
-
-      if (successCount > 0) {
-        showSuccess(
-          release
-            ? `Released results for ${successCount} exam(s).`
-            : `Hidden results for ${successCount} exam(s).`
-        );
-      }
-      if (failCount > 0) {
-        showError(`${failCount} exam(s) failed to update results visibility.`);
-      }
-
-      await loadExams();
-    } catch (error: any) {
-      showError(error?.response?.data?.message || 'Failed to update result visibility.');
-    } finally {
-      setReleaseLoading(false);
     }
   };
 
@@ -352,28 +378,52 @@ const ResultsAnalytics: React.FC = () => {
   const loadMarkingSummary = async () => {
     try {
       setLoadingMarkingSummary(true);
-      const response = await runWithRetry(() => api.get('/marking/exams', { skipGlobalLoading: true } as any));
-      const rows = response.data?.data || [];
+      if (examId) {
+        const response = await runWithRetry(() =>
+          api.get(`/marking/exams/${examId}/attempts`, {
+            params: sittingId ? { sitting_id: Number(sittingId) } : undefined,
+            skipGlobalLoading: true,
+          } as any)
+        );
+        const rows = response.data?.data || [];
+        const pending = Array.isArray(rows)
+          ? rows.reduce((sum: number, row: any) => sum + Number(row.pending_manual_count ?? 0), 0)
+          : 0;
+        const completed = Array.isArray(rows)
+          ? rows.filter((row: any) => String(row.status || '').toLowerCase() === 'completed').length
+          : 0;
+        const total = Array.isArray(rows) ? rows.length : 0;
 
-      const summary = rows.reduce((acc: MarkingSummary, row: any) => {
-        const pending = Number(row.pending_marking ?? 0);
-        const completed = Number(row.completed_marking ?? 0);
-        const total = Number(row.total_attempts ?? 0);
+        setMarkingSummary({
+          pending_manual: pending,
+          completed_marked: completed,
+          total_marking_attempts: total,
+          exams_with_pending: pending > 0 ? 1 : 0,
+        });
+      } else {
+        const response = await runWithRetry(() => api.get('/marking/exams', { skipGlobalLoading: true } as any));
+        const rows = response.data?.data || [];
 
-        return {
-          pending_manual: acc.pending_manual + pending,
-          completed_marked: acc.completed_marked + completed,
-          total_marking_attempts: acc.total_marking_attempts + total,
-          exams_with_pending: acc.exams_with_pending + (pending > 0 ? 1 : 0),
-        };
-      }, {
-        pending_manual: 0,
-        completed_marked: 0,
-        total_marking_attempts: 0,
-        exams_with_pending: 0,
-      });
+        const summary = rows.reduce((acc: MarkingSummary, row: any) => {
+          const pending = Number(row.pending_marking ?? 0);
+          const completed = Number(row.completed_marking ?? 0);
+          const total = Number(row.total_attempts ?? 0);
 
-      setMarkingSummary(summary);
+          return {
+            pending_manual: acc.pending_manual + pending,
+            completed_marked: acc.completed_marked + completed,
+            total_marking_attempts: acc.total_marking_attempts + total,
+            exams_with_pending: acc.exams_with_pending + (pending > 0 ? 1 : 0),
+          };
+        }, {
+          pending_manual: 0,
+          completed_marked: 0,
+          total_marking_attempts: 0,
+          exams_with_pending: 0,
+        });
+
+        setMarkingSummary(summary);
+      }
     } catch (error: any) {
       console.error('Failed to load marking summary:', error);
       setMarkingSummary({
@@ -387,11 +437,19 @@ const ResultsAnalytics: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (!examId) return;
+    loadAnalytics();
+    loadMarkingSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [examId, sittingId]);
+
   const loadAnalytics = async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (examId) params.append('exam_id', examId);
+      if (sittingId) params.append('sitting_id', sittingId);
 
       const analyticsRes = await runWithRetry(() =>
         api.get(`/results/analytics?${params.toString()}`, { skipGlobalLoading: true } as any)
@@ -411,7 +469,10 @@ const ResultsAnalytics: React.FC = () => {
       if (examId) {
         // Use marking attempts endpoint so submitted/pending scripts are included too.
         const attemptsRes = await runWithRetry(() =>
-          api.get(`/marking/exams/${examId}/attempts`, { skipGlobalLoading: true } as any)
+          api.get(`/marking/exams/${examId}/attempts`, {
+            params: sittingId ? { sitting_id: Number(sittingId) } : undefined,
+            skipGlobalLoading: true,
+          } as any)
         );
         const rows = attemptsRes.data?.data || [];
         const mapped: AttemptSummary[] = Array.isArray(rows)
@@ -499,7 +560,7 @@ const ResultsAnalytics: React.FC = () => {
       return {
         tone: 'bg-slate-50 border-slate-200 text-slate-800',
         title: 'Select an exam to continue',
-        message: 'Pick an exam first, then use tabs to review attempt-level exam results or term aggregate results.',
+        message: 'Pick an exam first, then review attempt-level results and exports in the selected context.',
         cta: null as null | 'marking' | 'release' | 'hide',
       };
     }
@@ -513,11 +574,17 @@ const ResultsAnalytics: React.FC = () => {
       };
     }
 
-    if (!selectedExam.results_released) {
+    const released = sittingId
+      ? !!sittings.find((row) => String(row.id) === sittingId)?.results_released
+      : !!selectedExam.results_released;
+
+    if (!released) {
       return {
         tone: 'bg-indigo-50 border-indigo-200 text-indigo-900',
         title: 'Results can be released',
-        message: 'All marking appears complete for this exam. You can now release results to students.',
+        message: sittingId
+          ? `All marking appears complete for sitting #${sittingId}. You can now release results.`
+          : 'All marking appears complete for this exam. You can now release results to students.',
         cta: 'release' as const,
       };
     }
@@ -525,10 +592,28 @@ const ResultsAnalytics: React.FC = () => {
     return {
       tone: 'bg-emerald-50 border-emerald-200 text-emerald-900',
       title: 'Results are currently visible to students',
-      message: 'Use Hide if you need to pause visibility while corrections are made.',
+      message: sittingId
+        ? `Use Hide if you need to pause visibility for sitting #${sittingId}.`
+        : 'Use Hide if you need to pause visibility while corrections are made.',
       cta: 'hide' as const,
     };
-  }, [examId, selectedExam, markingSummary.pending_manual]);
+  }, [examId, selectedExam, markingSummary.pending_manual, sittingId, sittings]);
+
+  const selectedSitting = useMemo(
+    () => sittings.find((row) => String(row.id) === sittingId) || null,
+    [sittings, sittingId]
+  );
+
+  const buildExamReportPath = (format: 'pdf' | 'excel'): string => {
+    const query = new URLSearchParams();
+    if (sittingId) query.set('sitting_id', sittingId);
+    const mode = selectedSitting?.assessment_mode_snapshot;
+    if (mode === 'ca_test' || mode === 'exam') {
+      query.set('mode', mode);
+    }
+    const qs = query.toString();
+    return `/reports/exam/${examId}/${format}${qs ? `?${qs}` : ''}`;
+  };
 
   const downloadReport = async (path: string, fallbackFilename: string) => {
     try {
@@ -660,9 +745,22 @@ const ResultsAnalytics: React.FC = () => {
 
     try {
       setReleaseLoading(true);
-      await api.post(`/exams/${selectedExam.id}/toggle-results`, { results_released: release });
-      showSuccess(release ? 'Results released for selected exam.' : 'Results hidden for selected exam.');
+      if (sittingId) {
+        await api.put(`/exams/${selectedExam.id}/sittings/${sittingId}`, { results_released: release });
+        showSuccess(release ? `Results released for sitting #${sittingId}.` : `Results hidden for sitting #${sittingId}.`);
+      } else {
+        await api.post(`/exams/${selectedExam.id}/toggle-results`, { results_released: release });
+        showSuccess(release ? 'Results released for selected exam.' : 'Results hidden for selected exam.');
+      }
+
       await loadExams();
+      if (examId) {
+        const response = await runWithRetry(() =>
+          api.get(`/exams/${examId}/sittings`, { skipGlobalLoading: true } as any)
+        );
+        const rows = response.data?.sittings || response.data?.data || [];
+        setSittings(Array.isArray(rows) ? rows : []);
+      }
     } catch (error: any) {
       showError(error?.response?.data?.message || 'Failed to update selected exam visibility.');
     } finally {
@@ -681,26 +779,7 @@ const ResultsAnalytics: React.FC = () => {
     });
   }, [examResults, studentName]);
 
-  const isCaAttemptRow = (row: AttemptSummary): boolean => {
-    const label = String(row.assessment_type || '').trim().toLowerCase();
-    return label === 'ca test' || label === 'ca' || label.includes('continuous assessment') || label.includes('quiz') || label.includes('midterm');
-  };
-
-  const caOnlyRows = useMemo(
-    () => filteredExamResults.filter((row) => isCaAttemptRow(row)),
-    [filteredExamResults]
-  );
-
-  const examOnlyRows = useMemo(
-    () => filteredExamResults.filter((row) => !isCaAttemptRow(row)),
-    [filteredExamResults]
-  );
-
-  const selectedAttemptRows = useMemo(() => {
-    if (activeTab === 'ca') return caOnlyRows;
-    if (activeTab === 'exam') return examOnlyRows;
-    return filteredExamResults;
-  }, [activeTab, caOnlyRows, examOnlyRows, filteredExamResults]);
+  const selectedAttemptRows = useMemo(() => filteredExamResults, [filteredExamResults]);
 
   const totalResultPages = Math.max(1, Math.ceil(selectedAttemptRows.length / resultsPerPage));
   const currentResultRows = useMemo(() => {
@@ -709,7 +788,8 @@ const ResultsAnalytics: React.FC = () => {
   }, [selectedAttemptRows, resultsPage]);
 
   const normalizeResultStatus = (row: AttemptSummary): 'Submitted' | 'Marked' | 'Finalized' | 'Released' => {
-    if (selectedExam?.results_released) return 'Released';
+    const released = sittingId ? !!selectedSitting?.results_released : !!selectedExam?.results_released;
+    if (released) return 'Released';
     if ((row.status || '').toLowerCase() === 'completed') return 'Finalized';
     if ((row.status || '').toLowerCase() === 'submitted') return 'Submitted';
     return 'Marked';
@@ -771,12 +851,29 @@ const ResultsAnalytics: React.FC = () => {
             <select
               className="input-compact border border-slate-200 dark:border-slate-700 text-sm bg-white dark:bg-slate-900"
               value={examId}
-              onChange={(e) => setExamId(e.target.value)}
+              onChange={(e) => {
+                setExamId(e.target.value);
+                setSittingId('');
+              }}
               aria-label="Exam filter"
             >
               <option value="">Select Exam</option>
               {exams.map((exam) => (
                 <option key={exam.id} value={exam.id}>{exam.title}</option>
+              ))}
+            </select>
+            <select
+              className="input-compact border border-slate-200 dark:border-slate-700 text-sm bg-white dark:bg-slate-900"
+              value={sittingId}
+              onChange={(e) => setSittingId(e.target.value)}
+              aria-label="Sitting filter"
+              disabled={!examId}
+            >
+              <option value="">All Sittings</option>
+              {sittings.map((sitting) => (
+                <option key={sitting.id} value={String(sitting.id)}>
+                  {`#${sitting.id} | ${(sitting.assessment_mode_snapshot || '').toUpperCase()} | ${sitting.status || '-'} | ${sitting.session || '-'} / ${sitting.term || '-'}`}
+                </option>
               ))}
             </select>
             <input
@@ -788,6 +885,9 @@ const ResultsAnalytics: React.FC = () => {
             <div className="flex flex-wrap gap-2">
               <button className="btn-compact bg-blue-600 text-white hover:bg-blue-700 transition" onClick={loadAnalytics}>
                 Refresh Analytics
+              </button>
+              <button className="btn-compact bg-slate-700 text-white hover:bg-slate-800 transition" onClick={loadExams}>
+                Reload Exams
               </button>
               <button className="btn-compact bg-slate-900 text-white hover:bg-slate-800 transition" onClick={loadMarkingSummary}>
                 Refresh Marking Summary
@@ -801,65 +901,36 @@ const ResultsAnalytics: React.FC = () => {
             <div>
               <h2 className="text-sm font-semibold text-emerald-900">Release Results Control</h2>
               <p className="text-xs text-emerald-800 mt-1">
-                Release or hide results by exam, subject, or class from one place.
+                Manage visibility using the currently selected exam and sitting context.
               </p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <select
-                value={releaseClass}
-                onChange={(e) => setReleaseClass(e.target.value)}
-                className="input-compact border border-emerald-200 text-sm bg-white"
-              >
-                <option value="">All Classes</option>
-                {classOptions.map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
-              <select
-                value={releaseSubject}
-                onChange={(e) => setReleaseSubject(e.target.value)}
-                className="input-compact border border-emerald-200 text-sm bg-white"
-              >
-                <option value="">All Subjects</option>
-                {subjectOptions.map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
-              <select
-                value={releaseExamId}
-                onChange={(e) => setReleaseExamId(e.target.value)}
-                className="input-compact border border-emerald-200 text-sm bg-white"
-              >
-                <option value="">All Matching Exams</option>
-                {exams
-                  .filter((e) => !releaseClass || (e.class_name || '') === releaseClass)
-                  .filter((e) => !releaseSubject || (e.subject_name || '') === releaseSubject)
-                  .map((exam) => (
-                    <option key={exam.id} value={String(exam.id)}>
-                      {exam.title}
-                    </option>
-                  ))}
-              </select>
-              <div className="flex gap-2">
+            {!examId ? (
+              <p className="text-xs text-slate-600">Select an exam first to control release visibility.</p>
+            ) : (
+              <>
+                <div className="text-xs text-slate-700 bg-white border border-emerald-100 rounded-lg p-2">
+                  {sittingId
+                    ? `Target: Sitting #${sittingId} (${selectedSitting?.assessment_mode_snapshot || '-'} | ${selectedSitting?.status || '-'})`
+                    : 'Target: Entire exam template (all sittings inherit only if no sitting-level override).'}
+                </div>
+                <div className="flex gap-2">
                 <button
-                  onClick={() => handleReleaseVisibility(true)}
+                  onClick={() => releaseSelectedExam(true)}
                   disabled={releaseLoading}
                   className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  Release
+                  {sittingId ? `Release Sitting #${sittingId}` : 'Release Selected Exam'}
                 </button>
                 <button
-                  onClick={() => handleReleaseVisibility(false)}
+                  onClick={() => releaseSelectedExam(false)}
                   disabled={releaseLoading}
                   className="btn-compact bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
                 >
-                  Hide
+                  {sittingId ? `Hide Sitting #${sittingId}` : 'Hide Selected Exam'}
                 </button>
-              </div>
-            </div>
-            <p className="text-xs text-slate-600">
-              Target exams: <span className="font-semibold">{releaseCandidates.length}</span>
-            </p>
+                </div>
+              </>
+            )}
           </div>
         </Card>
 
@@ -956,7 +1027,7 @@ const ResultsAnalytics: React.FC = () => {
                   className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
                   title="Release makes completed results visible to students"
                 >
-                  Release Selected Exam
+                  {sittingId ? `Release Sitting #${sittingId}` : 'Release Selected Exam'}
                 </button>
               )}
               {actionBanner.cta === 'hide' && (
@@ -966,7 +1037,7 @@ const ResultsAnalytics: React.FC = () => {
                   className="btn-compact bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50"
                   title="Hide removes student visibility for already computed results"
                 >
-                  Hide Selected Exam
+                  {sittingId ? `Hide Sitting #${sittingId}` : 'Hide Selected Exam'}
                 </button>
               )}
             </div>
@@ -976,18 +1047,11 @@ const ResultsAnalytics: React.FC = () => {
         <Card className="panel-compact">
           <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
             <button
-              className={`btn-compact ${activeTab === 'ca' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
-              onClick={() => goToTab('ca')}
-              title="CA Test Results tab shows only CA/Test attempts"
+              className={`btn-compact ${activeTab === 'results' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
+              onClick={() => goToTab('results')}
+              title="Attempt-level result summary for selected exam/sitting"
             >
-              CA Test Results
-            </button>
-            <button
-              className={`btn-compact ${activeTab === 'exam' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
-              onClick={() => goToTab('exam')}
-              title="Exam Results tab shows only final exam attempts"
-            >
-              Exam Results
+              Result Summary
             </button>
             <button
               className={`btn-compact ${activeTab === 'compiled' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
@@ -1006,33 +1070,18 @@ const ResultsAnalytics: React.FC = () => {
           </div>
         </Card>
 
-        <Card className="panel-compact border border-slate-200/90 bg-gradient-to-br from-slate-50 via-white to-slate-100/40">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">Workflow Shortcuts</h2>
-              <p className="text-xs text-slate-600 mt-1">Open dedicated pages for CA, Exam, Compiled, and Broadsheet workflows.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn-compact bg-sky-600 text-white hover:bg-sky-700" onClick={() => goToTab('ca')}>Open CA Workflow</button>
-              <button className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700" onClick={() => goToTab('exam')}>Open Exam Workflow</button>
-              <button className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => goToTab('compiled')}>Open Compiled Workflow</button>
-              <button className="btn-compact bg-slate-700 text-white hover:bg-slate-800" onClick={() => goToTab('broadsheet')}>Open Broadsheet</button>
-            </div>
-          </div>
-        </Card>
-
-        {(activeTab === 'ca' || activeTab === 'exam') && <Card className="panel-compact">
+        {activeTab === 'results' && <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">
                 {selectedExam
-                  ? `${activeTab === 'ca' ? 'CA Test Results' : 'Exam Results'} – ${selectedExam.title}`
+                  ? `${sittingId ? `Sitting #${sittingId} Results` : 'Result Summary'} - ${selectedExam.title}`
                   : 'Result Summary'}
               </h2>
               <p className="text-xs text-slate-500">
-                {activeTab === 'ca'
-                  ? 'CA-only attempt list. Use this for CA export, print, and review.'
-                  : 'Exam-only attempt list. Use this for final exam export, print, and review.'}
+                {sittingId
+                  ? 'Sitting-scoped attempt list. Exports and print actions apply to the selected sitting.'
+                  : 'Exam-scoped attempt list. Choose a sitting above when you need sitting-specific output.'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1046,24 +1095,24 @@ const ResultsAnalytics: React.FC = () => {
                   <button
                     className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
                     onClick={() => downloadReport(
-                      `/reports/exam/${examId}/pdf?mode=${activeTab === 'ca' ? 'ca_test' : 'exam'}`,
-                      `${activeTab === 'ca' ? 'ca' : 'exam'}_report_${examId}.pdf`
+                      buildExamReportPath('pdf'),
+                      `${sittingId ? `sitting_${sittingId}` : 'exam'}_report_${examId}.pdf`
                     )}
                     disabled={exportLoading}
-                    title={activeTab === 'ca' ? 'Download printable CA result sheet (PDF)' : 'Download printable exam result sheet (PDF)'}
+                    title="Download printable result sheet (PDF) for the selected context"
                   >
-                    {activeTab === 'ca' ? 'Print CA Sheet (PDF)' : 'Print Exam Sheet (PDF)'}
+                    Print Result Sheet (PDF)
                   </button>
                   <button
                     className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                     onClick={() => downloadReport(
-                      `/reports/exam/${examId}/excel?mode=${activeTab === 'ca' ? 'ca_test' : 'exam'}`,
-                      `${activeTab === 'ca' ? 'ca' : 'exam'}_report_${examId}.xlsx`
+                      buildExamReportPath('excel'),
+                      `${sittingId ? `sitting_${sittingId}` : 'exam'}_report_${examId}.xlsx`
                     )}
                     disabled={exportLoading}
-                    title={activeTab === 'ca' ? 'Export CA result sheet (Excel)' : 'Export exam result sheet (Excel)'}
+                    title="Export result sheet (Excel) for the selected context"
                   >
-                    {activeTab === 'ca' ? 'Export CA Excel' : 'Export Exam Excel'}
+                    Export Result Excel
                   </button>
                 </>
               )}
@@ -1075,9 +1124,7 @@ const ResultsAnalytics: React.FC = () => {
           ) : loading ? (
             <SkeletonList items={4} />
           ) : selectedAttemptRows.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              {activeTab === 'ca' ? 'No CA test results found for this filter.' : 'No exam results found for this filter.'}
-            </p>
+            <p className="text-sm text-slate-500">No result rows found for this filter.</p>
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -1086,7 +1133,7 @@ const ResultsAnalytics: React.FC = () => {
                     <tr className="bg-gray-50 text-gray-700 border-b">
                       <th className="px-3 py-2 text-left font-semibold">Student</th>
                       <th className="px-3 py-2 text-left font-semibold">Class</th>
-                      <th className="px-3 py-2 text-left font-semibold">{activeTab === 'ca' ? 'CA Score (%)' : 'Exam Score (%)'}</th>
+                      <th className="px-3 py-2 text-left font-semibold">Score (%)</th>
                       <th className="px-3 py-2 text-left font-semibold">Grade</th>
                       <th className="px-3 py-2 text-left font-semibold">Subject Position</th>
                       <th className="px-3 py-2 text-left font-semibold">Status</th>
