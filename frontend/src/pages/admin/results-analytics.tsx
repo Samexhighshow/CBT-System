@@ -168,7 +168,7 @@ export default function ResultsAnalytics() {
         <div className="space-y-2">
           {attempts.map(a => (
             <div key={a.id} className="border p-2 rounded">
-              <div>Attempt #{a.id} • Student {a.student_id}</div>
+              <div>Attempt {a.id} • Student {a.student_id}</div>
               <div className="text-sm text-gray-600">Score: {a.score}/{a.total_marks} ({a.percentage?.toFixed(2)}%)</div>
             </div>
           ))}

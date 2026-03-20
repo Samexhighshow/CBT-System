@@ -38,7 +38,6 @@
                 <th>CA (%)</th>
                 <th>Exam (%)</th>
                 <th>Compiled (%)</th>
-                <th>CR (%)</th>
                 <th>Source Exam IDs</th>
             </tr>
         </thead>
@@ -53,7 +52,6 @@
                     <td>{{ isset($row['ca_score']) && $row['ca_score'] !== null ? number_format((float) $row['ca_score'], 2) : '-' }}</td>
                     <td>{{ isset($row['exam_score']) && $row['exam_score'] !== null ? number_format((float) $row['exam_score'], 2) : '-' }}</td>
                     <td>{{ isset($row['compiled_score']) && $row['compiled_score'] !== null ? number_format((float) $row['compiled_score'], 2) : '-' }}</td>
-                    <td>{{ isset($row['cumulative_average']) && $row['cumulative_average'] !== null ? number_format((float) $row['cumulative_average'], 2) : '-' }}</td>
                     <td>
                         @if(!empty($row['source_exam_ids']) && is_array($row['source_exam_ids']))
                             {{ collect($row['source_exam_ids'])->map(fn($id) => '#' . (int) $id)->implode(', ') }}
@@ -64,7 +62,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10">No aggregate rows found for the selected term and class.</td>
+                    <td colspan="9">No aggregate rows found for the selected term and class.</td>
                 </tr>
             @endforelse
         </tbody>

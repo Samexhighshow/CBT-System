@@ -3,6 +3,7 @@ import { Card, Button, Modal, Input, Alert } from '../../components';
 import { showSuccess, showError, showConfirm } from '../../utils/alerts';
 import { examApi } from '../../services/laravelApi';
 import { api } from '../../services/api';
+import { serialNumber } from '../../utils/serialNumber';
 
 interface QuestionRandomizationProps {
   examId: number;
@@ -279,7 +280,7 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
           topic_filters: payload.topic_filters,
           question_reuse_policy: payload.question_reuse_policy,
         });
-        showSuccess(`Randomization settings saved for sitting #${sittingContext.sittingId}`);
+        showSuccess(`Randomization settings saved for sitting ${sittingContext.sittingId}`);
         if (typeof sittingContext.onSaved === 'function') {
           await Promise.resolve(sittingContext.onSaved());
         }
@@ -372,7 +373,7 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
     <Modal
       isOpen={true}
       onClose={onClose}
-      title={isSittingMode ? `Question Randomization & Selection - ${sittingContext?.title || `Sitting #${sittingContext?.sittingId}`}` : 'Question Randomization & Selection'}
+      title={isSittingMode ? `Question Randomization & Selection - ${sittingContext?.title || `Sitting ${sittingContext?.sittingId}`}` : 'Question Randomization & Selection'}
       size="xl"
     >
       <div className="space-y-6">
@@ -975,7 +976,7 @@ const QuestionRandomization: React.FC<QuestionRandomizationProps> = ({ examId, o
                     {preview.sample_questions.map((q, i) => (
                       <div key={q.id} className="border dark:border-gray-700 p-3 rounded">
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          #{i + 1} • {q.type} • {q.marks} marks • {q.difficulty}
+                          {serialNumber(i)}. {q.type} • {q.marks} marks • {q.difficulty}
                         </p>
                         <p className="mt-1 dark:text-gray-300">{q.text}</p>
                       </div>

@@ -147,7 +147,7 @@ const MyAllocation: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-slate-500">Seat Number</p>
-                    <p className="font-semibold text-slate-900">#{allocation.seat_number}</p>
+                    <p className="font-semibold text-slate-900">{allocation.seat_number}</p>
                   </div>
                   <div>
                     <p className="text-slate-500">Row</p>

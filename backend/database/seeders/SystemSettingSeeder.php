@@ -60,7 +60,7 @@ class SystemSettingSeeder extends Seeder
             ['key' => 'current_term', 'value' => 'First Term', 'type' => 'string', 'description' => 'Current academic term for exam defaults'],
             ['key' => 'assessment_display_mode', 'value' => 'auto', 'type' => 'string', 'description' => 'Assessment display mode label: auto, exam, or ca_test'],
             ['key' => 'enable_term_result_compilation', 'value' => '1', 'type' => 'boolean', 'description' => 'Enable combining CA and Exam components into a term score'],
-            ['key' => 'enable_cumulative_results', 'value' => '1', 'type' => 'boolean', 'description' => 'Enable cumulative result (CR) averaging across terms'],
+            ['key' => 'enable_cumulative_results', 'value' => '0', 'type' => 'boolean', 'description' => 'Enable cumulative result (CR) averaging across terms'],
             ['key' => 'default_ca_weight', 'value' => '40', 'type' => 'string', 'description' => 'Default CA percentage weight when exam assessment weight is not set'],
             ['key' => 'default_exam_weight', 'value' => '60', 'type' => 'string', 'description' => 'Default exam percentage weight when exam assessment weight is not set'],
             ['key' => 'use_exam_assessment_weight', 'value' => '1', 'type' => 'boolean', 'description' => 'Use per-exam assessment_weight when available for term compilation'],

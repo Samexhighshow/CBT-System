@@ -76,8 +76,8 @@ export const TeacherSubjectSelection: React.FC<TeacherSubjectSelectionProps> = (
     () =>
       scopeRows.map((row) => ({
         ...row,
-        subject_name: subjects.find((s) => s.id === row.subject_id)?.name || `Subject #${row.subject_id}`,
-        class_name: classes.find((c) => c.id === row.class_id)?.name || `Class #${row.class_id}`,
+        subject_name: subjects.find((s) => s.id === row.subject_id)?.name || `Subject ${row.subject_id}`,
+        class_name: classes.find((c) => c.id === row.class_id)?.name || `Class ${row.class_id}`,
       })),
     [scopeRows, subjects, classes]
   );

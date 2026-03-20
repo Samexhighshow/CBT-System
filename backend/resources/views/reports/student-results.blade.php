@@ -151,7 +151,14 @@
             <tr>
                 <td>{{ $attempt->exam->title }}</td>
                 <td>{{ $attempt->exam->subject->name }}</td>
-                <td>{{ $attempt->report_assessment_type ?? ($attempt->exam->assessment_type ?? 'Final Exam') }}</td>
+                <td>
+                    @php $assessmentType = (string) ($attempt->report_assessment_type ?? ($attempt->exam->assessment_type ?? 'Final Exam')); @endphp
+                    @if (strtolower(trim($assessmentType)) === 'ca test')
+                        <strong style="font-weight: 700; color: #1d4ed8;">CA TEST</strong>
+                    @else
+                        {{ $assessmentType }}
+                    @endif
+                </td>
                 <td>{{ (float) ($attempt->report_score ?? 0) }}/{{ (float) ($attempt->report_total_marks ?? 0) }}</td>
                 <td>{{ (isset($attempt->report_percentage) && is_numeric($attempt->report_percentage)) ? round((float) $attempt->report_percentage, 2) . '%' : 'N/A' }}</td>
                 <td class="{{ !empty($attempt->report_passed) ? 'passed' : 'failed' }}">

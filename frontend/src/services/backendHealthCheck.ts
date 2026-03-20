@@ -2,8 +2,9 @@
  * Backend Health Checker
  * Diagnoses connectivity issues with the Laravel backend
  */
+import { resolveApiBaseUrl } from './apiBase';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = resolveApiBaseUrl(process.env.REACT_APP_API_URL);
 
 interface HealthCheckResult {
   status: 'online' | 'offline' | 'error';

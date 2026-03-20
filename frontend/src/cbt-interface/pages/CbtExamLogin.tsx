@@ -339,7 +339,7 @@ const CbtExamLogin: React.FC = () => {
                     >
                       {(exam.sittings || []).map((sitting) => (
                         <option key={sitting.id} value={sitting.id}>
-                          {`#${sitting.id} ${sitting.assessment_mode_snapshot === 'ca_test' ? 'CA Test' : 'Exam'} (${sitting.status})`}
+                          {`${sitting.assessment_mode_snapshot === 'ca_test' ? 'CA Test' : 'Exam'} (${sitting.status})`}
                         </option>
                       ))}
                     </select>

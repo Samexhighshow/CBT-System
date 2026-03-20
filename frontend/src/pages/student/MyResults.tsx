@@ -34,13 +34,11 @@ interface TermSubjectSummary {
 interface TermSummary {
   term: string;
   term_average: number | null;
-  cumulative_average: number | null;
   subjects: TermSubjectSummary[];
 }
 
 interface TermCompilationPayload {
   enabled: boolean;
-  cumulative_enabled: boolean;
   current_session: string;
   default_ca_weight: number;
   default_exam_weight: number;
@@ -53,7 +51,6 @@ interface CompiledResultRow {
   ca_score: number | null;
   exam_score: number | null;
   compiled_score: number | null;
-  cumulative_average: number | null;
 }
 
 const MyResults: React.FC = () => {
@@ -219,7 +216,6 @@ const MyResults: React.FC = () => {
                   <th className="py-2">CA (%)</th>
                   <th className="py-2">Exam (%)</th>
                   <th className="py-2">Compiled (%)</th>
-                  <th className="py-2">CR (%)</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,7 +226,6 @@ const MyResults: React.FC = () => {
                     <td className="py-2 text-slate-700">{row.ca_score !== null ? row.ca_score.toFixed(2) : '-'}</td>
                     <td className="py-2 text-slate-700">{row.exam_score !== null ? row.exam_score.toFixed(2) : '-'}</td>
                     <td className="py-2 font-semibold text-slate-900">{row.compiled_score !== null ? row.compiled_score.toFixed(2) : '-'}</td>
-                    <td className="py-2 text-slate-700">{row.cumulative_average !== null ? row.cumulative_average.toFixed(2) : '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -295,9 +290,6 @@ const MyResults: React.FC = () => {
                       <h3 className="text-sm font-semibold text-slate-900">{term.term}</h3>
                       <p className="text-xs text-slate-600">
                         Term Avg: {term.term_average !== null ? `${term.term_average.toFixed(2)}%` : '-'}
-                        {termCompilation.cumulative_enabled
-                          ? ` | CR: ${term.cumulative_average !== null ? `${term.cumulative_average.toFixed(2)}%` : '-'}`
-                          : ''}
                       </p>
                     </div>
 

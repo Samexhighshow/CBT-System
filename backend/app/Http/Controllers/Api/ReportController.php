@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ExamAttempt;
 use App\Models\Exam;
+use App\Models\ExamSitting;
 use App\Models\Question;
 use App\Models\SchoolClass;
 use App\Models\Student;
@@ -66,6 +67,7 @@ class ReportController extends Controller
 
         $mode = $this->normalizeAssessmentModeFilter($request->query('mode'));
         $sittingId = (int) $request->query('sitting_id', 0);
+        $reportAssessmentType = $this->resolveReportAssessmentType($exam, $mode, $sittingId > 0 ? $sittingId : null);
 
         $attempts = $this->loadExamReportAttempts($exam, $mode, $sittingId > 0 ? $sittingId : null)->map(function (ExamAttempt $attempt) {
             $score = (float) ($attempt->score ?? 0);
@@ -111,6 +113,7 @@ class ReportController extends Controller
         $data = [
             'exam' => $exam,
             'attempts' => $attempts,
+            'report_assessment_type' => $reportAssessmentType,
             'exam_total_marks' => $examTotalMarksDisplay,
             'exam_passing_marks' => $examPassingMarksDisplay,
             'exam_start_time' => $startTime ? $startTime->format('Y-m-d H:i') : null,
@@ -923,11 +926,6 @@ class ReportController extends Controller
                 })
                 ->values();
 
-            $cr = $subjectRows
-                ->pluck('compiled_score')
-                ->filter(fn ($score) => $score !== null)
-                ->avg();
-
             $first = collect($studentRecords)->first();
             foreach ($subjectRows as $subjectRow) {
                 $rows->push([
@@ -940,7 +938,6 @@ class ReportController extends Controller
                     'ca_score' => $subjectRow['ca_score'] ?? null,
                     'exam_score' => $subjectRow['exam_score'] ?? null,
                     'compiled_score' => $subjectRow['compiled_score'] ?? null,
-                    'cumulative_average' => $cr !== null ? round((float) $cr, 2) : null,
                     'source_exam_ids' => $subjectRow['source_exam_ids'] ?? [],
                 ]);
             }
@@ -1265,6 +1262,39 @@ class ReportController extends Controller
         }
 
         return $this->attemptComponent($attempt) === 'ca' ? 'CA Test' : 'Final Exam';
+    }
+
+    private function resolveReportAssessmentType(Exam $exam, ?string $mode = null, ?int $sittingId = null): string
+    {
+        $fromMode = $this->assessmentTypeLabelFromMode($mode);
+        if ($fromMode !== null) {
+            return $fromMode;
+        }
+
+        if ($sittingId !== null && $sittingId > 0) {
+            $sitting = ExamSitting::query()
+                ->where('id', $sittingId)
+                ->where('exam_id', $exam->id)
+                ->first();
+
+            $fromSitting = $this->assessmentTypeLabelFromMode($sitting?->assessment_mode_snapshot);
+            if ($fromSitting !== null) {
+                return $fromSitting;
+            }
+        }
+
+        $raw = trim((string) ($exam->assessment_type ?? ''));
+        return $raw !== '' ? $raw : 'Final Exam';
+    }
+
+    private function assessmentTypeLabelFromMode(mixed $mode): ?string
+    {
+        $value = strtolower(trim((string) ($mode ?? '')));
+        return match ($value) {
+            'ca', 'ca_test', 'catest' => 'CA Test',
+            'exam', 'final_exam', 'final exam' => 'Final Exam',
+            default => null,
+        };
     }
 
     private function isContinuousAssessmentType(string $assessmentType): bool

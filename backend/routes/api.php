@@ -153,17 +153,20 @@ Route::prefix('exams')->group(function () {
         Route::post('/', [ExamController::class, 'store']);
         Route::put('/{id}', [ExamController::class, 'update']);
         Route::delete('/{id}', [ExamController::class, 'destroy']);
+
+        // PHASE: exam template visibility is still admin-only
+        Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility']);
+
+        // Duplicate exam template remains admin-only
+        Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
+    });
+
+    Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
         Route::post('/{id}/sittings', [ExamSittingController::class, 'store']);
         Route::put('/{id}/sittings/{sittingId}', [ExamSittingController::class, 'update']);
         Route::delete('/{id}/sittings/{sittingId}', [ExamSittingController::class, 'destroy']);
         Route::post('/{id}/sittings/{sittingId}/duplicate', [ExamSittingController::class, 'duplicate']);
         Route::post('/{id}/sittings/bulk-status', [ExamSittingController::class, 'bulkStatusUpdate']);
-
-        // PHASE 8: Results visibility control
-        Route::post('/{id}/toggle-results', [ExamController::class, 'toggleResultsVisibility']);
-
-        // Duplicate exam
-        Route::post('/{id}/duplicate', [ExamDuplicationController::class, 'duplicate']);
     });
 
     Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
@@ -349,14 +352,6 @@ Route::middleware(['auth:sanctum', 'role:Admin|Main Admin|Teacher', 'teacher.sco
     Route::get('/exam/{examId}/excel', [ReportController::class, 'downloadExamReportExcel']);
     Route::get('/term/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadTermAggregatePdf']);
     Route::get('/term/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadTermAggregateExcel']);
-    Route::get('/broadsheet/class/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadClassBroadsheetPdf']);
-    Route::get('/broadsheet/class/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadClassBroadsheetExcel']);
-    Route::get('/report-cards/class/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadClassReportCardsPdf']);
-    Route::get('/report-cards/class/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadClassReportCardsExcel']);
-    Route::get('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/pdf', [ReportController::class, 'downloadStudentReportCardPdf']);
-    Route::get('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/excel', [ReportController::class, 'downloadStudentReportCardExcel']);
-    Route::get('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/remarks', [ReportController::class, 'getStudentReportCardRemarks']);
-    Route::post('/report-cards/student/{studentId}/session/{session}/term/{term}/class/{classId}/remarks', [ReportController::class, 'saveStudentReportCardRemarks']);
     Route::get('/student/{studentId}/pdf', [ReportController::class, 'downloadStudentResultsPdf']);
     Route::get('/student/{studentId}/excel', [ReportController::class, 'downloadStudentResultsExcel']);
 });
@@ -486,9 +481,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
         Route::get('/cbt/results/subject/{subject}', [CbtResultsController::class, 'subjectSummary']);
         Route::get('/cbt/results', [CbtResultsController::class, 'allResults']);
-        // CBT Results analytics and report cards (avoid overlap with Api\ResultController /results/analytics)
+        // CBT Results analytics (avoid overlap with Api\ResultController /results/analytics)
         Route::get('/cbt/results/analytics', [CbtResultsController::class, 'analytics']);
-        Route::get('/results/report-cards', [CbtResultsController::class, 'reportCards']);
     });
     Route::middleware(['role:Admin|Main Admin', 'teacher.scope.approved'])->post('/results/email/{student}', [CbtResultsController::class, 'emailStudentReport']);
     // CBT Subjects management

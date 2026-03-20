@@ -1,8 +1,8 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import useLoadingStore from '../store/loadingStore';
+import { resolveApiBaseUrl } from './apiBase';
 
-// Prefer localhost for Windows dev environments; still allow env override
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = resolveApiBaseUrl(process.env.REACT_APP_API_URL);
 
 // Export base URL for use in components
 export const API_URL = API_BASE_URL;

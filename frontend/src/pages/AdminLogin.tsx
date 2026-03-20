@@ -6,6 +6,7 @@ import { checkReachability } from '../services/reachability';
 import useConnectivity from '../hooks/useConnectivity';
 import offlineDB from '../services/offlineDB';
 import syncService from '../services/syncService';
+import { API_URL } from '../services/api';
 
 interface LoginFormData {
   email: string;
@@ -29,6 +30,7 @@ const AdminLogin: React.FC = () => {
     email: '',
     password: ''
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [offlineCacheState, setOfflineCacheState] = useState<
@@ -171,7 +173,7 @@ const AdminLogin: React.FC = () => {
         return;
       }
 
-      const res = await axios.post(`${process.env.REACT_APP_API_URL}/auth/login`, {
+      const res = await axios.post(`${API_URL}/auth/login`, {
         ...formData,
         login_context: 'admin',
       });
@@ -344,16 +346,27 @@ const AdminLogin: React.FC = () => {
 
               <div>
                 <label className="block text-gray-300 text-xs font-medium mb-1">Password</label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  placeholder="••••••••"
-                  required
-                  className="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="********"
+                    required
+                    className="w-full px-4 py-3 pr-12 bg-slate-700/50 border border-slate-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-200"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={`bx ${showPassword ? 'bx-hide' : 'bx-show'} text-lg`} />
+                  </button>
+                </div>
               </div>
+
 
               <button
                 type="submit"

@@ -1,17 +1,10 @@
 import axios from 'axios';
 import { CbtAttemptEventLogResponse, CbtAttemptState, CbtAttemptVerifyResponse, CbtOpenExam, CbtQuestion } from '../types';
 import { API_URL } from '../../services/api';
+import { resolveApiBaseUrl } from '../../services/apiBase';
 
-const normalizeApiBaseUrl = (baseUrl: string): string => {
-  const trimmed = (baseUrl || '').replace(/\/$/, '');
-  if (/\/api(?:\/|$)/i.test(trimmed)) {
-    return trimmed;
-  }
-  return `${trimmed}/api`;
-};
-
-const CBT_API_BASE_URL = normalizeApiBaseUrl(
-  process.env.REACT_APP_CBT_API_URL || API_URL || process.env.REACT_APP_API_URL || 'http://localhost:8000/api'
+const CBT_API_BASE_URL = resolveApiBaseUrl(
+  process.env.REACT_APP_CBT_API_URL || API_URL || process.env.REACT_APP_API_URL
 );
 
 const cbtClient = axios.create({

@@ -5,6 +5,7 @@ import { api } from '../../services/api';
 import { showError, showSuccess, showDeleteConfirm } from '../../utils/alerts';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { runWithRetry } from '../../utils/requestRetry';
+import { serialNumber } from '../../utils/serialNumber';
 import {
   AssessmentDisplayMode,
   defaultAssessmentDisplayConfig,
@@ -728,7 +729,7 @@ const ExamManagement: React.FC = () => {
         showError('No questions were added');
       }
       if (warnings.length) {
-        const msg = warnings.map((w: any) => `#${w.id}: ${w.status}`).join(', ');
+        const msg = warnings.map((w: any) => `${w.id}: ${w.status}`).join(', ');
         showError(`Added with warnings: ${msg}`);
       }
       setShowManageQuestions(false);
@@ -1627,7 +1628,7 @@ const ExamManagement: React.FC = () => {
                         <table className="min-w-full text-xs">
                           <thead>
                             <tr className="text-left text-gray-600 border-b">
-                              <th className="py-2 pr-3">ID</th>
+                              <th className="py-2 pr-3">No.</th>
                               <th className="py-2 pr-3">Mode</th>
                               <th className="py-2 pr-3">Duration</th>
                               <th className="py-2 pr-3">Window</th>
@@ -1636,9 +1637,9 @@ const ExamManagement: React.FC = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {examSittings.map((sitting) => (
+                            {examSittings.map((sitting, index) => (
                               <tr key={sitting.id} className="border-b last:border-0">
-                                <td className="py-2 pr-3 font-semibold text-gray-700">#{sitting.id}</td>
+                                <td className="py-2 pr-3 font-semibold text-gray-700">{serialNumber(index)}</td>
                                 <td className="py-2 pr-3">
                                   <span className={`px-2 py-1 rounded text-[11px] font-semibold ${sitting.assessment_mode_snapshot === 'ca_test' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
                                     {sitting.assessment_mode_snapshot === 'ca_test' ? 'CA Test' : 'Exam'}
@@ -1872,7 +1873,7 @@ const ExamManagement: React.FC = () => {
                   <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded">
                     <p className="text-xs text-amber-800 font-semibold flex items-center gap-2">
                       <i className='bx bx-error-circle'></i>
-                      {selectedNonActive.length} selected question(s) are not Active: {selectedNonActive.map(q=>`#${q.id} (${q.status})`).join(', ')}
+                      {selectedNonActive.length} selected question(s) are not Active: {selectedNonActive.map(q=>`${q.id} (${q.status})`).join(', ')}
                     </p>
                     <p className="text-[11px] text-amber-700 mt-1">They will be added but flagged; consider approving or activating them.</p>
                   </div>

@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Exam Report - {{ $exam->title }}</title>
+    <title>Exam Report - <?php echo e($exam->title); ?></title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -151,9 +151,9 @@
 <body>
     <div class="header">
         <h1>CBT System - Exam Report</h1>
-        <h2>{{ $exam->title }}</h2>
-        <p>Subject: {{ $exam->subject->name ?? 'N/A' }}</p>
-        <p style="font-size: 18px; font-weight: bold; color: #1e40af; margin-top: 8px;">Assessment Type: {{ $report_assessment_type ?? ($exam->assessment_type ?? 'Final Exam') }}</p>
+        <h2><?php echo e($exam->title); ?></h2>
+        <p>Subject: <?php echo e($exam->subject->name ?? 'N/A'); ?></p>
+        <p style="font-size: 18px; font-weight: bold; color: #1e40af; margin-top: 8px;">Assessment Type: <?php echo e($report_assessment_type ?? ($exam->assessment_type ?? 'Final Exam')); ?></p>
     </div>
 
     <div class="info-section">
@@ -162,25 +162,25 @@
             <tr>
                 <td class="info-item">
                     <span class="info-label">Duration</span>
-                    <span class="info-value">{{ $exam->duration_minutes }} minutes</span>
+                    <span class="info-value"><?php echo e($exam->duration_minutes); ?> minutes</span>
                 </td>
                 <td class="info-item">
                     <span class="info-label">Total Marks</span>
-                    <span class="info-value">{{ $exam_total_marks }}</span>
+                    <span class="info-value"><?php echo e($exam_total_marks); ?></span>
                 </td>
                 <td class="info-item">
                     <span class="info-label">Passing Marks</span>
-                    <span class="info-value">{{ $exam_passing_marks }}</span>
+                    <span class="info-value"><?php echo e($exam_passing_marks); ?></span>
                 </td>
             </tr>
             <tr>
                 <td class="info-item">
                     <span class="info-label">Start Time</span>
-                    <span class="info-value">{{ $exam_start_time ?? 'N/A' }}</span>
+                    <span class="info-value"><?php echo e($exam_start_time ?? 'N/A'); ?></span>
                 </td>
                 <td class="info-item">
                     <span class="info-label">End Time</span>
-                    <span class="info-value">{{ $exam_end_time ?? 'N/A' }}</span>
+                    <span class="info-value"><?php echo e($exam_end_time ?? 'N/A'); ?></span>
                 </td>
                 <td class="info-item">&nbsp;</td>
             </tr>
@@ -193,25 +193,25 @@
             <td width="25%">
                 <div class="stat-box">
                     <div class="stat-label">Total Attempts</div>
-                    <div class="stat-value">{{ $total_attempts }}</div>
+                    <div class="stat-value"><?php echo e($total_attempts); ?></div>
                 </div>
             </td>
             <td width="25%">
                 <div class="stat-box">
                     <div class="stat-label">Average Score</div>
-                    <div class="stat-value">{{ $average_score }}</div>
+                    <div class="stat-value"><?php echo e($average_score); ?></div>
                 </div>
             </td>
             <td width="25%">
                 <div class="stat-box">
                     <div class="stat-label">Highest Score</div>
-                    <div class="stat-value">{{ $highest_score ?? 0 }}</div>
+                    <div class="stat-value"><?php echo e($highest_score ?? 0); ?></div>
                 </div>
             </td>
             <td width="25%">
                 <div class="stat-box">
                     <div class="stat-label">Pass Rate</div>
-                    <div class="stat-value">{{ $pass_rate }}%</div>
+                    <div class="stat-value"><?php echo e($pass_rate); ?>%</div>
                 </div>
             </td>
         </tr>
@@ -232,37 +232,40 @@
             </tr>
         </thead>
         <tbody>
-            @forelse($attempts as $index => $attempt)
+            <?php $__empty_1 = true; $__currentLoopData = $attempts; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $index => $attempt): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); $__empty_1 = false; ?>
             <tr>
-                <td>{{ $index + 1 }}</td>
-                <td>{{ $attempt->student->registration_number ?? 'N/A' }}</td>
-                <td>{{ trim(($attempt->student->first_name ?? '') . ' ' . ($attempt->student->last_name ?? '')) ?: 'N/A' }}</td>
-                <td>{{ $attempt->student->department->name ?? 'N/A' }}</td>
+                <td><?php echo e($index + 1); ?></td>
+                <td><?php echo e($attempt->student->registration_number ?? 'N/A'); ?></td>
+                <td><?php echo e(trim(($attempt->student->first_name ?? '') . ' ' . ($attempt->student->last_name ?? '')) ?: 'N/A'); ?></td>
+                <td><?php echo e($attempt->student->department->name ?? 'N/A'); ?></td>
                 <td>
-                    @php $assessmentType = (string) ($report_assessment_type ?? ($exam->assessment_type ?? 'Final Exam')); @endphp
-                    @if (strtolower(trim($assessmentType)) === 'ca test')
+                    <?php $assessmentType = (string) ($report_assessment_type ?? ($exam->assessment_type ?? 'Final Exam')); ?>
+                    <?php if(strtolower(trim($assessmentType)) === 'ca test'): ?>
                         CA Test
-                    @else
-                        {{ $assessmentType }}
-                    @endif
+                    <?php else: ?>
+                        <?php echo e($assessmentType); ?>
+
+                    <?php endif; ?>
                 </td>
-                <td>{{ (int) ($attempt->report_score ?? 0) }}</td>
-                <td>{{ (isset($attempt->report_percentage) && is_numeric($attempt->report_percentage)) ? round((float) $attempt->report_percentage, 2) . '%' : 'N/A' }}</td>
-                <td class="{{ !empty($attempt->report_passed) ? 'passed' : 'failed' }}">
-                    {{ !empty($attempt->report_passed) ? 'Passed' : 'Failed' }}
+                <td><?php echo e((int) ($attempt->report_score ?? 0)); ?></td>
+                <td><?php echo e((isset($attempt->report_percentage) && is_numeric($attempt->report_percentage)) ? round((float) $attempt->report_percentage, 2) . '%' : 'N/A'); ?></td>
+                <td class="<?php echo e(!empty($attempt->report_passed) ? 'passed' : 'failed'); ?>">
+                    <?php echo e(!empty($attempt->report_passed) ? 'Passed' : 'Failed'); ?>
+
                 </td>
             </tr>
-            @empty
+            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
             <tr>
                 <td colspan="8" style="text-align: center; color: #6b7280;">No student results available for this exam yet.</td>
             </tr>
-            @endforelse
+            <?php endif; ?>
         </tbody>
     </table>
 
     <div class="footer">
-        <p>Generated on {{ $generated_at }}</p>
+        <p>Generated on <?php echo e($generated_at); ?></p>
         <p>&copy; 2025 CBT System. All rights reserved.</p>
     </div>
 </body>
 </html>
+<?php /**PATH C:\xampp\htdocs\CBT-System\backend\resources\views/reports/exam-report.blade.php ENDPATH**/ ?>

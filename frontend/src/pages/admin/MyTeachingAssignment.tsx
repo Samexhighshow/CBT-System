@@ -96,8 +96,8 @@ const MyTeachingAssignment: React.FC = () => {
   const draftRowsDisplay = useMemo(() => {
     return draftRows.map((row) => ({
       ...row,
-      subject_name: subjects.find((item) => item.id === row.subject_id)?.name || `Subject #${row.subject_id}`,
-      class_name: classes.find((item) => item.id === row.class_id)?.name || `Class #${row.class_id}`,
+      subject_name: subjects.find((item) => item.id === row.subject_id)?.name || `Subject ${row.subject_id}`,
+      class_name: classes.find((item) => item.id === row.class_id)?.name || `Class ${row.class_id}`,
     }));
   }, [draftRows, subjects, classes]);
 

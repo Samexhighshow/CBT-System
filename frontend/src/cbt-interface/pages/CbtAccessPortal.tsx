@@ -8,6 +8,7 @@ import useConnectivity from '../../hooks/useConnectivity';
 import { getReachableBaseUrl } from '../../services/reachability';
 import syncService from '../../services/syncService';
 import { defaultAssessmentDisplayConfig, fetchAssessmentDisplayConfig } from '../../services/assessmentDisplay';
+import { serialNumber } from '../../utils/serialNumber';
 
 const formatExamWindow = (value?: string | null): string | null => {
   if (!value) return null;
@@ -381,11 +382,15 @@ const CbtAccessPortal: React.FC = () => {
           ) : (
             <div className="flex-1 rounded-b-2xl border border-t-0 bg-white px-3 pb-3 pt-2 sm:px-4" style={{ borderColor: '#D7DEE9' }}>
               <div className="space-y-1.5">
-                {exams.map((exam) => {
+                {exams.map((exam, index) => {
                   const examTitle = `${exam.subject || exam.title} - ${exam.class_level || 'All Classes'}`;
-                  const startAt = formatExamWindow(exam.start_datetime);
-                  const endAt = formatExamWindow(exam.end_datetime);
-                  const examDate = formatExamDate(exam.start_datetime);
+                  const primarySitting = (exam.sittings || [])[0];
+                  const displayStart = primarySitting?.start_at || exam.start_datetime;
+                  const displayEnd = primarySitting?.end_at || exam.end_datetime;
+                  const displayDuration = primarySitting?.duration_minutes || exam.duration_minutes;
+                  const startAt = formatExamWindow(displayStart);
+                  const endAt = formatExamWindow(displayEnd);
+                  const examDate = formatExamDate(displayStart);
                   const cached = cachedPackages[exam.id];
 
                   return (
@@ -414,8 +419,13 @@ const CbtAccessPortal: React.FC = () => {
                               {exam.can_access ? 'Open' : 'Restricted'}
                             </span>
                             <span className="text-[11px] font-medium" style={{ color: cbtTheme.muted }}>
-                              ID #{exam.id}
+                              No. {serialNumber(index)}
                             </span>
+                            {primarySitting?.id ? (
+                              <span className="text-[11px] font-medium" style={{ color: cbtTheme.muted }}>
+                                Sitting {primarySitting.id}
+                              </span>
+                            ) : null}
                           </div>
 
                           <h3 className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.01em] sm:text-[15px]" style={{ color: cbtTheme.title }}>
@@ -431,7 +441,7 @@ const CbtAccessPortal: React.FC = () => {
 
                         <div className="text-xs leading-tight">
                           <p className="font-medium uppercase tracking-[0.08em]" style={{ color: cbtTheme.muted }}>Duration</p>
-                          <p className="mt-0.5 text-[13px] font-semibold" style={{ color: cbtTheme.body }}>{exam.duration_minutes} mins</p>
+                          <p className="mt-0.5 text-[13px] font-semibold" style={{ color: cbtTheme.body }}>{displayDuration} mins</p>
                         </div>
 
                         <div className="text-xs leading-tight">

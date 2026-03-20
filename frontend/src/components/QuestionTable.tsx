@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { serialNumber } from '../utils/serialNumber';
 
 interface Subject {
   id: number;
@@ -157,7 +158,7 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                 className="w-4 h-4 cursor-pointer"
               />
             </th>
-            <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">QID</th>
+            <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">No.</th>
             <th className="px-3 py-2 text-left font-semibold">
               Question
             </th>
@@ -202,9 +203,9 @@ export const QuestionTable: React.FC<QuestionTableProps> = ({
                       />
                     </td>
 
-                    {/* QID - Question ID */}
+                    {/* Serial number for stable visual ordering */}
                     <td className="px-3 py-2 text-gray-600 font-semibold whitespace-nowrap">
-                      #{question.id}
+                      {serialNumber(index)}
                     </td>
 
                     {/* Question Text */}

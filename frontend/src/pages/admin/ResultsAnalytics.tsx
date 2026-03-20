@@ -52,6 +52,8 @@ interface SittingOption {
   results_released?: boolean;
   session?: string | null;
   term?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
 }
 
 interface MarkingSummary {
@@ -71,7 +73,6 @@ interface CompiledAdminRow {
   ca_score: number | null;
   exam_score: number | null;
   compiled_score: number | null;
-  cumulative_average: number | null;
   source_exam_ids: number[];
 }
 
@@ -85,19 +86,29 @@ const normalizeAssessmentWindowMode = (value: unknown): AssessmentWindowMode => 
   return 'auto';
 };
 
+const toSittingModeLabel = (mode?: string): string => {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized === 'ca_test') return 'CA Test';
+  return 'Final Exam';
+};
+
 const ResultsAnalytics: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const initialParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'results' | 'compiled' | 'broadsheet'>('results');
+  const [bootLoading, setBootLoading] = useState(true);
+  const [loadingExams, setLoadingExams] = useState(false);
+  const [loadingSittings, setLoadingSittings] = useState(false);
+  const [activeTab, setActiveTab] = useState<'results' | 'compiled'>('results');
   const [exportLoading, setExportLoading] = useState(false);
   const [analytics, setAnalytics] = useState<AnalyticsData>({
     average_score: 0,
     pass_rate: 0,
     total_attempts: 0,
   });
-  const [examId, setExamId] = useState<string>('');
-  const [sittingId, setSittingId] = useState<string>('');
+  const [examId, setExamId] = useState<string>(() => initialParams.get('examId') || '');
+  const [sittingId, setSittingId] = useState<string>(() => initialParams.get('sittingId') || '');
   const [sittings, setSittings] = useState<SittingOption[]>([]);
   const [studentName, setStudentName] = useState<string>('');
   const [exams, setExams] = useState<ExamOption[]>([]);
@@ -121,10 +132,10 @@ const ResultsAnalytics: React.FC = () => {
   const [remarksSaving, setRemarksSaving] = useState(false);
   const resultsPerPage = 10;
 
-  const activeRouteTab = useMemo<'results' | 'compiled' | 'broadsheet'>(() => {
+  const activeRouteTab = useMemo<'results' | 'compiled'>(() => {
     const path = location.pathname.toLowerCase();
     if (path.endsWith('/compiled')) return 'compiled';
-    if (path.endsWith('/broadsheet')) return 'broadsheet';
+    if (path.endsWith('/broadsheet')) return 'compiled';
     return 'results';
   }, [location.pathname]);
 
@@ -133,13 +144,12 @@ const ResultsAnalytics: React.FC = () => {
     setResultsPage(1);
   }, [activeRouteTab]);
 
-  const tabRoutePath = (tab: 'results' | 'compiled' | 'broadsheet'): string => {
+  const tabRoutePath = (tab: 'results' | 'compiled'): string => {
     if (tab === 'compiled') return '/admin/results/compiled';
-    if (tab === 'broadsheet') return '/admin/results/broadsheet';
     return '/admin/results/exam';
   };
 
-  const goToTab = (tab: 'results' | 'compiled' | 'broadsheet') => {
+  const goToTab = (tab: 'results' | 'compiled') => {
     const nextPath = tabRoutePath(tab);
     const params = new URLSearchParams(location.search);
     if (examId) {
@@ -156,9 +166,7 @@ const ResultsAnalytics: React.FC = () => {
     const params = new URLSearchParams(location.search);
     const routeExamId = params.get('examId');
     const routeSittingId = params.get('sittingId');
-    if (routeExamId && routeExamId !== examId) {
-      setExamId(routeExamId);
-    }
+    if ((routeExamId || '') !== examId) setExamId(routeExamId || '');
     if ((routeSittingId || '') !== sittingId) {
       setSittingId(routeSittingId || '');
     }
@@ -169,11 +177,11 @@ const ResultsAnalytics: React.FC = () => {
     const loadSittings = async () => {
       if (!examId) {
         setSittings([]);
-        setSittingId('');
         return;
       }
 
       try {
+        setLoadingSittings(true);
         const response = await runWithRetry(() =>
           api.get(`/exams/${examId}/sittings`, { skipGlobalLoading: true } as any)
         );
@@ -188,29 +196,27 @@ const ResultsAnalytics: React.FC = () => {
         console.error('Failed to load sittings for selected exam', error);
         setSittings([]);
         setSittingId('');
+      } finally {
+        setLoadingSittings(false);
       }
     };
 
     loadSittings();
-  }, [examId, sittingId]);
+  }, [examId]);
 
   useEffect(() => {
-    let isActive = true;
+    let mounted = true;
 
     const loadInitial = async () => {
+      if (mounted) setBootLoading(true);
       await Promise.all([loadExams(), loadAnalytics(), loadMarkingSummary(), loadAssessmentWindowMode()]);
+      if (mounted) setBootLoading(false);
     };
 
     loadInitial();
 
-    const delayedRefresh = window.setTimeout(() => {
-      if (!isActive) return;
-      loadInitial();
-    }, 1500);
-
     return () => {
-      isActive = false;
-      window.clearTimeout(delayedRefresh);
+      mounted = false;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -240,7 +246,7 @@ const ResultsAnalytics: React.FC = () => {
 
     const mapExam = (e: any): ExamOption => ({
       id: Number(e.id),
-      title: String(e.title || `Exam #${e.id}`),
+      title: String(e.title || `Exam ${e.id}`),
       class_id: e.class_id,
       subject_name: e.subject?.name || '',
       class_name: e.school_class?.name || '',
@@ -250,6 +256,7 @@ const ResultsAnalytics: React.FC = () => {
     });
 
     try {
+      setLoadingExams(true);
       const response = await runWithRetry(() => api.get('/exams', { skipGlobalLoading: true } as any));
       let rows = normalizeExamRows(response.data);
 
@@ -279,7 +286,7 @@ const ResultsAnalytics: React.FC = () => {
       if (examId && !mapped.some((row) => String(row.id) === examId)) {
         mapped.unshift({
           id: Number(examId),
-          title: `Exam #${examId}`,
+          title: `Exam ${examId}`,
           results_released: false,
         });
       }
@@ -288,10 +295,20 @@ const ResultsAnalytics: React.FC = () => {
     } catch (error: any) {
       console.error('Failed to fetch exams:', error);
       setExams([]);
+    } finally {
+      setLoadingExams(false);
     }
   };
 
   const loadCompiledResults = async (attemptRows: AttemptSummary[], selectedExamId: string) => {
+    const isCaOnlyContext = assessmentWindowMode === 'ca_test'
+      || selectedSitting?.assessment_mode_snapshot === 'ca_test';
+
+    if (isCaOnlyContext) {
+      setCompiledRows([]);
+      return;
+    }
+
     if (!selectedExamId || attemptRows.length === 0) {
       setCompiledRows([]);
       return;
@@ -353,20 +370,21 @@ const ResultsAnalytics: React.FC = () => {
           ca_score: best.ca_score ?? null,
           exam_score: best.exam_score ?? null,
           compiled_score: best.compiled_score ?? null,
-          cumulative_average: best.cumulative_average ?? null,
           source_exam_ids: Array.isArray(best.source_exam_ids)
             ? best.source_exam_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
             : [],
         });
       });
 
-      rows.sort((a, b) => {
+      const completedRows = rows.filter((row) => row.ca_score !== null && row.exam_score !== null);
+
+      completedRows.sort((a, b) => {
         const aScore = a.compiled_score ?? -1;
         const bScore = b.compiled_score ?? -1;
         return bScore - aScore;
       });
 
-      setCompiledRows(rows);
+      setCompiledRows(completedRows);
     } catch (error) {
       console.error('Failed to load compiled results for selected exam:', error);
       setCompiledRows([]);
@@ -438,11 +456,11 @@ const ResultsAnalytics: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!examId) return;
+    if (bootLoading) return;
     loadAnalytics();
     loadMarkingSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [examId, sittingId]);
+  }, [examId, sittingId, bootLoading]);
 
   const loadAnalytics = async () => {
     try {
@@ -555,54 +573,15 @@ const ResultsAnalytics: React.FC = () => {
     [exams, examId]
   );
 
-  const actionBanner = useMemo(() => {
-    if (!examId || !selectedExam) {
-      return {
-        tone: 'bg-slate-50 border-slate-200 text-slate-800',
-        title: 'Select an exam to continue',
-        message: 'Pick an exam first, then review attempt-level results and exports in the selected context.',
-        cta: null as null | 'marking' | 'release' | 'hide',
-      };
-    }
-
-    if (markingSummary.pending_manual > 0) {
-      return {
-        tone: 'bg-amber-50 border-amber-200 text-amber-900',
-        title: 'Pending marking requires attention',
-        message: 'Finalize all pending scripts before releasing results to students.',
-        cta: 'marking' as const,
-      };
-    }
-
-    const released = sittingId
-      ? !!sittings.find((row) => String(row.id) === sittingId)?.results_released
-      : !!selectedExam.results_released;
-
-    if (!released) {
-      return {
-        tone: 'bg-indigo-50 border-indigo-200 text-indigo-900',
-        title: 'Results can be released',
-        message: sittingId
-          ? `All marking appears complete for sitting #${sittingId}. You can now release results.`
-          : 'All marking appears complete for this exam. You can now release results to students.',
-        cta: 'release' as const,
-      };
-    }
-
-    return {
-      tone: 'bg-emerald-50 border-emerald-200 text-emerald-900',
-      title: 'Results are currently visible to students',
-      message: sittingId
-        ? `Use Hide if you need to pause visibility for sitting #${sittingId}.`
-        : 'Use Hide if you need to pause visibility while corrections are made.',
-      cta: 'hide' as const,
-    };
-  }, [examId, selectedExam, markingSummary.pending_manual, sittingId, sittings]);
-
   const selectedSitting = useMemo(
     () => sittings.find((row) => String(row.id) === sittingId) || null,
     [sittings, sittingId]
   );
+
+  const selectedSittingLabel = useMemo(() => {
+    if (!selectedSitting) return 'Selected sitting';
+    return `${toSittingModeLabel(selectedSitting.assessment_mode_snapshot)} | ${selectedSitting.status || '-'} | ${selectedSitting.session || '-'} / ${selectedSitting.term || '-'}`;
+  }, [selectedSitting]);
 
   const buildExamReportPath = (format: 'pdf' | 'excel'): string => {
     const query = new URLSearchParams();
@@ -673,6 +652,9 @@ const ResultsAnalytics: React.FC = () => {
     });
     return Array.from(map.values()).sort((a, b) => a.student_name.localeCompare(b.student_name));
   }, [compiledRows]);
+
+  const compiledBlockedByMode = assessmentWindowMode === 'ca_test'
+    || selectedSitting?.assessment_mode_snapshot === 'ca_test';
 
   useEffect(() => {
     if (reportCardStudents.length === 0) {
@@ -747,7 +729,7 @@ const ResultsAnalytics: React.FC = () => {
       setReleaseLoading(true);
       if (sittingId) {
         await api.put(`/exams/${selectedExam.id}/sittings/${sittingId}`, { results_released: release });
-        showSuccess(release ? `Results released for sitting #${sittingId}.` : `Results hidden for sitting #${sittingId}.`);
+        showSuccess(release ? 'Results released for selected sitting.' : 'Results hidden for selected sitting.');
       } else {
         await api.post(`/exams/${selectedExam.id}/toggle-results`, { results_released: release });
         showSuccess(release ? 'Results released for selected exam.' : 'Results hidden for selected exam.');
@@ -802,27 +784,18 @@ const ResultsAnalytics: React.FC = () => {
     return 'bg-slate-100 text-slate-700';
   };
 
-  const assessmentModeBanner = useMemo(() => {
-    if (assessmentWindowMode === 'ca_test') {
-      return {
-        tone: 'border-blue-200 bg-blue-50 text-blue-900',
-        title: 'System Assessment Mode: CA TEST',
-        message: 'All attempts started now are recorded as CA Test.',
-      };
-    }
-    if (assessmentWindowMode === 'exam') {
-      return {
-        tone: 'border-rose-200 bg-rose-50 text-rose-900',
-        title: 'System Assessment Mode: FINAL EXAM',
-        message: 'All attempts started now are recorded as Final Exam.',
-      };
-    }
-    return {
-      tone: 'border-slate-200 bg-slate-50 text-slate-800',
-      title: 'System Assessment Mode: AUTO',
-      message: 'Attempt mode follows each exam fallback rule.',
-    };
-  }, [assessmentWindowMode]);
+  if (bootLoading) {
+    return (
+      <div className="app-shell section-shell">
+        <Card className="panel-compact">
+          <p className="text-sm text-slate-600">Loading results workspace...</p>
+          <div className="mt-3">
+            <SkeletonList items={5} />
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell section-shell">
@@ -841,13 +814,9 @@ const ResultsAnalytics: React.FC = () => {
           </button>
         </div>
 
-        <Card className={`panel-compact border ${assessmentModeBanner.tone}`}>
-          <h2 className="text-sm font-semibold">{assessmentModeBanner.title}</h2>
-          <p className="text-xs mt-1">{assessmentModeBanner.message}</p>
-        </Card>
-
         <Card className="panel-compact">
-          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3">
+          <div className="flex flex-col gap-2 md:gap-3">
+            <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3">
             <select
               className="input-compact border border-slate-200 dark:border-slate-700 text-sm bg-white dark:bg-slate-900"
               value={examId}
@@ -856,8 +825,9 @@ const ResultsAnalytics: React.FC = () => {
                 setSittingId('');
               }}
               aria-label="Exam filter"
+              disabled={bootLoading || loadingExams}
             >
-              <option value="">Select Exam</option>
+              <option value="">{loadingExams ? 'Loading exams...' : 'Select Exam'}</option>
               {exams.map((exam) => (
                 <option key={exam.id} value={exam.id}>{exam.title}</option>
               ))}
@@ -867,12 +837,12 @@ const ResultsAnalytics: React.FC = () => {
               value={sittingId}
               onChange={(e) => setSittingId(e.target.value)}
               aria-label="Sitting filter"
-              disabled={!examId}
+              disabled={!examId || loadingSittings || bootLoading}
             >
-              <option value="">All Sittings</option>
+              <option value="">{loadingSittings ? 'Loading sittings...' : 'All Sittings'}</option>
               {sittings.map((sitting) => (
                 <option key={sitting.id} value={String(sitting.id)}>
-                  {`#${sitting.id} | ${(sitting.assessment_mode_snapshot || '').toUpperCase()} | ${sitting.status || '-'} | ${sitting.session || '-'} / ${sitting.term || '-'}`}
+                  {`${toSittingModeLabel(sitting.assessment_mode_snapshot)} | ${sitting.status || '-'} | ${sitting.session || '-'} / ${sitting.term || '-'}`}
                 </option>
               ))}
             </select>
@@ -882,65 +852,38 @@ const ResultsAnalytics: React.FC = () => {
               value={studentName}
               onChange={(e) => setStudentName(e.target.value)}
             />
-            <div className="flex flex-wrap gap-2">
-              <button className="btn-compact bg-blue-600 text-white hover:bg-blue-700 transition" onClick={loadAnalytics}>
-                Refresh Analytics
-              </button>
-              <button className="btn-compact bg-slate-700 text-white hover:bg-slate-800 transition" onClick={loadExams}>
-                Reload Exams
-              </button>
-              <button className="btn-compact bg-slate-900 text-white hover:bg-slate-800 transition" onClick={loadMarkingSummary}>
-                Refresh Marking Summary
-              </button>
+              {!!sittingId && (
+                <>
+                  <button
+                    onClick={() => releaseSelectedExam(true)}
+                    disabled={releaseLoading}
+                    className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Release Sitting
+                  </button>
+                  <button
+                    onClick={() => releaseSelectedExam(false)}
+                    disabled={releaseLoading}
+                    className="btn-compact bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    Hide Sitting
+                  </button>
+                </>
+              )}
             </div>
+            <div className="text-[11px] text-slate-500">
+              Auto-updates on page load and when exam/sitting changes.
+            </div>
+          <div className="mt-2 text-[11px] text-slate-500">
+            {sittingId ? `Context: ${selectedSittingLabel}` : 'Context: Entire exam (all sittings)'}
+          </div>
           </div>
         </Card>
 
-        <Card className="panel-compact border border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white">
-          <div className="flex flex-col gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-emerald-900">Release Results Control</h2>
-              <p className="text-xs text-emerald-800 mt-1">
-                Manage visibility using the currently selected exam and sitting context.
-              </p>
-            </div>
-            {!examId ? (
-              <p className="text-xs text-slate-600">Select an exam first to control release visibility.</p>
-            ) : (
-              <>
-                <div className="text-xs text-slate-700 bg-white border border-emerald-100 rounded-lg p-2">
-                  {sittingId
-                    ? `Target: Sitting #${sittingId} (${selectedSitting?.assessment_mode_snapshot || '-'} | ${selectedSitting?.status || '-'})`
-                    : 'Target: Entire exam template (all sittings inherit only if no sitting-level override).'}
-                </div>
-                <div className="flex gap-2">
-                <button
-                  onClick={() => releaseSelectedExam(true)}
-                  disabled={releaseLoading}
-                  className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {sittingId ? `Release Sitting #${sittingId}` : 'Release Selected Exam'}
-                </button>
-                <button
-                  onClick={() => releaseSelectedExam(false)}
-                  disabled={releaseLoading}
-                  className="btn-compact bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
-                >
-                  {sittingId ? `Hide Sitting #${sittingId}` : 'Hide Selected Exam'}
-                </button>
-                </div>
-              </>
-            )}
-          </div>
-        </Card>
-
-        <Card className="panel-compact border border-indigo-200/70 bg-gradient-to-br from-indigo-50 via-white to-white">
+        <Card className="panel-compact border border-indigo-100 bg-indigo-50/40">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-sm font-semibold text-indigo-900">Marking Summary</h2>
-              <p className="text-xs text-indigo-800 mt-1">
-                Pending scripts that need manual scoring and finalization.
-              </p>
             </div>
           </div>
 
@@ -1003,47 +946,6 @@ const ResultsAnalytics: React.FC = () => {
           )}
         </div>
 
-        <Card className={`panel-compact border ${actionBanner.tone}`}>
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold">Next Action</h2>
-              <p className="text-xs mt-1">{actionBanner.title}</p>
-              <p className="text-xs opacity-90 mt-1">{actionBanner.message}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {actionBanner.cta === 'marking' && (
-                <button
-                  onClick={() => navigate('/admin/marking')}
-                  className="btn-compact bg-amber-600 text-white hover:bg-amber-700"
-                  title="Open Marking Workbench to score pending manual scripts and finalize attempts"
-                >
-                  Open Marking
-                </button>
-              )}
-              {actionBanner.cta === 'release' && (
-                <button
-                  onClick={() => releaseSelectedExam(true)}
-                  disabled={releaseLoading}
-                  className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                  title="Release makes completed results visible to students"
-                >
-                  {sittingId ? `Release Sitting #${sittingId}` : 'Release Selected Exam'}
-                </button>
-              )}
-              {actionBanner.cta === 'hide' && (
-                <button
-                  onClick={() => releaseSelectedExam(false)}
-                  disabled={releaseLoading}
-                  className="btn-compact bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50"
-                  title="Hide removes student visibility for already computed results"
-                >
-                  {sittingId ? `Hide Sitting #${sittingId}` : 'Hide Selected Exam'}
-                </button>
-              )}
-            </div>
-          </div>
-        </Card>
-
         <Card className="panel-compact">
           <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
             <button
@@ -1060,13 +962,6 @@ const ResultsAnalytics: React.FC = () => {
             >
               Compiled Results
             </button>
-            <button
-              className={`btn-compact ${activeTab === 'broadsheet' ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-600 hover:text-slate-900'}`}
-              onClick={() => goToTab('broadsheet')}
-              title="Broadsheet and report actions"
-            >
-              Broadsheet / Reports
-            </button>
           </div>
         </Card>
 
@@ -1075,7 +970,7 @@ const ResultsAnalytics: React.FC = () => {
             <div>
               <h2 className="text-lg font-semibold text-slate-900">
                 {selectedExam
-                  ? `${sittingId ? `Sitting #${sittingId} Results` : 'Result Summary'} - ${selectedExam.title}`
+                  ? `${sittingId ? `${toSittingModeLabel(selectedSitting?.assessment_mode_snapshot)} Results` : 'Result Summary'} - ${selectedExam.title}`
                   : 'Result Summary'}
               </h2>
               <p className="text-xs text-slate-500">
@@ -1214,16 +1109,18 @@ const ResultsAnalytics: React.FC = () => {
             <div>
               <h2 className="text-lg font-semibold">Subject Term Aggregate (CA + Exam)</h2>
               <p className="text-xs text-slate-500">
-                {examId
-                  ? 'Uses latest CA + Exam records for this subject in the current session; not limited to this single exam attempt.'
-                  : 'Select an exam to load subject term aggregates.'}
+                {compiledBlockedByMode
+                  ? 'Compiled aggregate is disabled in CA-only mode. Switch to Exam/Auto context after final exam scoring.'
+                  : examId
+                    ? 'Shows compiled rows only when both CA and Exam components are available for each student.'
+                    : 'Select an exam to load subject term aggregates.'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {examId && <span className="text-xs text-slate-500">{compiledRows.length} row(s)</span>}
               <button
                 className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                disabled={!canExportTermAggregate || exportLoading}
+                disabled={!canExportTermAggregate || exportLoading || compiledBlockedByMode || compiledRows.length === 0}
                 title={canExportTermAggregate
                   ? 'Download printable term aggregate report (PDF)'
                   : 'Select an exam with class, term and session metadata to enable term export.'}
@@ -1239,7 +1136,7 @@ const ResultsAnalytics: React.FC = () => {
               </button>
               <button
                 className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                disabled={!canExportTermAggregate || exportLoading}
+                disabled={!canExportTermAggregate || exportLoading || compiledBlockedByMode || compiledRows.length === 0}
                 title={canExportTermAggregate
                   ? 'Download term aggregate report (Excel)'
                   : 'Select an exam with class, term and session metadata to enable term export.'}
@@ -1259,7 +1156,11 @@ const ResultsAnalytics: React.FC = () => {
           {!examId && <p className="text-gray-500 text-sm">Choose an exam above to view subject term aggregates.</p>}
           {examId && loadingCompiledRows && <SkeletonList items={4} />}
           {examId && !loadingCompiledRows && compiledRows.length === 0 && (
-            <p className="text-gray-500 text-sm">No aggregate rows found for this exam subject yet.</p>
+            <p className="text-gray-500 text-sm">
+              {compiledBlockedByMode
+                ? 'Compiled rows are unavailable in CA-only mode.'
+                : 'No compiled rows yet. Compiled results appear only after both CA and Exam scores are available.'}
+            </p>
           )}
 
           {examId && !loadingCompiledRows && compiledRows.length > 0 && (
@@ -1274,7 +1175,6 @@ const ResultsAnalytics: React.FC = () => {
                     <th className="px-3 py-2 text-left font-semibold" title="Continuous Assessment weighted score for this subject in term context">CA (%)</th>
                     <th className="px-3 py-2 text-left font-semibold" title="Exam component weighted score for this subject in term context">Exam (%)</th>
                     <th className="px-3 py-2 text-left font-semibold" title="Compiled score from CA and Exam using configured weights">Compiled (%)</th>
-                    <th className="px-3 py-2 text-left font-semibold" title="Cumulative/Composite result average for this student across loaded subject rows">CR (%)</th>
                     <th className="px-3 py-2 text-left font-semibold" title="Exam IDs used as source records to compute this aggregate row">Source Exam ID(s)</th>
                   </tr>
                 </thead>
@@ -1296,10 +1196,9 @@ const ResultsAnalytics: React.FC = () => {
                       <td className="px-3 py-2 text-sm text-slate-700">{row.ca_score !== null ? row.ca_score.toFixed(2) : '-'}</td>
                       <td className="px-3 py-2 text-sm text-slate-700">{row.exam_score !== null ? row.exam_score.toFixed(2) : '-'}</td>
                       <td className="px-3 py-2 text-sm font-semibold text-slate-900">{row.compiled_score !== null ? row.compiled_score.toFixed(2) : '-'}</td>
-                      <td className="px-3 py-2 text-sm text-slate-700">{row.cumulative_average !== null ? row.cumulative_average.toFixed(2) : '-'}</td>
                       <td className="px-3 py-2 text-sm text-slate-700">
                         {row.source_exam_ids.length > 0
-                          ? row.source_exam_ids.map((id) => `#${id}`).join(', ')
+                          ? row.source_exam_ids.map((id) => `${id}`).join(', ')
                           : '-'}
                       </td>
                     </tr>
@@ -1310,206 +1209,6 @@ const ResultsAnalytics: React.FC = () => {
           )}
         </Card>}
 
-        {activeTab === 'broadsheet' && <Card className="panel-compact border border-slate-200/90 bg-gradient-to-br from-slate-50 via-white to-indigo-50/30">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Broadsheet / Reports Workspace</h2>
-              <p className="text-xs text-slate-600">
-                Generate subject broadsheet outputs from the current exam context and access reporting actions.
-              </p>
-            </div>
-            <div className="text-xs text-slate-500">
-              {!examId ? 'Select an exam above to enable report actions.' : `Exam #${examId} selected`}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="rounded-lg border border-slate-200 bg-white p-3">
-              <h3 className="text-sm font-semibold text-slate-900">Subject Broadsheet</h3>
-              <p className="text-xs text-slate-600 mt-1">Exports compiled subject rows (CA + Exam + Total) for selected class/session/term context.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                  disabled={!canExportTermAggregate || exportLoading}
-                  onClick={() => {
-                    if (!canExportTermAggregate) return;
-                    downloadReport(
-                      `/reports/term/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf`,
-                      `subject_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
-                    );
-                  }}
-                >
-                  Print Subject Broadsheet
-                </button>
-                <button
-                  className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                  disabled={!canExportTermAggregate || exportLoading}
-                  onClick={() => {
-                    if (!canExportTermAggregate) return;
-                    downloadReport(
-                      `/reports/term/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel`,
-                      `subject_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
-                    );
-                  }}
-                >
-                  Export Subject Broadsheet
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-slate-200 bg-white p-3">
-              <h3 className="text-sm font-semibold text-slate-900">Class Reports</h3>
-              <p className="text-xs text-slate-600 mt-1">Generate full class broadsheet reports for the selected term/class/session context.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                  disabled={!canExportTermAggregate || exportLoading}
-                  title={canExportTermAggregate
-                    ? 'Download full class broadsheet (PDF)'
-                    : 'Select an exam with class, term and session metadata to enable class broadsheet export.'}
-                  onClick={() => {
-                    if (!canExportTermAggregate) return;
-                    downloadReport(
-                      `/reports/broadsheet/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf`,
-                      `class_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
-                    );
-                  }}
-                >
-                  Print Full Class Broadsheet
-                </button>
-                <button
-                  className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                  disabled={!canExportTermAggregate || exportLoading}
-                  title={canExportTermAggregate
-                    ? 'Download full class broadsheet (Excel)'
-                    : 'Select an exam with class, term and session metadata to enable class broadsheet export.'}
-                  onClick={() => {
-                    if (!canExportTermAggregate) return;
-                    downloadReport(
-                      `/reports/broadsheet/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel`,
-                      `class_broadsheet_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
-                    );
-                  }}
-                >
-                  Export Full Class Broadsheet
-                </button>
-                <button
-                  className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                  disabled={!canExportTermAggregate || exportLoading}
-                  title={canExportTermAggregate
-                    ? 'Download class report cards summary (Excel)'
-                    : 'Select an exam with class, term and session metadata to enable report-card export.'}
-                  onClick={() => {
-                    if (!canExportTermAggregate) return;
-                    downloadReport(
-                      `/reports/report-cards/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel`,
-                      `class_report_cards_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
-                    );
-                  }}
-                >
-                  Generate Report Cards (Excel)
-                </button>
-                <button
-                  className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                  disabled={!canExportTermAggregate || exportLoading}
-                  title={canExportTermAggregate
-                    ? 'Download class report cards summary (PDF)'
-                    : 'Select an exam with class, term and session metadata to enable report-card print.'}
-                  onClick={() => {
-                    if (!canExportTermAggregate) return;
-                    downloadReport(
-                      `/reports/report-cards/class/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf`,
-                      `class_report_cards_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
-                    );
-                  }}
-                >
-                  Print Report Cards (PDF)
-                </button>
-              </div>
-
-              <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-700">Single Student Report Card</p>
-                <p className="text-[11px] text-slate-600 mt-1">Select a student and optionally add remarks before generating their report card.</p>
-                <div className="mt-2 grid grid-cols-1 gap-2">
-                  <select
-                    className="input-compact border border-slate-200 text-sm bg-white"
-                    value={reportCardStudentId}
-                    onChange={(e) => setReportCardStudentId(e.target.value)}
-                    disabled={!canExportTermAggregate || reportCardStudents.length === 0 || exportLoading}
-                  >
-                    {reportCardStudents.length === 0 ? (
-                      <option value="">No students available</option>
-                    ) : (
-                      reportCardStudents.map((student) => (
-                        <option key={student.id} value={String(student.id)}>
-                          {student.student_name} ({student.registration_number})
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <input
-                    className="input-compact border border-slate-200 text-sm bg-white"
-                    placeholder="Teacher remark (optional)"
-                    value={teacherRemark}
-                    onChange={(e) => setTeacherRemark(e.target.value)}
-                    disabled={!canExportTermAggregate || reportCardStudents.length === 0 || exportLoading || remarksLoading}
-                  />
-                  <input
-                    className="input-compact border border-slate-200 text-sm bg-white"
-                    placeholder="Principal remark (optional)"
-                    value={principalRemark}
-                    onChange={(e) => setPrincipalRemark(e.target.value)}
-                    disabled={!canExportTermAggregate || reportCardStudents.length === 0 || exportLoading || remarksLoading}
-                  />
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    className="btn-compact bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50"
-                    disabled={!canExportTermAggregate || !reportCardStudentId || exportLoading || remarksSaving || remarksLoading}
-                    onClick={saveReportCardRemarks}
-                  >
-                    {remarksSaving ? 'Saving...' : 'Save Remarks'}
-                  </button>
-                  <button
-                    className="btn-compact bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                    disabled={!canExportTermAggregate || !reportCardStudentId || exportLoading}
-                    onClick={() => {
-                      if (!canExportTermAggregate || !reportCardStudentId) return;
-                      const params = new URLSearchParams();
-                      if (teacherRemark.trim()) params.set('teacher_remark', teacherRemark.trim());
-                      if (principalRemark.trim()) params.set('principal_remark', principalRemark.trim());
-                      const suffix = params.toString();
-                      downloadReport(
-                        `/reports/report-cards/student/${encodeURIComponent(reportCardStudentId)}/session/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/excel${suffix ? `?${suffix}` : ''}`,
-                        `student_report_card_${reportCardStudentId}_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.xlsx`
-                      );
-                    }}
-                  >
-                    Export Student Card (Excel)
-                  </button>
-                  <button
-                    className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                    disabled={!canExportTermAggregate || !reportCardStudentId || exportLoading}
-                    onClick={() => {
-                      if (!canExportTermAggregate || !reportCardStudentId) return;
-                      const params = new URLSearchParams();
-                      if (teacherRemark.trim()) params.set('teacher_remark', teacherRemark.trim());
-                      if (principalRemark.trim()) params.set('principal_remark', principalRemark.trim());
-                      const suffix = params.toString();
-                      downloadReport(
-                        `/reports/report-cards/student/${encodeURIComponent(reportCardStudentId)}/session/${encodeURIComponent(slugSession(selectedSession))}/term/${encodeURIComponent(slugTerm(selectedTerm))}/class/${selectedClassId}/pdf${suffix ? `?${suffix}` : ''}`,
-                        `student_report_card_${reportCardStudentId}_${slugSession(selectedSession)}_${slugTerm(selectedTerm)}_class_${selectedClassId}.pdf`
-                      );
-                    }}
-                  >
-                    Print Student Card (PDF)
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>}
       </div>
     </div>
   );

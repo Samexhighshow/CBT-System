@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import { showError, showSuccess } from '../../utils/alerts';
+import { serialNumber } from '../../utils/serialNumber';
 import QuestionRandomization from './QuestionRandomization';
 
 type SittingMode = 'ca_test' | 'exam';
@@ -99,6 +100,7 @@ const ExamSittings: React.FC = () => {
   const [editRows, setEditRows] = useState<Record<number, SittingDraft>>({});
   const [showSittingRandomizationModal, setShowSittingRandomizationModal] = useState(false);
   const [activeRandomizationSitting, setActiveRandomizationSitting] = useState<SittingRow | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [createDraft, setCreateDraft] = useState<SittingDraft>({
     session: '',
     term: '',
@@ -251,10 +253,10 @@ const ExamSittings: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedExamId]);
 
-  const createSitting = async () => {
+  const createSitting = async (): Promise<boolean> => {
     if (!selectedExamId) {
       showError('Select an exam first.');
-      return;
+      return false;
     }
 
     const payload = {
@@ -274,7 +276,7 @@ const ExamSittings: React.FC = () => {
 
     if (payload.start_at && payload.end_at && new Date(payload.end_at).getTime() <= new Date(payload.start_at).getTime()) {
       showError('Sitting end date/time must be after start date/time.');
-      return;
+      return false;
     }
 
     try {
@@ -282,8 +284,10 @@ const ExamSittings: React.FC = () => {
       await api.post(`/exams/${selectedExamId}/sittings`, payload);
       showSuccess('Sitting created successfully.');
       await loadSittings(selectedExamId);
+      return true;
     } catch (error: any) {
       showError(error?.response?.data?.message || 'Failed to create sitting.');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -313,10 +317,10 @@ const ExamSittings: React.FC = () => {
     try {
       setSaving(true);
       await api.put(`/exams/${selectedExamId}/sittings/${sittingId}`, payload);
-      showSuccess(`Sitting #${sittingId} updated.`);
+      showSuccess(`Sitting ${sittingId} updated.`);
       await loadSittings(selectedExamId);
     } catch (error: any) {
-      showError(error?.response?.data?.message || `Failed to update sitting #${sittingId}.`);
+      showError(error?.response?.data?.message || `Failed to update sitting ${sittingId}.`);
     } finally {
       setSaving(false);
     }
@@ -327,10 +331,10 @@ const ExamSittings: React.FC = () => {
     try {
       setSaving(true);
       await api.post(`/exams/${selectedExamId}/sittings/${sittingId}/duplicate`);
-      showSuccess(`Sitting #${sittingId} duplicated.`);
+      showSuccess(`Sitting ${sittingId} duplicated.`);
       await loadSittings(selectedExamId);
     } catch (error: any) {
-      showError(error?.response?.data?.message || `Failed to duplicate sitting #${sittingId}.`);
+      showError(error?.response?.data?.message || `Failed to duplicate sitting ${sittingId}.`);
     } finally {
       setSaving(false);
     }
@@ -338,15 +342,15 @@ const ExamSittings: React.FC = () => {
 
   const deleteSitting = async (sittingId: number) => {
     if (!selectedExamId) return;
-    if (!window.confirm(`Delete sitting #${sittingId}?`)) return;
+    if (!window.confirm(`Delete sitting ${sittingId}?`)) return;
 
     try {
       setSaving(true);
       await api.delete(`/exams/${selectedExamId}/sittings/${sittingId}`);
-      showSuccess(`Sitting #${sittingId} deleted.`);
+      showSuccess(`Sitting ${sittingId} deleted.`);
       await loadSittings(selectedExamId);
     } catch (error: any) {
-      showError(error?.response?.data?.message || `Failed to delete sitting #${sittingId}.`);
+      showError(error?.response?.data?.message || `Failed to delete sitting ${sittingId}.`);
     } finally {
       setSaving(false);
     }
@@ -395,6 +399,15 @@ const ExamSittings: React.FC = () => {
     setShowSittingRandomizationModal(true);
   };
 
+  const openCreateModal = () => {
+    if (!selectedExam) {
+      showError('Select an exam first.');
+      return;
+    }
+    primeCreateDraft(selectedExam);
+    setShowCreateModal(true);
+  };
+
   return (
     <div className="app-shell section-shell py-4 space-y-4">
       <div>
@@ -425,7 +438,7 @@ const ExamSittings: React.FC = () => {
             ) : (
               filteredExams.map((exam) => (
                 <option key={exam.id} value={exam.id}>
-                  {`#${exam.id} ${exam.title} | ${exam.school_class?.name || '-'} | ${exam.subject?.name || '-'}`}
+                  {`${exam.title} | ${exam.school_class?.name || '-'} | ${exam.subject?.name || '-'}`}
                 </option>
               ))
             )}
@@ -435,87 +448,31 @@ const ExamSittings: React.FC = () => {
 
       {selectedExam && (
         <>
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-            <h2 className="text-sm font-semibold text-gray-800 mb-2">Create New Sitting</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <select
-                value={createDraft.assessment_mode_snapshot}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, assessment_mode_snapshot: e.target.value as SittingMode }))}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              >
-                <option value="ca_test">CA Test</option>
-                <option value="exam">Exam</option>
-              </select>
-
-              <select
-                value={createDraft.status}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, status: e.target.value as SittingStatus }))}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-
-              <input
-                value={createDraft.session}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, session: e.target.value }))}
-                placeholder="Session (e.g. 2025/2026)"
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              />
-
-              <select
-                value={createDraft.term}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, term: e.target.value as TermValue | '' }))}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              >
-                <option value="">Term</option>
-                {TERM_OPTIONS.map((term) => (
-                  <option key={term} value={term}>{term}</option>
-                ))}
-              </select>
-
-              <input
-                value={createDraft.duration_minutes}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, duration_minutes: e.target.value }))}
-                type="number"
-                min={1}
-                placeholder="Duration (minutes)"
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              />
-
-              <input
-                value={createDraft.start_at}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, start_at: e.target.value }))}
-                type="datetime-local"
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              />
-
-              <input
-                value={createDraft.end_at}
-                onChange={(e) => setCreateDraft((prev) => ({ ...prev, end_at: e.target.value }))}
-                type="datetime-local"
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              />
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-gray-600">
+              {filteredExams.length} total exams
             </div>
+            <button
+              onClick={() => navigate('/admin/exams')}
+              className="px-3 py-2 rounded-md bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
+              title="Open Exam Management workspace"
+            >
+              Open Exam Workspace
+            </button>
+          </div>
 
-            <div className="mt-3 flex items-center justify-between">
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={createDraft.results_released}
-                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, results_released: e.target.checked }))}
-                />
-                Results Released
-              </label>
-
-              <button
-                onClick={createSitting}
-                disabled={saving}
-                className="px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60"
-              >
-                Create Sitting
-              </button>
+          <div className="grid grid-cols-1 gap-4 mb-4">
+            <div
+              onClick={openCreateModal}
+              className="w-full border-2 border-dashed border-indigo-400 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-600 hover:bg-indigo-50 transition-all duration-200"
+            >
+              <div className="flex justify-center mb-3">
+                <div className="text-4xl text-indigo-500">
+                  <i className='bx bx-calendar-plus'></i>
+                </div>
+              </div>
+              <h3 className="text-base md:text-lg font-bold text-gray-800 mb-1">Manual Entry</h3>
+              <p className="text-xs text-gray-600">Create a new sitting for the selected exam</p>
             </div>
           </div>
 
@@ -572,7 +529,7 @@ const ExamSittings: React.FC = () => {
                           onChange={(e) => toggleAllSittings(e.target.checked)}
                         />
                       </th>
-                      <th className="px-3 py-2 text-left">ID</th>
+                      <th className="px-3 py-2 text-left">No.</th>
                       <th className="px-3 py-2 text-left">Mode</th>
                       <th className="px-3 py-2 text-left">Status</th>
                       <th className="px-3 py-2 text-left">Session</th>
@@ -585,7 +542,7 @@ const ExamSittings: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {sittings.map((row) => {
+                    {sittings.map((row, index) => {
                       const edit = editRows[row.id] || hydrateDraft(row);
                       return (
                         <tr key={row.id} className="border-b last:border-0">
@@ -596,7 +553,7 @@ const ExamSittings: React.FC = () => {
                               onChange={(e) => toggleSitting(row.id, e.target.checked)}
                             />
                           </td>
-                          <td className="px-3 py-2 font-semibold text-gray-700">#{row.id}</td>
+                          <td className="px-3 py-2 font-semibold text-gray-700">{serialNumber(index)}</td>
                           <td className="px-3 py-2">
                             <select
                               value={edit.assessment_mode_snapshot}
@@ -723,6 +680,126 @@ const ExamSittings: React.FC = () => {
         </>
       )}
 
+      {showCreateModal && selectedExam && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Create New Sitting</h3>
+                <p className="text-xs text-gray-500 mt-1">{selectedExam.title}</p>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl"
+              >
+                <i className='bx bx-x'></i>
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-800">
+                <i className='bx bx-info-circle mr-1'></i>
+                Configure mode, schedule, and release status for this sitting.
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <select
+                  value={createDraft.assessment_mode_snapshot}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, assessment_mode_snapshot: e.target.value as SittingMode }))}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="ca_test">CA Test</option>
+                  <option value="exam">Exam</option>
+                </select>
+
+                <select
+                  value={createDraft.status}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, status: e.target.value as SittingStatus }))}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+
+                <input
+                  value={createDraft.session}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, session: e.target.value }))}
+                  placeholder="Session (e.g. 2025/2026)"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+
+                <select
+                  value={createDraft.term}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, term: e.target.value as TermValue | '' }))}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="">Term</option>
+                  {TERM_OPTIONS.map((term) => (
+                    <option key={term} value={term}>{term}</option>
+                  ))}
+                </select>
+
+                <input
+                  value={createDraft.duration_minutes}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, duration_minutes: e.target.value }))}
+                  type="number"
+                  min={1}
+                  placeholder="Duration (minutes)"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+
+                <input
+                  value={createDraft.start_at}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, start_at: e.target.value }))}
+                  type="datetime-local"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+
+                <input
+                  value={createDraft.end_at}
+                  onChange={(e) => setCreateDraft((prev) => ({ ...prev, end_at: e.target.value }))}
+                  type="datetime-local"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+
+              <div className="mt-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={createDraft.results_released}
+                    onChange={(e) => setCreateDraft((prev) => ({ ...prev, results_released: e.target.checked }))}
+                  />
+                  Results Released
+                </label>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const created = await createSitting();
+                      if (created) {
+                        setShowCreateModal(false);
+                      }
+                    }}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-md bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    Create Sitting
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSittingRandomizationModal && activeRandomizationSitting && selectedExamId > 0 && (
         <QuestionRandomization
           examId={selectedExamId}
@@ -732,7 +809,7 @@ const ExamSittings: React.FC = () => {
           }}
           sittingContext={{
             sittingId: activeRandomizationSitting.id,
-            title: `Sitting #${activeRandomizationSitting.id}`,
+            title: `Sitting ${activeRandomizationSitting.id}`,
             initialSettings: {
               question_selection_mode: activeRandomizationSitting.question_selection_mode,
               question_count: activeRandomizationSitting.question_count,

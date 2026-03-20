@@ -29,7 +29,6 @@ class TermAggregateExport implements FromCollection, WithHeadings, WithMapping
             'CA (%)',
             'Exam (%)',
             'Compiled (%)',
-            'CR (%)',
             'Source Exam IDs',
         ];
     }
@@ -49,7 +48,6 @@ class TermAggregateExport implements FromCollection, WithHeadings, WithMapping
             isset($row['ca_score']) && $row['ca_score'] !== null ? number_format((float) $row['ca_score'], 2) : '-',
             isset($row['exam_score']) && $row['exam_score'] !== null ? number_format((float) $row['exam_score'], 2) : '-',
             isset($row['compiled_score']) && $row['compiled_score'] !== null ? number_format((float) $row['compiled_score'], 2) : '-',
-            isset($row['cumulative_average']) && $row['cumulative_average'] !== null ? number_format((float) $row['cumulative_average'], 2) : '-',
             $source !== '' ? $source : '-',
         ];
     }

@@ -1106,7 +1106,7 @@ const AdminUserManagement: React.FC = () => {
                       ) : (
                         filteredActiveApprovedScopes.map((scope) => (
                           <tr key={scope.id} className="hover:bg-gray-50">
-                            <td className="p-2 border-b"><div className="font-medium text-gray-800">{scope.user?.name || `User #${scope.user_id}`}</div><div className="text-gray-500">{scope.user?.email || '-'}</div></td>
+                            <td className="p-2 border-b"><div className="font-medium text-gray-800">{scope.user?.name || `User ${scope.user_id}`}</div><div className="text-gray-500">{scope.user?.email || '-'}</div></td>
                             <td className="p-2 border-b">{scope.role_name || '-'}</td>
                             <td className="p-2 border-b">{scope.subject?.name || '-'}</td>
                             <td className="p-2 border-b">{scope.school_class?.name || '-'}</td>

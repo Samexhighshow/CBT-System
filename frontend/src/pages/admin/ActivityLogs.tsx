@@ -266,7 +266,7 @@ const ActivityLogs: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {log.subject_type ? log.subject_type.split('\\').pop() : 'N/A'}
-                      {log.subject_id ? ` #${log.subject_id}` : ''}
+                      {log.subject_id ? ` ${log.subject_id}` : ''}
                     </td>
                   </tr>
                 ))

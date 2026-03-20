@@ -40,6 +40,8 @@ class CbtInterfaceController extends Controller
     {
         $student = null;
         $regNumber = strtoupper((string) $request->query('reg_number', ''));
+        $displayMode = $this->assessmentDisplayMode();
+        $strictMode = in_array($displayMode, ['ca_test', 'exam'], true) ? $displayMode : null;
 
         if ($regNumber !== '') {
             $student = Student::where('registration_number', $regNumber)->first();
@@ -48,13 +50,37 @@ class CbtInterfaceController extends Controller
         $now = now();
 
         $exams = Exam::with(['subject:id,name', 'schoolClass:id,name'])
-            ->where('published', true)
-            ->whereIn('status', ['scheduled', 'active'])
-            ->where(function ($query) use ($now) {
-                $query->whereNull('end_datetime')
-                    ->whereNull('end_time')
-                    ->orWhere('end_datetime', '>=', $now)
-                    ->orWhere('end_time', '>=', $now);
+            ->where(function ($query) use ($now, $strictMode) {
+                $query->where(function ($examWindowQuery) use ($now) {
+                    $examWindowQuery
+                        ->where('published', true)
+                        ->whereIn('status', ['scheduled', 'active'])
+                        ->where(function ($inner) use ($now) {
+                            $inner->whereNull('end_datetime')
+                                ->whereNull('end_time')
+                                ->orWhere('end_datetime', '>=', $now)
+                                ->orWhere('end_time', '>=', $now);
+                        });
+                });
+
+                if (Schema::hasTable('exam_sittings')) {
+                    $query->orWhereHas('sittings', function ($sittingsQuery) use ($now, $strictMode) {
+                        // Template may already be completed while a new sitting is still valid.
+                        $sittingsQuery->whereHas('exam', function ($examQuery) {
+                            $examQuery->whereNotIn('status', ['cancelled']);
+                        });
+
+                        $sittingsQuery->whereIn('status', ['scheduled', 'active'])
+                            ->where(function ($windowQuery) use ($now) {
+                                $windowQuery->whereNull('end_at')
+                                    ->orWhere('end_at', '>=', $now);
+                            });
+
+                        if ($strictMode !== null) {
+                            $sittingsQuery->where('assessment_mode_snapshot', $strictMode);
+                        }
+                    });
+                }
             })
             ->orderByRaw('COALESCE(start_datetime, start_time) asc')
             ->get();
@@ -62,10 +88,13 @@ class CbtInterfaceController extends Controller
         $sittingsByExam = collect();
         if (Schema::hasTable('exam_sittings') && $exams->isNotEmpty()) {
             $examIds = $exams->pluck('id')->map(fn ($id) => (int) $id)->all();
-            $displayMode = $this->assessmentDisplayMode();
             $sittingsQuery = ExamSitting::query()
                 ->whereIn('exam_id', $examIds)
                 ->whereIn('status', ['scheduled', 'active'])
+                ->where(function ($query) use ($now) {
+                    $query->whereNull('end_at')
+                        ->orWhere('end_at', '>=', $now);
+                })
                 ->orderBy('start_at')
                 ->orderBy('id')
                 ->select([
@@ -88,19 +117,35 @@ class CbtInterfaceController extends Controller
         }
 
         $payload = $exams->map(function (Exam $exam) use ($student, $sittingsByExam) {
-            $start = $exam->start_datetime ?? $exam->start_time;
-            $end = $exam->end_datetime ?? $exam->end_time;
+            $examSittings = collect($sittingsByExam->get($exam->id, []));
+            $primarySitting = $examSittings->first();
+            $start = $primarySitting?->start_at ?? $exam->start_datetime ?? $exam->start_time;
+            $end = $primarySitting?->end_at ?? $exam->end_datetime ?? $exam->end_time;
+            $duration = $primarySitting?->duration_minutes ?? $exam->duration_minutes;
 
             $canAccess = true;
             $reason = null;
 
             if ($student) {
-                $eligibility = $exam->checkEligibility($student);
+                if ($examSittings->isNotEmpty()) {
+                    $eligibility = $examSittings
+                        ->map(fn (ExamSitting $sitting) => $this->checkEligibilityForContext(
+                            $exam,
+                            $student,
+                            $sitting,
+                            (string) ($sitting->assessment_mode_snapshot ?: $this->resolveAttemptMode($exam))
+                        ))
+                        ->first(fn (array $result) => (bool) ($result['eligible'] ?? false))
+                        ?? $this->checkEligibilityForContext($exam, $student, $examSittings->first(), (string) ($examSittings->first()?->assessment_mode_snapshot ?: $this->resolveAttemptMode($exam)));
+                } else {
+                    $eligibility = $this->checkEligibilityForContext($exam, $student);
+                }
+
                 $canAccess = (bool) ($eligibility['eligible'] ?? false);
                 $reason = $eligibility['message'] ?? null;
             }
 
-            $sittings = collect($sittingsByExam->get($exam->id, []))
+            $sittings = $examSittings
                 ->map(function (ExamSitting $sitting) {
                     return [
                         'id' => (int) $sitting->id,
@@ -119,7 +164,7 @@ class CbtInterfaceController extends Controller
                 'assessment_type' => $exam->assessment_type,
                 'subject' => $exam->subject?->name,
                 'class_level' => $exam->schoolClass?->name,
-                'duration_minutes' => $exam->duration_minutes,
+                'duration_minutes' => $duration,
                 'status' => $exam->status,
                 'start_datetime' => $start?->toDateTimeString(),
                 'end_datetime' => $end?->toDateTimeString(),
@@ -129,13 +174,11 @@ class CbtInterfaceController extends Controller
             ];
         })->values();
 
-        $mode = $this->assessmentDisplayMode();
-
         return response()->json([
             'data' => $payload,
             'meta' => [
-                'assessment_mode' => $mode,
-                'assessment_labels' => $this->assessmentDisplayLabels($mode),
+                'assessment_mode' => $displayMode,
+                'assessment_labels' => $this->assessmentDisplayLabels($displayMode),
             ],
         ]);
     }
@@ -305,7 +348,7 @@ class CbtInterfaceController extends Controller
         }
 
         if (!$activeAttempt) {
-            $eligibility = $exam->checkEligibility($student);
+            $eligibility = $this->checkEligibilityForContext($exam, $student, $sitting, $attemptMode);
             if (!($eligibility['eligible'] ?? false)) {
                 return response()->json([
                     'message' => $eligibility['message'] ?? 'Exam access denied.',
@@ -1294,6 +1337,117 @@ class CbtInterfaceController extends Controller
                     'details' => ['subject_id' => (int) $exam->subject_id],
                 ];
             }
+        }
+
+        return ['eligible' => true];
+    }
+
+    private function checkEligibilityForContext(Exam $exam, Student $student, ?ExamSitting $sitting = null, ?string $attemptMode = null): array
+    {
+        // For sitting-driven operations, allow access even if template publish flag is stale.
+        if (!$sitting && !$exam->published) {
+            return [
+                'eligible' => false,
+                'reason' => 'exam_not_published',
+                'message' => 'This exam is not yet published. Please wait for the instructor to publish it.',
+                'details' => null,
+            ];
+        }
+
+        $statusAllowed = $sitting
+            ? !in_array($exam->status, ['cancelled'], true)
+            : in_array($exam->status, ['scheduled', 'active'], true);
+
+        if (!$statusAllowed) {
+            $statusMessages = [
+                'draft' => 'This exam is still in draft mode.',
+                'completed' => 'This exam has been closed.',
+                'cancelled' => 'This exam has been cancelled.',
+            ];
+
+            return [
+                'eligible' => false,
+                'reason' => 'invalid_exam_status',
+                'message' => $statusMessages[$exam->status] ?? 'Exam status does not allow access.',
+                'details' => ['status' => $exam->status],
+            ];
+        }
+
+        $assignmentEligibility = $this->validateStudentExamAssignment($exam, $student);
+        if (!($assignmentEligibility['eligible'] ?? false)) {
+            return $assignmentEligibility;
+        }
+
+        $scheduleEligibility = $this->validateContextSchedule($exam, $sitting);
+        if (!($scheduleEligibility['eligible'] ?? false)) {
+            return $scheduleEligibility;
+        }
+
+        $resolvedAttemptMode = $attemptMode ?: (string) ($sitting?->assessment_mode_snapshot ?: $this->resolveAttemptMode($exam));
+        $allowedAttempts = (int) ($exam->allowed_attempts ?? 1);
+
+        $attemptQuery = $exam->attempts()
+            ->where('student_id', $student->id)
+            ->whereNotIn('status', ['voided']);
+
+        $this->applyAttemptModeScope($attemptQuery, $resolvedAttemptMode);
+
+        $attemptCount = (clone $attemptQuery)->count();
+        if ($attemptCount >= $allowedAttempts) {
+            return [
+                'eligible' => false,
+                'reason' => 'max_attempts_reached',
+                'message' => 'You have reached the maximum number of attempts for this exam.',
+                'details' => [
+                    'attempts_taken' => $attemptCount,
+                    'max_attempts' => $allowedAttempts,
+                    'attempt_mode' => $resolvedAttemptMode,
+                ],
+            ];
+        }
+
+        return [
+            'eligible' => true,
+            'reason' => null,
+            'message' => 'You are eligible to take this exam.',
+            'details' => [
+                'attempts_remaining' => max(0, $allowedAttempts - $attemptCount),
+                'duration_minutes' => (int) ($sitting?->duration_minutes ?? $exam->duration_minutes ?? 60),
+                'start_time' => ($sitting?->start_at ?? $exam->start_datetime ?? $exam->start_time)?->toDateTimeString(),
+                'end_time' => ($sitting?->end_at ?? $exam->end_datetime ?? $exam->end_time)?->toDateTimeString(),
+                'attempt_mode' => $resolvedAttemptMode,
+            ],
+        ];
+    }
+
+    private function validateContextSchedule(Exam $exam, ?ExamSitting $sitting = null): array
+    {
+        $start = $sitting?->start_at ?? $exam->start_datetime ?? $exam->start_time;
+        $end = $sitting?->end_at ?? $exam->end_datetime ?? $exam->end_time;
+        $now = Carbon::now();
+
+        if ($start instanceof Carbon && $now->lt($start)) {
+            return [
+                'eligible' => false,
+                'reason' => 'exam_not_started',
+                'message' => 'This exam has not started yet.',
+                'details' => [
+                    'start_time' => $start->toDateTimeString(),
+                    'time_remaining' => $now->diffInMinutes($start) . ' minutes',
+                ],
+            ];
+        }
+
+        if ($end instanceof Carbon && $now->gt($end)) {
+            return [
+                'eligible' => false,
+                'reason' => 'exam_ended',
+                'message' => 'This exam has ended.',
+                'details' => [
+                    'end_time' => $end->toDateTimeString(),
+                    'ended_ago' => $end->diffInMinutes($now) . ' minutes ago',
+                ],
+            ];
         }
 
         return ['eligible' => true];

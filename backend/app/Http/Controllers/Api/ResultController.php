@@ -573,7 +573,7 @@ class ResultController extends Controller
     private function buildTermCompilationForStudent(Collection $attempts): array
     {
         $termCompilationEnabled = $this->boolSetting('enable_term_result_compilation', true);
-        $cumulativeEnabled = $this->boolSetting('enable_cumulative_results', true);
+        $cumulativeEnabled = false;
         $useAssessmentWeight = $this->boolSetting('use_exam_assessment_weight', true);
 
         $defaultCaWeight = $this->boundedNumberSetting('default_ca_weight', 40, 0, 100);
@@ -657,14 +657,12 @@ class ResultController extends Controller
         }
 
         $termOrder = ['First Term', 'Second Term', 'Third Term'];
-        $termAverages = [];
 
         $termsPayload = collect($termOrder)->map(function (string $term) use (
             $records,
             $defaultCaWeight,
             $defaultExamWeight,
-            $useAssessmentWeight,
-            &$termAverages
+            $useAssessmentWeight
         ) {
             $termRecords = $records->where('term', $term)->values();
 
@@ -737,10 +735,6 @@ class ResultController extends Controller
                 ? round((float) $termScoreValues->avg(), 2)
                 : null;
 
-            if ($termAverage !== null) {
-                $termAverages[$term] = $termAverage;
-            }
-
             return [
                 'term' => $term,
                 'subject_count' => $subjectRows->count(),
@@ -749,18 +743,8 @@ class ResultController extends Controller
             ];
         })->values();
 
-        $running = [];
-        $termsPayload = $termsPayload->map(function (array $termRow) use (&$running, $termAverages, $cumulativeEnabled) {
-            $term = $termRow['term'];
-            $termAverage = $termAverages[$term] ?? null;
-
-            if ($termAverage !== null) {
-                $running[] = $termAverage;
-            }
-
-            $termRow['cumulative_average'] = $cumulativeEnabled && count($running) > 0
-                ? round(array_sum($running) / count($running), 2)
-                : null;
+        $termsPayload = $termsPayload->map(function (array $termRow) {
+            $termRow['cumulative_average'] = null;
 
             return $termRow;
         })->values();
@@ -939,17 +923,16 @@ class ResultController extends Controller
         return $terms
             ->flatMap(function (array $termRow) {
                 $term = (string) ($termRow['term'] ?? '');
-                $cumulativeAverage = $termRow['cumulative_average'] ?? null;
                 $subjects = collect($termRow['subjects'] ?? []);
 
-                return $subjects->map(function (array $subjectRow) use ($term, $cumulativeAverage) {
+                return $subjects->map(function (array $subjectRow) use ($term) {
                     return [
                         'term' => $term,
                         'subject' => (string) ($subjectRow['subject'] ?? 'Unknown'),
                         'ca_score' => $subjectRow['ca_score'] ?? null,
                         'exam_score' => $subjectRow['exam_score'] ?? null,
                         'compiled_score' => $subjectRow['term_score'] ?? null,
-                        'cumulative_average' => $cumulativeAverage,
+                        'cumulative_average' => null,
                         'source_exam_ids' => $subjectRow['source_exam_ids'] ?? [],
                     ];
                 });

@@ -10,9 +10,12 @@ import {
   fetchAssessmentDisplayConfig,
 } from '../../services/assessmentDisplay';
 import { runWithRetry } from '../../utils/requestRetry';
+import { useMemo } from 'react';
 
 interface Exam {
   id: number;
+  sitting_id?: number | null;
+  assessment_mode_snapshot?: 'ca_test' | 'exam' | string;
   title: string;
   subject_name: string;
   date: string;
@@ -41,6 +44,14 @@ interface GeneratedAccess {
 
 const ACCESS_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+const formatWindowPart = (value: string): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '-';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleString();
+};
+
 const generateAccessCode = (): string => {
   let value = '';
   for (let i = 0; i < 8; i += 1) {
@@ -52,7 +63,7 @@ const generateAccessCode = (): string => {
 const ExamAccess: React.FC = () => {
   const connectivity = useConnectivity();
   const [exams, setExams] = useState<Exam[]>([]);
-  const [selectedExam, setSelectedExam] = useState<number | null>(null);
+  const [selectedAssessment, setSelectedAssessment] = useState<string>('');
   const [regNumber, setRegNumber] = useState<string>('');
   const [foundStudent, setFoundStudent] = useState<Student | null>(null);
   const [generatedCode, setGeneratedCode] = useState<GeneratedAccess | null>(null);
@@ -76,12 +87,33 @@ const ExamAccess: React.FC = () => {
 
   const toExamOption = (row: any): Exam => ({
     id: Number(row.id ?? row.examId),
+    sitting_id: row.sitting_id ? Number(row.sitting_id) : null,
+    assessment_mode_snapshot: String(row.assessment_mode_snapshot || ''),
     title: String(row.title || ''),
     subject_name: String(row.subject_name || row.subject || ''),
     date: String(row.date || row.startsAt || ''),
     start_time: String(row.start_time || row.startsAt || ''),
     end_time: String(row.end_time || row.endsAt || ''),
   });
+
+  const selectedExamId = useMemo(() => {
+    const [exam] = selectedAssessment.split(':');
+    const id = Number(exam || 0);
+    return id > 0 ? id : null;
+  }, [selectedAssessment]);
+
+  const selectedSittingId = useMemo(() => {
+    const [, sitting] = selectedAssessment.split(':');
+    const id = Number(sitting || 0);
+    return id > 0 ? id : null;
+  }, [selectedAssessment]);
+
+  const selectedExamMeta = useMemo(() => {
+    if (!selectedExamId) return null;
+    return exams.find((item) => item.id === selectedExamId && Number(item.sitting_id || 0) === Number(selectedSittingId || 0))
+      || exams.find((item) => item.id === selectedExamId)
+      || null;
+  }, [exams, selectedExamId, selectedSittingId]);
 
   const loadLocalAccessHistory = useCallback(async () => {
     const [codes, students, examRows] = await Promise.all([
@@ -100,8 +132,8 @@ const ExamAccess: React.FC = () => {
         id: row.codeId,
         local_code_id: row.codeId,
         student_reg_number: student?.matricOrCandidateNo || `SID-${row.studentId}`,
-        student_name: student?.fullName || `Student #${row.studentId}`,
-        exam_title: exam?.title || `Exam #${row.examId}`,
+        student_name: student?.fullName || `Student ${row.studentId}`,
+        exam_title: exam?.title || `Exam ${row.examId}`,
         access_code: row.code,
         status: row.status,
         generated_at: row.issuedAt,
@@ -129,8 +161,13 @@ const ExamAccess: React.FC = () => {
       setExams(localExams.map(toExamOption));
     } catch (error) {
       console.error('Failed to fetch today exams:', error);
-      const localExams = await offlineDB.exams.toArray();
-      setExams(localExams.map(toExamOption));
+      if (connectivity.status === 'OFFLINE') {
+        const localExams = await offlineDB.exams.toArray();
+        setExams(localExams.map(toExamOption));
+      } else {
+        setExams([]);
+        showError('Unable to load live assessment sittings. Check backend/server and retry.');
+      }
     }
   }, [connectivity.status]);
 
@@ -236,7 +273,7 @@ const ExamAccess: React.FC = () => {
       return;
     }
 
-    if (!selectedExam) {
+    if (!selectedExamId) {
       showError('Please select an exam first');
       return;
     }
@@ -301,7 +338,7 @@ const ExamAccess: React.FC = () => {
       return;
     }
 
-    if (!selectedExam) {
+    if (!selectedExamId) {
       showError('Please select an exam');
       return;
     }
@@ -314,16 +351,16 @@ const ExamAccess: React.FC = () => {
     setLoading(true);
     singleGenerateInFlightRef.current = true;
     try {
-      const examId = Number(selectedExam);
+      const examId = Number(selectedExamId);
       const studentId = Number(foundStudent.id);
       const now = new Date().toISOString();
       const batchId = crypto.randomUUID();
-      const selectedExamMeta = exams.find((item) => item.id === examId);
 
       // ONLINE PATH: generate from server as source-of-truth so student verify always matches backend.
       if (connectivity.status !== 'OFFLINE') {
         const response = await api.post('/admin/exam-access/generate', {
           exam_id: examId,
+          sitting_id: selectedSittingId || selectedExamMeta?.sitting_id || undefined,
           student_id: studentId,
         });
 
@@ -351,7 +388,7 @@ const ExamAccess: React.FC = () => {
           local_code_id: codeId,
           student_reg_number: foundStudent.reg_number,
           student_name: foundStudent.name,
-          exam_title: payload.exam_title || selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam #${examId}`,
+          exam_title: payload.exam_title || selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam ${examId}`,
           access_code: serverCode,
           status: 'NEW',
           generated_at: issuedAt,
@@ -382,7 +419,7 @@ const ExamAccess: React.FC = () => {
             local_code_id: existingNew.codeId,
             student_reg_number: foundStudent.reg_number,
             student_name: foundStudent.name,
-            exam_title: selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam #${examId}`,
+            exam_title: selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam ${examId}`,
             access_code: existingNew.code,
             status: existingNew.status,
             generated_at: existingNew.issuedAt,
@@ -454,7 +491,7 @@ const ExamAccess: React.FC = () => {
         local_code_id: codeId,
         student_reg_number: foundStudent.reg_number,
         student_name: foundStudent.name,
-        exam_title: selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam #${examId}`,
+        exam_title: selectedExamMeta?.title || selectedExamMeta?.subject_name || `Exam ${examId}`,
         access_code: code,
         status: 'NEW',
         generated_at: now,
@@ -604,7 +641,7 @@ const ExamAccess: React.FC = () => {
       return;
     }
 
-    if (!selectedExam) {
+    if (!selectedExamId) {
       showError('Please select an exam first');
       return;
     }
@@ -635,7 +672,8 @@ const ExamAccess: React.FC = () => {
       }
 
       const response = await api.post('/admin/exam-access/generate', {
-        exam_id: selectedExam,
+        exam_id: selectedExamId,
+        sitting_id: selectedSittingId || selectedExamMeta?.sitting_id || undefined,
         reg_numbers: regNumbersArray,
       });
 
@@ -652,7 +690,7 @@ const ExamAccess: React.FC = () => {
         // Sync to offline DB
         const now = new Date().toISOString();
         const batchId = crypto.randomUUID();
-        const examId = Number(selectedExam);
+        const examId = Number(selectedExamId);
 
         for (const item of generated) {
           await offlineDB.accessCodes.put({
@@ -697,7 +735,7 @@ const ExamAccess: React.FC = () => {
         local_code_id: '',
         student_reg_number: item.reg_number,
         student_name: item.student_name,
-        exam_title: exams.find((e) => e.id === selectedExam)?.title || '',
+        exam_title: selectedExamMeta?.title || '',
         access_code: item.access_code,
         status: 'NEW',
         generated_at: new Date().toISOString(),
@@ -826,9 +864,9 @@ const ExamAccess: React.FC = () => {
                   Select {assessmentLabels.assessmentNoun} (Available)
                 </label>
                 <select
-                  value={selectedExam || ''}
+                  value={selectedAssessment}
                   onChange={(e) => {
-                    setSelectedExam(Number(e.target.value) || null);
+                    setSelectedAssessment(String(e.target.value || ''));
                     setFoundStudent(null);
                     setGeneratedCode(null);
                     setRegNumber('');
@@ -838,8 +876,10 @@ const ExamAccess: React.FC = () => {
                 >
                   <option value="">-- Select a {assessmentLabels.assessmentNoun.toLowerCase()} --</option>
                   {exams.map((exam) => (
-                    <option key={exam.id} value={exam.id}>
-                      {exam.title} - {exam.subject_name} ({exam.start_time} - {exam.end_time})
+                    <option key={`${exam.id}-${exam.sitting_id || 0}`} value={`${exam.id}:${exam.sitting_id || 0}`}>
+                      {exam.title} - {exam.subject_name}
+                      {exam.sitting_id ? ` [Sitting ${exam.sitting_id}]` : ''}
+                      {` (${formatWindowPart(exam.start_time)} - ${formatWindowPart(exam.end_time)})`}
                     </option>
                   ))}
                 </select>
@@ -866,11 +906,11 @@ const ExamAccess: React.FC = () => {
                     }}
                     placeholder="Enter reg number (e.g., REG001)"
                     className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white uppercase"
-                    disabled={!selectedExam}
+                    disabled={!selectedExamId}
                   />
                   <button
                     onClick={handleSearchStudent}
-                    disabled={searching || !selectedExam || !regNumber.trim()}
+                    disabled={searching || !selectedExamId || !regNumber.trim()}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center space-x-2 flex-shrink-0"
                     title="Search student"
                   >
@@ -1180,15 +1220,17 @@ const ExamAccess: React.FC = () => {
                     Select {assessmentLabels.assessmentNoun} (Required)
                   </label>
                   <select
-                    value={selectedExam || ''}
-                    onChange={(e) => setSelectedExam(Number(e.target.value) || null)}
+                    value={selectedAssessment}
+                    onChange={(e) => setSelectedAssessment(String(e.target.value || ''))}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                     disabled={bulkGenerating}
                   >
                     <option value="">-- Select a {assessmentLabels.assessmentNoun.toLowerCase()} --</option>
                     {exams.map((exam) => (
-                      <option key={exam.id} value={exam.id}>
-                        {exam.title} - {exam.subject_name} ({exam.start_time} - {exam.end_time})
+                      <option key={`${exam.id}-${exam.sitting_id || 0}`} value={`${exam.id}:${exam.sitting_id || 0}`}>
+                        {exam.title} - {exam.subject_name}
+                        {exam.sitting_id ? ` [Sitting ${exam.sitting_id}]` : ''}
+                        {` (${formatWindowPart(exam.start_time)} - ${formatWindowPart(exam.end_time)})`}
                       </option>
                     ))}
                   </select>
@@ -1216,7 +1258,7 @@ const ExamAccess: React.FC = () => {
                 <div className="flex gap-2">
                   <button
                     onClick={handleBulkGenerate}
-                    disabled={bulkGenerating || !selectedExam || !bulkRegNumbers.trim()}
+                    disabled={bulkGenerating || !selectedExamId || !bulkRegNumbers.trim()}
                     className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center space-x-2 font-medium"
                   >
                     {bulkGenerating ? (

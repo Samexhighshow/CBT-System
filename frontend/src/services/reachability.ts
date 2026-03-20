@@ -1,7 +1,8 @@
+import { resolveApiBaseUrl } from './apiBase';
 export type ConnectivityStatus = 'ONLINE' | 'LAN_ONLY' | 'OFFLINE';
 
-const cloudBaseUrl = (process.env.REACT_APP_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
-const localBaseUrl = (process.env.REACT_APP_LOCAL_API_URL || cloudBaseUrl).replace(/\/$/, '');
+const cloudBaseUrl = resolveApiBaseUrl(process.env.REACT_APP_API_URL).replace(/\/$/, '');
+const localBaseUrl = resolveApiBaseUrl(process.env.REACT_APP_LOCAL_API_URL || cloudBaseUrl).replace(/\/$/, '');
 
 const CHECK_TIMEOUT_LOCAL_MS = 4000;
 const CHECK_TIMEOUT_CLOUD_MS = 4500;

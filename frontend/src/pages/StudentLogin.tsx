@@ -2,13 +2,12 @@ import React, { ChangeEvent, FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import useAuthStore from '../store/authStore';
+import { API_URL } from '../services/api';
 
 interface LoginFormData {
   email: string;
   password: string;
 }
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const StudentLogin: React.FC = () => {
   const navigate = useNavigate();
@@ -18,6 +17,7 @@ const StudentLogin: React.FC = () => {
     email: '',
     password: '',
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -136,15 +136,25 @@ const StudentLogin: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">Password</label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  required
-                  placeholder="Enter your password"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    required
+                    placeholder="Enter your password"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 pr-12 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-700"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={`bx ${showPassword ? 'bx-hide' : 'bx-show'} text-lg`} />
+                  </button>
+                </div>
               </div>
 
               <button

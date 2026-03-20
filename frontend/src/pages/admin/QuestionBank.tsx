@@ -346,7 +346,7 @@ const QuestionBank: React.FC<{}> = () => {
       return;
     }
 
-    const confirmed = await showDeleteConfirm(`Delete question #${id}?`);
+    const confirmed = await showDeleteConfirm(`Delete question ${id}?`);
     if (confirmed.isConfirmed) {
       try {
         await api.delete(`/bank/questions/${id}`);

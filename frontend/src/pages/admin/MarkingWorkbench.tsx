@@ -347,9 +347,7 @@ const MarkingWorkbench: React.FC = () => {
   const collectManualScores = (requireAll: boolean) => {
     if (!attemptDetail) return null;
 
-    const manualQuestions = attemptDetail.questions.filter((question) => (
-      question.requires_manual_marking && hasCandidateResponse(question)
-    ));
+    const manualQuestions = attemptDetail.questions.filter((question) => question.requires_manual_marking);
 
     const missingQuestionNumbers: number[] = [];
     const invalidQuestionNumbers: number[] = [];
@@ -469,7 +467,7 @@ const MarkingWorkbench: React.FC = () => {
     }
 
     const shouldProceed = window.confirm(
-      `Force submit attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}?`
+      `Force submit attempt ${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}?`
     );
     if (!shouldProceed) return;
 
@@ -507,7 +505,7 @@ const MarkingWorkbench: React.FC = () => {
     }
 
     const shouldProceed = window.confirm(
-      `Extend attempt #${attemptDetail.attempt.id} by ${minutes} minute(s)?`
+      `Extend attempt ${attemptDetail.attempt.id} by ${minutes} minute(s)?`
     );
     if (!shouldProceed) return;
 
@@ -550,7 +548,7 @@ const MarkingWorkbench: React.FC = () => {
     const reasonNote = reasonText ? ` Reason: ${reasonText}.` : ' No reason provided (Admin Override).';
 
     const shouldProceed = window.confirm(
-      `Clear attempt #${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}?${reasonNote} This will remove answers and allow a fresh restart.`
+      `Clear attempt ${attemptDetail.attempt.id} for ${attemptDetail.attempt.student.name}?${reasonNote} This will remove answers and allow a fresh restart.`
     );
     if (!shouldProceed) return;
 
@@ -711,7 +709,7 @@ const MarkingWorkbench: React.FC = () => {
             <div className="space-y-4">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 pb-3 border-b border-gray-200">
                 <div>
-                  <p className="text-sm text-gray-600">Attempt #{attemptDetail.attempt.id}</p>
+                  <p className="text-sm text-gray-600">Attempt {attemptDetail.attempt.id}</p>
                   <h2 className="text-lg font-bold text-gray-900">{attemptDetail.attempt.student.name}</h2>
                   <p className="text-xs text-gray-600">
                     {attemptDetail.attempt.student.registration_number || 'No Reg'} • Manual marked: {scoreSummary.manualMarked}/{scoreSummary.manualTotalQuestions} • Pending manual: {scoreSummary.manualPending}

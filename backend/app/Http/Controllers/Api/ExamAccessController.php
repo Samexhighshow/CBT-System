@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Exam;
 use App\Models\ExamAccess;
 use App\Models\ExamAttempt;
+use App\Models\ExamSitting;
 use App\Models\Student;
 use App\Models\SystemSetting;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -69,6 +71,7 @@ class ExamAccessController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'exam_id' => 'required|exists:exams,id',
+            'sitting_id' => 'nullable|integer|min:1',
             'student_id' => 'sometimes|exists:students,id',
             'reg_numbers' => 'sometimes|array|min:1',
             'reg_numbers.*' => 'sometimes|string',
@@ -84,6 +87,13 @@ class ExamAccessController extends Controller
 
         try {
             $exam = Exam::findOrFail($request->exam_id);
+            $sitting = $this->resolveSittingForGeneration($exam, (int) $request->input('sitting_id', 0));
+            if ($request->filled('sitting_id') && !$sitting) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid sitting selected for this assessment.',
+                ], 422);
+            }
             $generated = [];
             $errors = [];
 
@@ -96,7 +106,7 @@ class ExamAccessController extends Controller
                         'message' => $eligibility['message'] ?? 'Student is not eligible for this exam.',
                     ], 422);
                 }
-                $expiresAt = $this->resolveExpiryForExam($exam);
+                $expiresAt = $this->resolveExpiryForExam($exam, $sitting);
 
                 [$access, $rotatedCount] = DB::transaction(function () use ($exam, $student, $expiresAt) {
                     // Serialize generation per student to avoid duplicate NEW codes from rapid double-submit.
@@ -134,6 +144,7 @@ class ExamAccessController extends Controller
                         'student_name' => trim($student->first_name . ' ' . $student->last_name),
                         'student_reg_number' => $student->registration_number,
                         'exam_title' => $exam->title,
+                        'sitting_id' => $sitting?->id,
                         'generated_at' => $access->created_at,
                         'expires_at' => $expiresAt,
                         'invalidated_previous_unused_codes' => $rotatedCount,
@@ -161,7 +172,7 @@ class ExamAccessController extends Controller
                     $errors[] = "{$regNumber}: " . ($eligibility['message'] ?? 'Student is not eligible for this exam.');
                     continue;
                 }
-                $expiresAt = $this->resolveExpiryForExam($exam);
+                $expiresAt = $this->resolveExpiryForExam($exam, $sitting);
                 $accessCode = null;
                 $rotatedCount = 0;
 
@@ -453,12 +464,66 @@ class ExamAccessController extends Controller
         try {
             $todayStart = Carbon::today()->startOfDay();
             $todayEnd = Carbon::today()->endOfDay();
+            $strictMode = $this->strictSystemMode();
+
+            $sittingExamIds = collect();
+            $sittingRows = collect();
+
+            if (Schema::hasTable('exam_sittings')) {
+                $sittingsQuery = ExamSitting::with(['exam.subject:id,name'])
+                    ->whereIn('status', ['scheduled', 'active'])
+                    ->whereHas('exam', function ($query) {
+                        $query->whereNotIn('status', ['cancelled']);
+                    })
+                    ->where(function ($query) use ($todayStart, $todayEnd) {
+                        $query->where(function ($sq) use ($todayStart, $todayEnd) {
+                            $sq->whereNotNull('start_at')
+                                ->whereNotNull('end_at')
+                                ->where('start_at', '<=', $todayEnd)
+                                ->where('end_at', '>=', $todayStart);
+                        })
+                        ->orWhere(function ($sq) use ($todayEnd) {
+                            $sq->whereNotNull('start_at')
+                                ->whereNull('end_at')
+                                ->where('start_at', '<=', $todayEnd);
+                        })
+                        ->orWhere(function ($sq) use ($todayStart) {
+                            $sq->whereNull('start_at')
+                                ->whereNotNull('end_at')
+                                ->where('end_at', '>=', $todayStart);
+                        })
+                        ->orWhere(function ($sq) {
+                            $sq->whereNull('start_at')
+                                ->whereNull('end_at');
+                        });
+                    })
+                    ->orderByRaw("CASE status WHEN 'active' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END")
+                    ->orderBy('start_at')
+                    ->orderByDesc('id');
+
+                if ($strictMode !== null) {
+                    $sittingsQuery->where('assessment_mode_snapshot', $strictMode);
+                }
+
+                $sittingRows = $sittingsQuery->get();
+                $sittingExamIds = $sittingRows->pluck('exam_id')->unique()->map(fn ($id) => (int) $id);
+            }
 
             $exams = Exam::with('subject:id,name')
                 ->where('published', true)
                 ->whereIn('status', ['scheduled', 'active'])
+                ->when($sittingExamIds->isNotEmpty(), function ($query) use ($sittingExamIds) {
+                    $query->whereNotIn('id', $sittingExamIds->all());
+                })
                 ->orderByRaw('COALESCE(start_datetime, start_time) asc')
                 ->get()
+                ->filter(function (Exam $exam) use ($strictMode) {
+                    if ($strictMode === null) {
+                        return true;
+                    }
+
+                    return $this->resolveAttemptMode($exam) === $strictMode;
+                })
                 ->filter(function (Exam $exam) use ($todayStart, $todayEnd) {
                     $start = $exam->start_datetime ?? $exam->start_time;
                     $end = $exam->end_datetime ?? $exam->end_time;
@@ -488,6 +553,8 @@ class ExamAccessController extends Controller
 
                     return [
                         'id' => $exam->id,
+                        'sitting_id' => null,
+                        'assessment_mode_snapshot' => $this->resolveAttemptMode($exam),
                         'title' => $exam->title,
                         'subject_name' => $exam->subject->name ?? 'Unknown',
                         'date' => optional($start)->toDateString(),
@@ -496,9 +563,32 @@ class ExamAccessController extends Controller
                     ];
                 });
 
+            $sittingRows = $sittingRows->map(function (ExamSitting $sitting) {
+                $exam = $sitting->exam;
+                if (!$exam) {
+                    return null;
+                }
+
+                $start = $sitting->start_at ?? $exam->start_datetime ?? $exam->start_time;
+                $end = $sitting->end_at ?? $exam->end_datetime ?? $exam->end_time;
+
+                return [
+                    'id' => $exam->id,
+                    'sitting_id' => (int) $sitting->id,
+                    'assessment_mode_snapshot' => (string) ($sitting->assessment_mode_snapshot ?: $this->resolveAttemptMode($exam)),
+                    'title' => $exam->title,
+                    'subject_name' => $exam->subject?->name ?? 'Unknown',
+                    'date' => optional($start)->toDateString(),
+                    'start_time' => optional($start)->format('H:i'),
+                    'end_time' => optional($end)->format('H:i'),
+                ];
+            })->filter()->values();
+
+            $rows = $sittingRows->concat($exams)->values();
+
             return response()->json([
                 'success' => true,
-                'data' => $exams,
+                'data' => $rows,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -509,15 +599,44 @@ class ExamAccessController extends Controller
         }
     }
 
-    private function resolveExpiryForExam(Exam $exam): Carbon
+    private function resolveExpiryForExam(Exam $exam, ?ExamSitting $sitting = null): Carbon
     {
-        $examEnd = $exam->end_datetime ?? $exam->end_time;
+        $examEnd = $sitting?->end_at ?? $exam->end_datetime ?? $exam->end_time;
 
         if ($examEnd instanceof Carbon) {
             return $examEnd->copy();
         }
 
         return Carbon::today()->endOfDay();
+    }
+
+    private function strictSystemMode(): ?string
+    {
+        $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));
+        return in_array($mode, ['ca_test', 'exam'], true) ? $mode : null;
+    }
+
+    private function resolveSittingForGeneration(Exam $exam, int $requestedSittingId = 0): ?ExamSitting
+    {
+        if (!Schema::hasTable('exam_sittings')) {
+            return null;
+        }
+
+        $strictMode = $this->strictSystemMode();
+
+        if ($requestedSittingId > 0) {
+            $query = ExamSitting::query()
+                ->where('exam_id', $exam->id)
+                ->where('id', $requestedSittingId);
+
+            if ($strictMode !== null) {
+                $query->where('assessment_mode_snapshot', $strictMode);
+            }
+
+            return $query->first();
+        }
+
+        return ExamSitting::resolveForExamByMode($exam, $strictMode);
     }
 
     /**
@@ -553,6 +672,7 @@ class ExamAccessController extends Controller
             })
             ->update([
                 'status' => 'VOID',
+                'active_new_token' => null,
                 'used' => true,
                 'used_at' => $now,
                 'expires_at' => $now,
@@ -603,6 +723,7 @@ class ExamAccessController extends Controller
         if (!empty($toVoid)) {
             ExamAccess::whereIn('id', $toVoid)->update([
                 'status' => 'VOID',
+                'active_new_token' => null,
                 'used' => true,
                 'used_at' => $now,
                 'expires_at' => $now,

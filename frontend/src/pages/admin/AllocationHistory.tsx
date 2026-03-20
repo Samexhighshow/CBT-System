@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button, Alert, Loading } from '../../components';
 import api from '../../services/api';
+import { serialNumber } from '../../utils/serialNumber';
 
 interface Exam {
   id: number;
@@ -199,12 +200,12 @@ const AllocationHistory: React.FC = () => {
             <Alert type="info" message="No allocations found for this exam yet." />
           ) : (
             <div className="space-y-4">
-              {allocations.map((run) => (
+              {allocations.map((run, index) => (
                 <Card key={run.id} className="p-6 hover:shadow-lg transition-shadow">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="text-lg font-bold">Run #{run.id}</h3>
+                        <h3 className="text-lg font-bold">Run {serialNumber(index)}</h3>
                         {getStatusBadge(run)}
                         <span className="text-sm text-gray-600">{getModeLabel(run.mode)}</span>
                       </div>

@@ -145,7 +145,6 @@ const AdminSettings: React.FC = () => {
   const [currentAcademicSession, setCurrentAcademicSession] = useState('');
   const [currentTerm, setCurrentTerm] = useState<Term>('First Term');
   const [enableTermCompilation, setEnableTermCompilation] = useState(true);
-  const [enableCumulativeResults, setEnableCumulativeResults] = useState(true);
   const [defaultCaWeight, setDefaultCaWeight] = useState('40');
   const [defaultExamWeight, setDefaultExamWeight] = useState('60');
   const [useAssessmentWeight, setUseAssessmentWeight] = useState(true);
@@ -227,7 +226,6 @@ const AdminSettings: React.FC = () => {
       setCurrentAcademicSession(String(findSettingValue('current_academic_session', rows) || `${year}/${year + 1}`));
       setCurrentTerm(normalizeTerm(String(findSettingValue('current_term', rows) || 'First Term')));
       setEnableTermCompilation(asBoolean(findSettingValue('enable_term_result_compilation', rows), true));
-      setEnableCumulativeResults(asBoolean(findSettingValue('enable_cumulative_results', rows), true));
       setDefaultCaWeight(String(findSettingValue('default_ca_weight', rows) || '40'));
       setDefaultExamWeight(String(findSettingValue('default_exam_weight', rows) || '60'));
       setUseAssessmentWeight(asBoolean(findSettingValue('use_exam_assessment_weight', rows), true));
@@ -268,16 +266,15 @@ const AdminSettings: React.FC = () => {
           { key: 'current_academic_session', value: currentAcademicSession.trim(), type: 'string' },
           { key: 'current_term', value: currentTerm, type: 'string' },
           { key: 'enable_term_result_compilation', value: enableTermCompilation, type: 'boolean' },
-          { key: 'enable_cumulative_results', value: enableCumulativeResults, type: 'boolean' },
           { key: 'default_ca_weight', value: String(clamp(defaultCaWeight, 40)), type: 'string' },
           { key: 'default_exam_weight', value: String(clamp(defaultExamWeight, 60)), type: 'string' },
           { key: 'use_exam_assessment_weight', value: useAssessmentWeight, type: 'boolean' },
         ],
       });
-      showSuccess('CR settings updated');
+      showSuccess('Result compilation settings updated');
       await fetchSettings();
     } catch (err: any) {
-      showError(err?.response?.data?.message || 'Failed to save CR settings');
+      showError(err?.response?.data?.message || 'Failed to save result compilation settings');
     }
   };
 
@@ -668,8 +665,8 @@ const AdminSettings: React.FC = () => {
 
     return (
       <div className={cardClass}>
-        <h2 className="font-semibold mb-2 dark:text-white">Cumulative Results (CR) & Term Compilation</h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Second term CR = (First + Second) / 2. Third term CR = (First + Second + Third) / 3.</p>
+        <h2 className="font-semibold mb-2 dark:text-white">Term Compilation</h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Configure session, term, and CA/Exam weighting for compiled term scores.</p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <input type="text" value={currentAcademicSession} onChange={(e) => setCurrentAcademicSession(e.target.value)} placeholder="Academic session (e.g. 2025/2026)" className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 dark:text-white text-gray-900" />
@@ -684,12 +681,11 @@ const AdminSettings: React.FC = () => {
 
         <div className="space-y-2 mt-4 text-sm">
           <label className="flex items-center gap-2 dark:text-gray-200"><input type="checkbox" checked={enableTermCompilation} onChange={(e) => setEnableTermCompilation(e.target.checked)} /> Enable term result compilation (CA + Exam)</label>
-          <label className="flex items-center gap-2 dark:text-gray-200"><input type="checkbox" checked={enableCumulativeResults} onChange={(e) => setEnableCumulativeResults(e.target.checked)} /> Enable cumulative result (CR) across terms</label>
           <label className="flex items-center gap-2 dark:text-gray-200"><input type="checkbox" checked={useAssessmentWeight} onChange={(e) => setUseAssessmentWeight(e.target.checked)} /> Use per-exam assessment weight when available</label>
         </div>
 
         <div className="mt-4 flex justify-end">
-          <button onClick={saveResultCompilationSettings} className="px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700">Save CR Settings</button>
+          <button onClick={saveResultCompilationSettings} className="px-4 py-2 rounded bg-blue-600 text-white text-sm hover:bg-blue-700">Save Compilation Settings</button>
         </div>
       </div>
     );
