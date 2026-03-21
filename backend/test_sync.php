@@ -43,11 +43,6 @@ $navPages = [
     ['name' => 'Students', 'path' => '/admin/students', 'category' => null],
     ['name' => 'Academic Management', 'path' => '/admin/subjects', 'category' => null],
     ['name' => 'Announcements', 'path' => '/admin/announcements', 'category' => null],
-    ['name' => 'Allocation System', 'path' => '/admin/allocations', 'category' => null],
-    ['name' => 'View Allocations', 'path' => '/admin/allocations', 'category' => 'Allocation System'],
-    ['name' => 'Generate Allocation', 'path' => '/admin/allocations/generate', 'category' => 'Allocation System'],
-    ['name' => 'Teacher Assignment', 'path' => '/admin/teachers/assign', 'category' => 'Allocation System'],
-    ['name' => 'Halls', 'path' => '/admin/halls', 'category' => 'Allocation System'],
     ['name' => 'Results', 'path' => '/admin/results', 'category' => null],
     ['name' => 'System Settings', 'path' => '/admin/settings', 'category' => null],
     ['name' => 'Activity Logs', 'path' => '/admin/activity-logs', 'category' => null],
@@ -97,8 +92,7 @@ $roleDefaults = [
     }, ARRAY_FILTER_USE_KEY)),
     'Sub-Admin' => array_values(array_intersect_key($pagesByName, array_flip([
         'Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results', 
-        'Academic Management', 'Announcements', 'Allocation System', 'View Allocations', 
-        'Generate Allocation', 'Teacher Assignment', 'Halls'
+        'Academic Management', 'Announcements'
     ]))),
     'Moderator' => array_values(array_intersect_key($pagesByName, array_flip([
         'Overview', 'Exams', 'Exam Access', 'Students', 'Results'

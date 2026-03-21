@@ -120,6 +120,7 @@ const StudentRegistration: React.FC = () => {
       };
 
       const response = await api.post('/students', payload);
+      const requiresVerification = Boolean(response.data?.email_verification_required);
       
       // Store student data for subject selection
       localStorage.setItem('studentData', JSON.stringify({
@@ -128,7 +129,11 @@ const StudentRegistration: React.FC = () => {
         department_id: formData.department_id
       }));
 
-      await showSuccess('Registration successful! Please check your email for verification.');
+      await showSuccess(
+        requiresVerification
+          ? 'Registration successful! Please check your email for verification before login.'
+          : 'Registration successful! You can login now.'
+      );
       
       // Redirect to login
       setTimeout(() => navigate('/login'), 1500);

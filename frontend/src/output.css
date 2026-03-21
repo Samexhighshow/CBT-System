@@ -1211,6 +1211,10 @@ code {
   min-height: 100vh;
 }
 
+.min-h-\[420px\] {
+  min-height: 420px;
+}
+
 .w-1\/2 {
   width: 50%;
 }
@@ -1485,6 +1489,26 @@ code {
 
 .max-w-xs {
   max-width: 20rem;
+}
+
+.max-w-\[620px\] {
+  max-width: 620px;
+}
+
+.max-w-\[680px\] {
+  max-width: 680px;
+}
+
+.max-w-\[860px\] {
+  max-width: 860px;
+}
+
+.max-w-\[760px\] {
+  max-width: 760px;
+}
+
+.max-w-\[980px\] {
+  max-width: 980px;
 }
 
 .flex-1 {
@@ -3360,6 +3384,22 @@ code {
   line-height: 1rem;
 }
 
+.text-\[26px\] {
+  font-size: 26px;
+}
+
+.text-\[18px\] {
+  font-size: 18px;
+}
+
+.text-\[30px\] {
+  font-size: 30px;
+}
+
+.text-\[32px\] {
+  font-size: 32px;
+}
+
 .font-bold {
   font-weight: 700;
 }
@@ -3433,6 +3473,10 @@ code {
   line-height: 1.25;
 }
 
+.leading-8 {
+  line-height: 2rem;
+}
+
 .tracking-\[-0\.015em\] {
   letter-spacing: -0.015em;
 }
@@ -3495,6 +3539,10 @@ code {
 
 .tracking-widest {
   letter-spacing: 0.1em;
+}
+
+.tracking-\[0\.17em\] {
+  letter-spacing: 0.17em;
 }
 
 .text-\[\#111827\] {
@@ -4055,6 +4103,18 @@ code {
 .shadow-xl {
   --tw-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   --tw-shadow-colored: 0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-\[0_24px_60px_-45px_rgba\(185\2c 28\2c 28\2c 0\.45\)\] {
+  --tw-shadow: 0 24px 60px -45px rgba(185,28,28,0.45);
+  --tw-shadow-colored: 0 24px 60px -45px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-\[0_32px_90px_-50px_rgba\(185\2c 28\2c 28\2c 0\.55\)\] {
+  --tw-shadow: 0 32px 90px -50px rgba(185,28,28,0.55);
+  --tw-shadow-colored: 0 32px 90px -50px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
@@ -5567,6 +5627,11 @@ svg {
   .md\:py-9 {
     padding-top: 2.25rem;
     padding-bottom: 2.25rem;
+  }
+
+  .md\:py-12 {
+    padding-top: 3rem;
+    padding-bottom: 3rem;
   }
 
   .md\:pb-2 {

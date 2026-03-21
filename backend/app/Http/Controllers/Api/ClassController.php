@@ -31,9 +31,29 @@ class ClassController extends Controller
 
         $classes = $query->orderBy('name', 'asc')->get();
 
+        // Group by class level (e.g., "SSS 1", "JSS 1") to avoid duplicates like "SSS 1 Art" and "SSS 1 Science"
+        $uniqueByLevel = [];
+        $seenLevels = [];
+        
+        foreach ($classes as $class) {
+            // Extract class level by matching pattern like "JSS 1", "SSS 2", etc.
+            // This handles names like "SSS 1 Art" or "SSS 1 Science" by keeping only "SSS 1"
+            preg_match('/^(JSS|SSS)\s+\d+/', $class->name, $matches);
+            $level = !empty($matches) ? $matches[0] : $class->name;
+            
+            // Keep only the first occurrence of each class level
+            if (!in_array($level, $seenLevels)) {
+                $seenLevels[] = $level;
+                $uniqueByLevel[] = [
+                    'id' => $class->id,
+                    'name' => $level, // Show only the level, not the specialization
+                ];
+            }
+        }
+
         return response()->json([
-            'data' => $classes,
-            'total' => $classes->count(),
+            'data' => $uniqueByLevel,
+            'total' => count($uniqueByLevel),
         ]);
     }
 

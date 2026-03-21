@@ -13,10 +13,32 @@ use App\Mail\PasswordResetOtpMail;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Student;
 use App\Models\User;
+use App\Models\SystemSetting;
 use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
+    private function settingAsBoolean($value, bool $fallback = false): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return ((int) $value) === 1;
+        }
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                return false;
+            }
+        }
+
+        return $fallback;
+    }
+
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -109,7 +131,12 @@ class AuthController extends Controller
             }
         }
 
-        if (!$user->hasVerifiedEmail()) {
+        $requireEmailVerification = $this->settingAsBoolean(
+            SystemSetting::get('require_email_verification', true),
+            true
+        );
+
+        if ($requireEmailVerification && !$user->hasVerifiedEmail()) {
             Auth::logout();
             return response()->json([
                 'message' => 'Please verify your email before logging in. Check your inbox for the verification link.',

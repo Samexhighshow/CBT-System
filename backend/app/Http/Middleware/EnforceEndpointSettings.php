@@ -56,12 +56,6 @@ class EnforceEndpointSettings
             'api/announcements*',
             'api/admin/announcements*',
         ],
-        'allocations' => [
-            'api/allocations*',
-            'api/halls*',
-            'api/teachers',
-            'api/backups*',
-        ],
         'admin_users_roles' => [
             'api/users*',
             'api/roles*',
@@ -69,6 +63,8 @@ class EnforceEndpointSettings
             'api/admin/users*',
             'api/admin/pages*',
             'api/activity-logs*',
+            'api/teachers',
+            'api/backups*',
         ],
     ];
 

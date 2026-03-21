@@ -100,13 +100,13 @@ const StudentLogin: React.FC = () => {
             </div>
             <h1 className="mt-6 text-3xl font-bold">Student Portal Login</h1>
             <p className="mt-3 text-cyan-100 leading-relaxed text-sm md:text-base">
-              Sign in to access your dashboard, available exams, results, seat allocation, and profile settings.
+              Sign in to access your dashboard, available exams, results, announcements, and profile settings.
             </p>
 
             <div className="mt-8 space-y-3 text-sm">
               <div className="flex items-center gap-2"><i className="bx bx-check-circle text-lg" /> Exam access and progress tracking</div>
               <div className="flex items-center gap-2"><i className="bx bx-check-circle text-lg" /> Results and performance insights</div>
-              <div className="flex items-center gap-2"><i className="bx bx-check-circle text-lg" /> Seat allocation and announcements</div>
+              <div className="flex items-center gap-2"><i className="bx bx-check-circle text-lg" /> Announcements and exam updates</div>
             </div>
           </section>
 

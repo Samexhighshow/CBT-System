@@ -97,6 +97,7 @@ const StudentRegistrationForm: React.FC = () => {
   const [error, setError] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [registrationNumber, setRegistrationNumber] = useState('');
+  const [emailVerificationRequired, setEmailVerificationRequired] = useState(false);
   const [registrationClosed, setRegistrationClosed] = useState(false);
   const [checkingRegistration, setCheckingRegistration] = useState(true);
 
@@ -182,7 +183,19 @@ const StudentRegistrationForm: React.FC = () => {
         setLoadingClasses(true);
         const response = await api.get('/public/classes?is_active=1');
         const payload = response.data?.data || response.data || [];
-        setClasses(Array.isArray(payload) ? payload : []);
+        
+        // Classes are already deduplicated by level on backend, but add frontend safety dedup
+        if (Array.isArray(payload)) {
+          const uniqueMap = new Map<string, ClassOption>();
+          payload.forEach((cls: any) => {
+            if (cls?.name && !uniqueMap.has(cls.name)) {
+              uniqueMap.set(cls.name, { id: cls.id, name: cls.name });
+            }
+          });
+          setClasses(Array.from(uniqueMap.values()));
+        } else {
+          setClasses([]);
+        }
       } catch (err: any) {
         setError(err?.response?.data?.message || 'Failed to load classes');
       } finally {
@@ -354,8 +367,10 @@ const StudentRegistrationForm: React.FC = () => {
         response.data?.registration_number ||
         response.data?.student?.registration_number ||
         '';
+      const requiresVerification = Boolean(response.data?.email_verification_required);
 
       setRegistrationNumber(generatedRegNo);
+      setEmailVerificationRequired(requiresVerification);
       setShowSuccess(true);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Registration failed. Please try again.');
@@ -372,7 +387,17 @@ const StudentRegistrationForm: React.FC = () => {
             <i className="bx bx-check text-4xl" />
           </div>
           <h1 className="mt-4 text-2xl font-bold text-slate-900">Registration Completed</h1>
-          <p className="mt-2 text-sm text-slate-600">Your student account has been created successfully.</p>
+          <p className="mt-2 text-sm text-slate-600">
+            {emailVerificationRequired
+              ? 'Your account was created. Please verify your email before logging in.'
+              : 'Your student account has been created successfully. You can login now.'}
+          </p>
+
+          {emailVerificationRequired && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Check your inbox for the verification link, then return to login.
+            </div>
+          )}
 
           <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <p className="text-xs uppercase tracking-wide text-emerald-800">Registration Number</p>

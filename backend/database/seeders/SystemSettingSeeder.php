@@ -32,7 +32,7 @@ class SystemSettingSeeder extends Seeder
             ['key' => 'smtp_from', 'value' => '', 'type' => 'string', 'description' => 'SMTP from address'],
             [
                 'key' => 'endpoint_toggles',
-                'value' => '{"students":true,"exams":true,"questions":true,"academics":true,"results":true,"announcements":true,"allocations":true,"admin_users_roles":true}',
+                'value' => '{"students":true,"exams":true,"questions":true,"academics":true,"results":true,"announcements":true,"admin_users_roles":true}',
                 'type' => 'json',
                 'description' => 'Enable/disable API endpoint modules from admin settings',
             ],

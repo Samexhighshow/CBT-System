@@ -8,6 +8,25 @@ use App\Models\SystemSetting;
 
 class SystemSettingController extends Controller
 {
+    /**
+     * Settings keys that only Main Admin can change.
+     */
+    private const MAIN_ADMIN_ONLY_KEYS = [
+        'student_registration_open',
+        'allow_exam_retakes',
+        'max_exam_attempts',
+        'registration_number_prefix',
+        'registration_number_year',
+        'registration_number_separator',
+        'registration_number_padding',
+        'exam_window_start',
+        'exam_window_end',
+        'require_email_verification',
+        'auto_logout_minutes',
+        'cbt_tab_fencing_max_violations',
+        'endpoint_toggles',
+    ];
+
     public function registrationStatus()
     {
         $raw = SystemSetting::where('key', 'student_registration_open')->value('value');
@@ -31,11 +50,23 @@ class SystemSettingController extends Controller
 
     public function index()
     {
+        if ($forbidden = $this->forbiddenForNonSettingsManager(request())) {
+            return $forbidden;
+        }
+
         return response()->json(SystemSetting::orderBy('key')->get());
     }
 
     public function update(Request $request, $key)
     {
+        if ($forbidden = $this->forbiddenForNonSettingsManager($request)) {
+            return $forbidden;
+        }
+
+        if ($forbidden = $this->forbiddenForNonMainAdmin($request, [$key])) {
+            return $forbidden;
+        }
+
         $validated = $request->validate([
             'value' => 'present',
             'type' => 'sometimes|in:string,boolean,json',
@@ -62,6 +93,10 @@ class SystemSettingController extends Controller
 
     public function bulkUpdate(Request $request)
     {
+        if ($forbidden = $this->forbiddenForNonSettingsManager($request)) {
+            return $forbidden;
+        }
+
         $validated = $request->validate([
             'settings' => 'required|array',
             'settings.*.key' => 'required|string',
@@ -69,6 +104,16 @@ class SystemSettingController extends Controller
             'settings.*.type' => 'sometimes|in:string,boolean,json',
             'settings.*.description' => 'sometimes|string',
         ]);
+
+        $keys = collect($validated['settings'])
+            ->pluck('key')
+            ->filter(fn ($key) => is_string($key) && $key !== '')
+            ->values()
+            ->all();
+
+        if ($forbidden = $this->forbiddenForNonMainAdmin($request, $keys)) {
+            return $forbidden;
+        }
 
         foreach ($validated['settings'] as $data) {
             $setting = SystemSetting::firstOrNew(['key' => $data['key']]);
@@ -87,6 +132,69 @@ class SystemSettingController extends Controller
         }
 
         return response()->json(['message' => 'Settings updated successfully']);
+    }
+
+    private function forbiddenForNonSettingsManager(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        if ($this->userHasAnyRoleInsensitive($user, ['Admin', 'Main Admin'])) {
+            return null;
+        }
+
+        return response()->json(['message' => 'Forbidden: Admin or Main Admin only'], 403);
+    }
+
+    private function forbiddenForNonMainAdmin(Request $request, array $keys)
+    {
+        $user = $request->user();
+        if (!$user || $this->userHasAnyRoleInsensitive($user, ['Main Admin'])) {
+            return null;
+        }
+
+        $restricted = array_values(array_intersect($keys, self::MAIN_ADMIN_ONLY_KEYS));
+        if (empty($restricted)) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => 'Forbidden: Main Admin only for one or more selected settings.',
+            'restricted_keys' => $restricted,
+        ], 403);
+    }
+
+    private function userHasAnyRoleInsensitive($user, array $roleNames): bool
+    {
+        $target = array_map(fn ($name) => strtolower(trim((string) $name)), $roleNames);
+
+        if (method_exists($user, 'roles')) {
+            $roleValues = collect($user->roles ?? [])
+                ->map(function ($role) {
+                    return strtolower(trim((string) (is_object($role) ? ($role->name ?? '') : $role)));
+                })
+                ->filter()
+                ->values()
+                ->all();
+
+            if (!empty(array_intersect($roleValues, $target))) {
+                return true;
+            }
+        }
+
+        if (method_exists($user, 'hasAnyRole')) {
+            try {
+                if ($user->hasAnyRole($roleNames)) {
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                // Fall through to false if role package throws due naming mismatch.
+            }
+        }
+
+        return false;
     }
 
     // Convenience: dedicated theme update endpoint used by frontend

@@ -31,8 +31,6 @@ use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\OfflineExamController;
 use App\Http\Controllers\StudentImportController;
 use App\Http\Controllers\BackupController;
-use App\Http\Controllers\Api\HallController;
-use App\Http\Controllers\Api\AllocationController;
 use App\Http\Controllers\Api\ExamQuestionRandomizationController;
 use App\Http\Controllers\Api\BankQuestionController;
 use App\Http\Controllers\Api\ExamQuestionController;
@@ -369,8 +367,8 @@ Route::middleware(['auth:sanctum', 'role:Student|Admin|Main Admin|Teacher'])->pr
 Route::put('/settings/theme', [\App\Http\Controllers\Api\SystemSettingController::class, 'updateTheme']);
 Route::get('/settings/registration-status', [\App\Http\Controllers\Api\SystemSettingController::class, 'registrationStatus']);
 
-// Restricted Main Admin operations
-Route::middleware(['auth:sanctum', 'main.admin'])->group(function () {
+// Restricted settings operations (authorization is enforced in controller to support legacy role-name casing)
+Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/settings', [\App\Http\Controllers\Api\SystemSettingController::class, 'index']);
     Route::put('/settings/bulk', [\App\Http\Controllers\Api\SystemSettingController::class, 'bulkUpdate']);
     Route::put('/settings/{key}', [\App\Http\Controllers\Api\SystemSettingController::class, 'update']);
@@ -564,38 +562,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/two-factor/verify', [ProfileController::class, 'verifyGoogle2FA']);
     Route::post('/two-factor/recovery-codes', [ProfileController::class, 'generateRecoveryCodes']);
 
-    // Hall Management
-    Route::prefix('halls')->middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
-        Route::get('/', [HallController::class, 'index']);
-        Route::get('/stats', [HallController::class, 'stats']);
-        Route::get('/{id}', [HallController::class, 'show']);
-        Route::get('/{id}/grid-layout', [HallController::class, 'getGridLayout']);
-    });
-
-    Route::prefix('halls')->middleware(['role:Admin|Main Admin', 'teacher.scope.approved'])->group(function () {
-        Route::post('/', [HallController::class, 'store']);
-        Route::put('/{id}', [HallController::class, 'update']);
-        Route::delete('/{id}', [HallController::class, 'destroy']);
-        Route::post('/{id}/assign-teachers', [HallController::class, 'assignTeachers']);
-    });
-
-    // Allocation Management
-    Route::prefix('allocations')->middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
-        Route::get('/exam/{examId}', [AllocationController::class, 'index']);
-        Route::get('/run/{id}', [AllocationController::class, 'show']);
-        Route::get('/student/{examId}/{studentId}', [AllocationController::class, 'getStudentAllocation']);
-        Route::get('/export/pdf/{runId}', [AllocationController::class, 'exportPDF']);
-        Route::get('/export/excel/{runId}', [AllocationController::class, 'exportExcel']);
-        Route::get('/conflicts/{runId}', [AllocationController::class, 'getConflicts']);
-        Route::get('/status/{runId}', [AllocationController::class, 'checkStatus']);
-    });
-
-    Route::prefix('allocations')->middleware(['role:Admin|Main Admin', 'teacher.scope.approved'])->group(function () {
-        Route::post('/generate', [AllocationController::class, 'generate']);
-        Route::post('/regenerate/{id}', [AllocationController::class, 'regenerate']);
-        Route::post('/reassign', [AllocationController::class, 'reassignStudent']);
-    });
-    
     // Exam Access Management (One-Time Passwords)
     Route::prefix('admin')->middleware(['role:Admin|Main Admin|Teacher', 'teacher.scope.approved'])->group(function () {
         Route::get('/exams/today', [ExamAccessController::class, 'getTodayExams']);

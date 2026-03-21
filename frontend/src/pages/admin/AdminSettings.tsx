@@ -20,7 +20,6 @@ interface EndpointToggles {
   academics: boolean;
   results: boolean;
   announcements: boolean;
-  allocations: boolean;
   admin_users_roles: boolean;
 }
 
@@ -46,7 +45,6 @@ const defaultEndpointToggles: EndpointToggles = {
   academics: true,
   results: true,
   announcements: true,
-  allocations: true,
   admin_users_roles: true,
 };
 
@@ -285,7 +283,6 @@ const AdminSettings: React.FC = () => {
     ['academics', 'Academics (Subjects/Classes/Departments)'],
     ['results', 'Results + Marking + Reports'],
     ['announcements', 'Announcements'],
-    ['allocations', 'Allocations + Halls'],
     ['admin_users_roles', 'Admin Users & Roles'],
   ];
 
@@ -567,17 +564,31 @@ const AdminSettings: React.FC = () => {
       const navLinks = buildAdminNavLinks();
       const availablePages: { path: string; name: string }[] = [];
 
-      // Flatten navigation to get all pages
+      // Flatten navigation to get only leaf pages (exclude grouping/category nodes)
       const flattenNav = (links: any[]) => {
-        links.forEach(link => {
-          availablePages.push({ path: link.path, name: link.name });
-          if (link.subItems) {
-            flattenNav(link.subItems);
+        links.forEach((link) => {
+          const children = Array.isArray(link?.subItems) ? link.subItems : [];
+          if (children.length > 0) {
+            flattenNav(children);
+            return;
           }
+
+          const path = String(link?.path || '').trim();
+          const name = String(link?.name || '').trim();
+          if (!path || !name) {
+            return;
+          }
+
+          availablePages.push({ path, name });
         });
       };
 
       flattenNav(navLinks);
+
+      // Deduplicate routes so each page appears once in the picker
+      const dedupedPages = Array.from(
+        new Map(availablePages.map((page) => [page.path, page])).values()
+      ).sort((a, b) => a.name.localeCompare(b.name));
 
       const toggleComingSoonPage = (pagePath: string) => {
         const updated = comingSoonPages.includes(pagePath)
@@ -604,7 +615,7 @@ const AdminSettings: React.FC = () => {
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {availablePages.map(page => (
+            {dedupedPages.map(page => (
               <label
                 key={page.path}
                 className="flex items-center gap-3 border border-gray-200 dark:border-gray-700 rounded px-4 py-3 cursor-pointer bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition"
@@ -627,7 +638,7 @@ const AdminSettings: React.FC = () => {
             ))}
           </div>
 
-          {availablePages.length === 0 && (
+          {dedupedPages.length === 0 && (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
               <i className="bx bx-inbox text-3xl mb-2"></i>
               <p>No pages available</p>

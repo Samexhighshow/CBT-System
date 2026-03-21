@@ -49,7 +49,6 @@ class Exam extends Model
         'shuffle_questions',
         'seat_numbering',
         'enforce_adjacency_rules',
-        'allocation_config',
         // Question randomization fields
         'question_selection_mode',
         'total_questions_to_serve',
@@ -68,7 +67,6 @@ class Exam extends Model
         'published' => 'boolean',
         'results_released' => 'boolean',
         'metadata' => 'array',
-        'allocation_config' => 'array',
         'shuffle_questions' => 'boolean',
         'enforce_adjacency_rules' => 'boolean',
         'start_time' => 'datetime',
@@ -365,20 +363,7 @@ class Exam extends Model
             ];
         }
 
-        // All checks passed
-        return [
-            'eligible' => true,
-            'reason' => null,
-            'message' => 'You are eligible to take this exam.',
-            'details' => [
-                'attempts_remaining' => max(0, $allowedAttempts - $attemptCount),
-                'duration_minutes' => $this->duration_minutes,
-                'start_time' => $start ? $start->toDateTimeString() : null,
-                'end_time' => $end ? $end->toDateTimeString() : null,
-                'attempt_mode' => $attemptMode,
-            ]
-        ];
-        // 3.5. Check daily exam window (if configured)
+        // 7. Check daily exam window (if configured)
         $dailyStart = \App\Models\SystemSetting::get('exam_window_start', null);
         $dailyEnd = \App\Models\SystemSetting::get('exam_window_end', null);
         
@@ -401,8 +386,22 @@ class Exam extends Model
             }
         }
 
-        // 4. Verify student belongs to exam's class level
+        // All checks passed
+        return [
+            'eligible' => true,
+            'reason' => null,
+            'message' => 'You are eligible to take this exam.',
+            'details' => [
+                'attempts_remaining' => max(0, $allowedAttempts - $attemptCount),
+                'duration_minutes' => $this->duration_minutes,
+                'start_time' => $start ? $start->toDateTimeString() : null,
+                'end_time' => $end ? $end->toDateTimeString() : null,
+                'attempt_mode' => $attemptMode,
+            ]
+        ];
+    }
 
+    // Helper to resolve the attempt mode for eligibility checks
     private function resolveAttemptModeForEligibility(): string
     {
         $mode = strtolower(trim((string) SystemSetting::get('assessment_display_mode', 'auto')));

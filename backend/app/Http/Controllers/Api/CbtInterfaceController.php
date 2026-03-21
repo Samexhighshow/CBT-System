@@ -42,6 +42,7 @@ class CbtInterfaceController extends Controller
         $regNumber = strtoupper((string) $request->query('reg_number', ''));
         $displayMode = $this->assessmentDisplayMode();
         $strictMode = in_array($displayMode, ['ca_test', 'exam'], true) ? $displayMode : null;
+        $dailyWindowEligibility = $this->validateDailyExamWindow(Carbon::now());
 
         if ($regNumber !== '') {
             $student = Student::where('registration_number', $regNumber)->first();
@@ -116,7 +117,7 @@ class CbtInterfaceController extends Controller
             $sittingsByExam = $sittings->groupBy('exam_id');
         }
 
-        $payload = $exams->map(function (Exam $exam) use ($student, $sittingsByExam) {
+        $payload = $exams->map(function (Exam $exam) use ($student, $sittingsByExam, $dailyWindowEligibility) {
             $examSittings = collect($sittingsByExam->get($exam->id, []));
             $primarySitting = $examSittings->first();
             $start = $primarySitting?->start_at ?? $exam->start_datetime ?? $exam->start_time;
@@ -143,6 +144,11 @@ class CbtInterfaceController extends Controller
 
                 $canAccess = (bool) ($eligibility['eligible'] ?? false);
                 $reason = $eligibility['message'] ?? null;
+            }
+
+            if (!($dailyWindowEligibility['eligible'] ?? false)) {
+                $canAccess = false;
+                $reason = (string) ($dailyWindowEligibility['message'] ?? 'This assessment is outside the allowed daily window.');
             }
 
             $sittings = $examSittings
@@ -1450,7 +1456,70 @@ class CbtInterfaceController extends Controller
             ];
         }
 
+        $dailyWindowEligibility = $this->validateDailyExamWindow($now);
+        if (!($dailyWindowEligibility['eligible'] ?? false)) {
+            return $dailyWindowEligibility;
+        }
+
         return ['eligible' => true];
+    }
+
+    private function validateDailyExamWindow(Carbon $now): array
+    {
+        $dailyStartRaw = SystemSetting::get('exam_window_start', null);
+        $dailyEndRaw = SystemSetting::get('exam_window_end', null);
+
+        if (!$dailyStartRaw && !$dailyEndRaw) {
+            return ['eligible' => true];
+        }
+
+        $start = $this->parseWindowTimeToMinutes($dailyStartRaw, 0);
+        $end = $this->parseWindowTimeToMinutes($dailyEndRaw, 23 * 60 + 59);
+        $current = ((int) $now->format('H')) * 60 + (int) $now->format('i');
+
+        if ($current < $start || $current > $end) {
+            return [
+                'eligible' => false,
+                'reason' => 'outside_exam_window',
+                'message' => sprintf(
+                    'Exams can only be accessed between %s and %s.',
+                    sprintf('%02d:%02d', intdiv($start, 60), $start % 60),
+                    sprintf('%02d:%02d', intdiv($end, 60), $end % 60)
+                ),
+                'details' => [
+                    'window_start' => sprintf('%02d:%02d', intdiv($start, 60), $start % 60),
+                    'window_end' => sprintf('%02d:%02d', intdiv($end, 60), $end % 60),
+                    'current_time' => $now->format('H:i'),
+                ],
+            ];
+        }
+
+        return ['eligible' => true];
+    }
+
+    private function parseWindowTimeToMinutes($raw, int $fallback): int
+    {
+        if ($raw === null || $raw === '') {
+            return $fallback;
+        }
+
+        $value = trim((string) $raw);
+        if ($value === '') {
+            return $fallback;
+        }
+
+        if (preg_match('/^(\d{1,2}):(\d{2})(?::\d{2})?$/', $value, $matches) === 1) {
+            $hour = max(0, min(23, (int) $matches[1]));
+            $minute = max(0, min(59, (int) $matches[2]));
+            return ($hour * 60) + $minute;
+        }
+
+        try {
+            $parsed = Carbon::parse($value);
+            return (((int) $parsed->format('H')) * 60) + (int) $parsed->format('i');
+        } catch (\Throwable $e) {
+            return $fallback;
+        }
     }
 
     private function resolveAttemptMode(Exam $exam): string

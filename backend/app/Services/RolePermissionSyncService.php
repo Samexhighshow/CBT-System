@@ -38,11 +38,6 @@ class RolePermissionSyncService
             'Marking Workbench',
             'Academic Management',
             'Announcements',
-            'Allocation System',
-            'View Allocations',
-            'Generate Allocation',
-            'Teacher Assignment',
-            'Halls',
         ],
         'Moderator' => [
             'Overview',

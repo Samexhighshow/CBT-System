@@ -7,7 +7,6 @@ import { api } from '../services/api';
 import { showError, showSuccess } from '../utils/alerts';
 import StudentAnnouncements from './StudentAnnouncements';
 import AvailableExams from './student/AvailableExams';
-import MyAllocation from './student/MyAllocation';
 import MyResults from './student/MyResults';
 import StudentOverview from './student/StudentOverview';
 import { CurrentStudentProfile, getCurrentStudentProfile } from './student/studentData';
@@ -182,7 +181,6 @@ const StudentDashboard: React.FC = () => {
                 {!isOnboardingLocked && <NavLink to="/student" end className={navLinkClass}>Overview</NavLink>}
                 {!isOnboardingLocked && <NavLink to="/student/exams" className={navLinkClass}>Exams</NavLink>}
                 {!isOnboardingLocked && <NavLink to="/student/results" className={navLinkClass}>Results</NavLink>}
-                {!isOnboardingLocked && <NavLink to="/student/allocations" className={navLinkClass}>Allocations</NavLink>}
                 <NavLink to="/student/announcements" className={navLinkClass}>Announcements</NavLink>
               </div>
             </div>
@@ -199,7 +197,6 @@ const StudentDashboard: React.FC = () => {
           <Route index element={isOnboardingLocked ? <Navigate to="/student/announcements" replace /> : <StudentOverview />} />
           <Route path="exams" element={isOnboardingLocked ? <Navigate to="/student/announcements" replace /> : <AvailableExams />} />
           <Route path="results" element={isOnboardingLocked ? <Navigate to="/student/announcements" replace /> : <MyResults />} />
-          <Route path="allocations" element={isOnboardingLocked ? <Navigate to="/student/announcements" replace /> : <MyAllocation />} />
           <Route path="announcements" element={<StudentAnnouncements />} />
           <Route path="*" element={<Navigate to="/student" replace />} />
         </Routes>

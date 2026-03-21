@@ -10,11 +10,6 @@ import SubjectManagement from './admin/SubjectManagementNew';
 import ResultsAnalytics from './admin/ResultsAnalytics';
 import AdminUserManagement from './admin/AdminUserManagement';
 import ActivityLogs from './admin/ActivityLogs';
-import AllocationGenerator from './admin/AllocationGenerator';
-import AllocationHistory from './admin/AllocationHistory';
-import AllocationViewer from './admin/AllocationViewer';
-import HallManagement from './admin/HallManagement';
-import TeacherAssignment from './admin/TeacherAssignment';
 import ExamAccess from './admin/ExamAccess';
 import AdminAnnouncements from './admin/Announcements';
 import MarkingWorkbench from './admin/MarkingWorkbench';
@@ -48,11 +43,6 @@ const AdminDashboard: React.FC = () => {
         <Route path="announcements" element={<RequirePagePermission permissionName="Announcements"><AdminAnnouncements /></RequirePagePermission>} />
         <Route path="students" element={<RequirePagePermission permissionName="Students"><StudentManagement /></RequirePagePermission>} />
         <Route path="subjects" element={<RequirePagePermission permissionName="Academic Management"><SubjectManagement /></RequirePagePermission>} />
-        <Route path="halls" element={<RequirePagePermission permissionName="Halls"><HallManagement /></RequirePagePermission>} />
-        <Route path="allocations" element={<RequirePagePermission permissionName="View Allocations"><AllocationHistory /></RequirePagePermission>} />
-        <Route path="allocations/generate" element={<RequirePagePermission permissionName="Generate Allocation"><AllocationGenerator /></RequirePagePermission>} />
-        <Route path="allocations/:id" element={<RequirePagePermission permissionName="View Allocations"><AllocationViewer /></RequirePagePermission>} />
-        <Route path="teachers/assign" element={<RequirePagePermission permissionName="Teacher Assignment"><TeacherAssignment /></RequirePagePermission>} />
         <Route path="my-teaching-assignment" element={<RequireRole roles={["Teacher"]}><MyTeachingAssignment /></RequireRole>} />
         <Route path="teacher-scope-requests" element={<RequireRole roles={["Main Admin"]}><TeacherScopeRequests /></RequireRole>} />
         <Route path="results" element={<RequirePagePermission permissionName="Results & Marking"><ResultsAnalytics /></RequirePagePermission>} />

@@ -21,6 +21,9 @@ interface StudentExam {
   start_time?: string;
   end_time?: string;
   status?: string;
+  eligible?: boolean;
+  eligibility_reason?: string | null;
+  eligibility_message?: string | null;
 }
 
 const formatDate = (value?: string) => {
@@ -131,12 +134,19 @@ const AvailableExams: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-lg bg-cyan-50 border border-cyan-100 px-3 py-2 text-xs text-cyan-900">
-                    Use the CBT access portal with your exam code to begin.
-                    <Link to="/cbt" className="ml-2 font-semibold text-cyan-700 hover:text-cyan-800">
-                      Open portal
-                    </Link>
-                  </div>
+                  {exam.eligible === false ? (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-900">
+                      <p className="font-semibold mb-1">Not Available</p>
+                      <p>{exam.eligibility_message || 'This exam is not available at this time.'}</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-cyan-50 border border-cyan-100 px-3 py-2 text-xs text-cyan-900">
+                      Use the CBT access portal with your exam code to begin.
+                      <Link to="/cbt" className="ml-2 font-semibold text-cyan-700 hover:text-cyan-800">
+                        Open portal
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </Card>
             );

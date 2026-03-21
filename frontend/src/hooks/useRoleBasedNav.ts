@@ -22,9 +22,9 @@ const ROLE_PAGE_FALLBACKS: Record<string, string[]> = {
   // during transient /admin/me/pages failures.
   'teacher': ['Overview', 'Questions', 'Exams', 'Results & Marking', 'Marking Workbench'],
   'moderator': ['Overview', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench'],
-  'sub-admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls'],
-  'sub admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls'],
-  'admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'View Allocations', 'Generate Allocation', 'Teacher Assignment', 'Halls', 'Offline Sync'],
+  'sub-admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements'],
+  'sub admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements'],
+  'admin': ['Overview', 'Questions', 'Exams', 'Exam Access', 'Students', 'Results & Marking', 'Marking Workbench', 'Academic Management', 'Announcements', 'Offline Sync'],
 };
 
 const normalizePermissionName = (value: string): string => String(value || '').trim().toLowerCase();

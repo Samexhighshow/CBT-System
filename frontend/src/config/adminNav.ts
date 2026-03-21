@@ -95,30 +95,6 @@ export const buildAdminNavLinks = (labels?: {
           path: "/admin/sync",
           icon: "bx-sync",
         },
-        {
-          name: "View Allocations",
-          permissionName: "View Allocations",
-          path: "/admin/allocations",
-          icon: "bx-list-ul",
-        },
-        {
-          name: "Generate Allocation",
-          permissionName: "Generate Allocation",
-          path: "/admin/allocations/generate",
-          icon: "bx-plus-circle",
-        },
-        {
-          name: "Teacher Assignment",
-          permissionName: "Teacher Assignment",
-          path: "/admin/teachers/assign",
-          icon: "bx-user-check",
-        },
-        {
-          name: "Halls",
-          permissionName: "Halls",
-          path: "/admin/halls",
-          icon: "bx-building",
-        },
       ],
     },
     {

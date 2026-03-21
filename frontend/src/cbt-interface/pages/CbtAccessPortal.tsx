@@ -96,6 +96,7 @@ const CbtAccessPortal: React.FC = () => {
   const [exams, setExams] = useState<CbtOpenExam[]>([]);
   const [loadingExams, setLoadingExams] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [windowClosedNotice, setWindowClosedNotice] = useState<string | null>(null);
   const [cachedPackages, setCachedPackages] = useState<Record<number, ExamPackage>>({});
   const [downloadBusy, setDownloadBusy] = useState<number | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
@@ -177,6 +178,7 @@ const CbtAccessPortal: React.FC = () => {
           canReachLocal: connectivity.canReachLocal,
         });
         if (!baseUrl) {
+          setWindowClosedNotice(null);
           const localRows = await offlineDB.exams.toArray();
           const mapped = localRows
             .map((row) => toOpenExamFromOfflineRow(row))
@@ -199,11 +201,23 @@ const CbtAccessPortal: React.FC = () => {
         const payload = await response.json();
         const data = payload?.data || payload || [];
         const nextExams = Array.isArray(data) ? data : [];
-        setExams(nextExams);
-        if (nextExams.length > 0) {
-          lastKnownExamsRef.current = nextExams;
+        const restrictedByWindow = nextExams.filter((row) => row?.can_access === false && /between\s+\d{2}:\d{2}\s+and\s+\d{2}:\d{2}/i.test(String(row?.reason || '')));
+        const allBlockedByWindow = nextExams.length > 0 && restrictedByWindow.length === nextExams.length;
+
+        if (allBlockedByWindow) {
+          setWindowClosedNotice(String(restrictedByWindow[0]?.reason || 'Exam window is currently closed.'));
+          setExams([]);
+          return;
+        }
+
+        setWindowClosedNotice(null);
+        const openExams = nextExams.filter((row) => row?.can_access === true);
+        setExams(openExams);
+        if (openExams.length > 0) {
+          lastKnownExamsRef.current = openExams;
         }
       } catch (err: any) {
+        setWindowClosedNotice(null);
         setError(err?.message || 'Failed to load available exams.');
         const localRows = await offlineDB.exams.toArray();
         const mapped = localRows
@@ -271,6 +285,30 @@ const CbtAccessPortal: React.FC = () => {
   };
 
   const availableCount = exams.filter((exam) => exam.can_access).length;
+
+  if (windowClosedNotice) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 py-8" style={{ background: 'linear-gradient(180deg, #FFF1F2 0%, #FFE4E6 100%)', fontFamily: cbtFontFamily }}>
+        <section className="mx-auto w-full max-w-[980px] rounded-3xl border px-6 py-10 text-center shadow-[0_32px_90px_-50px_rgba(185,28,28,0.55)] md:px-10 md:py-12" style={{ borderColor: '#FCA5A5', background: 'linear-gradient(180deg, #FFF1F2 0%, #FFFFFF 100%)' }}>
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border" style={{ borderColor: '#FCA5A5', backgroundColor: '#FEE2E2', color: '#B91C1C' }}>
+            <i className="bx bx-time-five text-[30px]" />
+          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.17em]" style={{ color: '#B91C1C' }}>
+            CBT Access Alert
+          </p>
+          <h1 className="mt-1 text-[32px] font-semibold tracking-[-0.02em]" style={{ color: '#7F1D1D' }}>
+            Exam Window Not Opened
+          </h1>
+          <p className="mx-auto mt-4 max-w-[680px] text-[18px] leading-8" style={{ color: '#991B1B' }}>
+            {windowClosedNotice}
+          </p>
+          <div className="mx-auto mt-7 max-w-[760px] rounded-2xl border px-5 py-4 text-base" style={{ borderColor: '#FCA5A5', backgroundColor: '#FFF1F2', color: '#9F1239' }}>
+            This portal is temporarily locked for all candidates. Please alert an Admin or Moderator to reopen the exam window in Settings.
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col overflow-x-hidden" style={{ backgroundColor: cbtTheme.pageBg, fontFamily: cbtFontFamily }}>

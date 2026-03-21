@@ -39,6 +39,27 @@ class StudentController extends Controller
         return $sanctumUser instanceof User ? $sanctumUser : null;
     }
 
+    private function settingAsBoolean($value, bool $fallback = false): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return ((int) $value) === 1;
+        }
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                return false;
+            }
+        }
+
+        return $fallback;
+    }
+
     private function enforceStudentScope(Request $request, Student $student): ?\Illuminate\Http\JsonResponse
     {
         $user = $this->currentAuthenticatedUser($request);
@@ -400,7 +421,12 @@ class StudentController extends Controller
         $hashedPassword = Hash::make($validated['password']);
         $validated['password'] = $hashedPassword;
 
-        $student = DB::transaction(function () use ($validated, $hashedPassword, $quickRegister) {
+        $requireEmailVerification = $this->settingAsBoolean(
+            SystemSetting::get('require_email_verification', true),
+            true
+        );
+
+        $student = DB::transaction(function () use ($validated, $hashedPassword, $quickRegister, $requireEmailVerification) {
             $fullName = trim(
                 ($validated['first_name'] ?? '') . ' ' .
                 ($validated['last_name'] ?? '') . ' ' .
@@ -421,13 +447,32 @@ class StudentController extends Controller
                 'guard_name' => 'web',
             ]);
             $user->assignRole($studentRole);
-            $user->markEmailAsVerified();
+
+            // Respect system toggle: require email verification before login.
+            if (!$requireEmailVerification) {
+                $user->markEmailAsVerified();
+            }
 
             $validated['registration_completed'] = !$quickRegister;
             $validated['created_via_admin'] = $quickRegister;
 
             return Student::create($validated);
         });
+
+        if ($requireEmailVerification) {
+            try {
+                $registeredUser = User::where('email', $student->email)->first();
+                if ($registeredUser && !$registeredUser->hasVerifiedEmail()) {
+                    $registeredUser->sendEmailVerificationNotification();
+                }
+            } catch (\Throwable $verificationMailError) {
+                \Log::warning('Student verification email failed', [
+                    'student_id' => $student->id,
+                    'email' => $student->email,
+                    'error' => $verificationMailError->getMessage(),
+                ]);
+            }
+        }
 
         if ($quickRegister && $generatedPassword) {
             try {
@@ -465,6 +510,7 @@ class StudentController extends Controller
                 : 'Student registered successfully',
             'registration_number' => $student->registration_number,
             'student' => $student->load(['department', 'schoolClass']),
+            'email_verification_required' => $requireEmailVerification,
             'email_sent' => $quickRegister ? true : null,
         ], 201);
     }
@@ -705,7 +751,17 @@ class StudentController extends Controller
                 ->orWhere('end_time', '>=', $now);
             })
             ->orderByRaw('COALESCE(start_datetime, start_time) asc')
-            ->get();
+            ->get()
+            ->map(function ($exam) use ($student) {
+                // Add eligibility check including daily window enforcement
+                $eligibility = $exam->checkEligibility($student);
+                return [
+                    ...$exam->toArray(),
+                    'eligible' => $eligibility['eligible'] ?? false,
+                    'eligibility_reason' => $eligibility['reason'] ?? null,
+                    'eligibility_message' => $eligibility['message'] ?? null,
+                ];
+            });
 
         return response()->json($exams);
     }
