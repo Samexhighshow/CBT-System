@@ -47,6 +47,8 @@ const StudentRegistrationSteps: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [classes, setClasses] = useState<Class[]>([]);
+  const [registrationEnabled, setRegistrationEnabled] = useState(true);
+  const [classes, setClasses] = useState<Class[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -92,6 +94,26 @@ const StudentRegistrationSteps: React.FC = () => {
     }
   };
 
+  const checkRegistrationStatus = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/settings`);
+      const settings = Array.isArray(response.data) ? response.data : (response.data.data || []);
+      const regOpen = settings.find((s: any) => s.key === 'student_registration_open');
+      
+      // Check if registration is explicitly closed (value === false or '0')
+      const isClosed = regOpen && (regOpen.value === false || regOpen.value === '0' || regOpen.value === 0);
+      if (isClosed) {
+        setRegistrationEnabled(false);
+        setError('Student registration is currently closed by the administrator');
+      } else {
+        setRegistrationEnabled(true);
+        setError('');
+      }
+    } catch (error) {
+      console.error('Failed to check registration status');
+    }
+  };
+
   const fetchClasses = async () => {
     // Use hardcoded class levels since classes endpoint requires auth
     // Admin must have created departments for SSS students
@@ -113,23 +135,84 @@ const StudentRegistrationSteps: React.FC = () => {
       setDepartments(response.data.data || response.data);
     } catch (error) {
       console.error('Failed to fetch departments');
+
+      const fetchDepartments = async () => {
+        try {
+          const response = await axios.get(`${API_URL}/departments`);
+          const depts = Array.isArray(response.data) ? response.data : (response.data.data || []);
+          if (Array.isArray(depts) && depts.length > 0) {
+            setDepartments(depts);
+          } else {
+            console.warn('No departments found');
+            setDepartments([]);
+          }
+        } catch (error: any) {
+          console.error('Failed to fetch departments:', error.message);
+          setDepartments([]);
+        }
+      };
     }
   };
 
   const handleStep1Change = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setStep1Data(prev => ({
       ...prev,
-      [e.target.name]: e.target.value
+    const checkRegistrationStatus = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/settings`);
+        const settings = Array.isArray(response.data) ? response.data : (response.data.data || []);
+        const regOpen = settings.find((s: any) => s.key === 'student_registration_open');
+      
+        // Check if registration is explicitly closed (value === false or '0')
+        const isClosed = regOpen && (regOpen.value === false || regOpen.value === '0' || regOpen.value === 0);
+        if (isClosed) {
+          setError('Student registration is currently closed by the administrator');
+        }
+      } catch (error) {
+        console.error('Failed to check registration status');
+      }
+    };
+        console.error('Failed to fetch departments:', error.message);
+        setDepartments([]);
+      }
+    };
     }));
     setError('');
-  };
 
-  const handleStep2Change = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setStep2Data(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
-    setError('');
+    const handleStep1Change = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const { name, value } = e.target;
+      setStep1Data(prev => ({
+        ...prev,
+        [name]: value
+      }));
+      setError('');
+    };
+
+    const handleStep2Change = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+      const { name, value } = e.target;
+      setStep2Data(prev => ({
+          const handleStep1Change = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+            const { name, value } = e.target;
+            setStep1Data(prev => ({
+              ...prev,
+              [name]: value
+            }));
+            setError('');
+          };
+
+          const handleStep2Change = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+            const { name, value } = e.target;
+            setStep2Data(prev => ({
+              ...prev,
+              [name]: value
+            }));
+            setError('');
+          };
+        ...prev,
+        [name]: value
+      }));
+      setError('');
+    };
   };
 
   const handleStep3Change = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -289,6 +372,26 @@ const StudentRegistrationSteps: React.FC = () => {
 
   const handleLoginRedirect = () => {
     navigate('/student-login');
+
+    // Show registration closed message if registration is disabled
+    if (!registrationEnabled) {
+      return (
+        <div className="min-h-screen w-full bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center py-12 px-4">
+          <Card className="w-full max-w-md">
+            <div className="text-center">
+              <div className="mb-6">
+                <i className='bx bx-lock-alt text-6xl text-red-600'></i>
+              </div>
+              <h1 className="text-2xl font-bold text-red-800 mb-2">Registration Closed</h1>
+              <p className="text-gray-700 mb-6">Student registration is not currently open. Please try again later or contact the administrator.</p>
+              <Link to="/student-login">
+                <Button fullWidth>Return to Login</Button>
+              </Link>
+            </div>
+          </Card>
+        </div>
+      );
+    }
   };
 
   // Success Screen
@@ -430,8 +533,22 @@ const StudentRegistrationSteps: React.FC = () => {
 
               {/* Show department selection for SSS students */}
               {step1Data.class_level.startsWith('SSS') && (
-                <div className="flex flex-col gap-2 w-full">
+                              {error && error.includes('closed') ? (
+                                <div className="bg-red-50 border border-red-300 rounded-lg p-6 text-center">
+                                  <div className="mb-4">
+                                    <i className='bx bx-lock-alt text-4xl text-red-600'></i>
+                                  </div>
+                                  <h3 className="text-lg font-bold text-red-800 mb-2">Registration Closed</h3>
+                                  <p className="text-red-700 mb-6">Student registration is not currently open. Please try again later or contact the administrator.</p>
+                                  <Link to="/student-login">
+                                    <Button variant="outline">Return to Login</Button>
+                                  </Link>
+                                </div>
+                              ) : error && <Alert type="error" message={error} onClose={() => setError('')} />}
                   <label className="text-sm font-medium text-gray-700">Department *</label>
+                                {step1Data.class_level.startsWith('SSS') && (
+                                  <div className="flex flex-col gap-2 w-full">
+                                    <label className="text-sm font-medium text-gray-700">Department *</label>
                   {departments.length === 0 ? (
                     <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
                       <i className='bx bx-error'></i> No departments available. Please contact the administrator.
@@ -574,6 +691,17 @@ const StudentRegistrationSteps: React.FC = () => {
                 value={step3Data.password}
                 onChange={handleStep3Change}
                 placeholder="Minimum 8 characters"
+
+                              <Input
+                                label="Confirm Password"
+                                type="password"
+                                name="password_confirmation"
+                                value={step3Data.password_confirmation}
+                                onChange={handleStep3Change}
+                                placeholder="Re-enter your password"
+                                required
+                                fullWidth
+                              />
                 required
                 fullWidth
               />
@@ -604,6 +732,18 @@ const StudentRegistrationSteps: React.FC = () => {
                 </Button>
                 <Button onClick={handleFinalSubmit} loading={loading}>
                   {loading ? 'Registering...' : 'Complete Registration'}
+
+                          <div className="mt-6 text-center space-y-2">
+                            <p className="text-sm text-gray-600">
+                              Already have an account?{' '}
+                              <Link to="/student-login" className="text-blue-600 hover:text-blue-700 font-medium">
+                                Login here
+                              </Link>
+                            </p>
+                            <Link to="/" className="text-sm text-gray-500 hover:text-gray-700 block">
+                              ← Back to Home
+                            </Link>
+                          </div>
                 </Button>
               </div>
             </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, SkeletonCard, SkeletonList } from '../../components';
 import { api } from '../../services/api';
@@ -125,13 +126,14 @@ const ResultsAnalytics: React.FC = () => {
   const [assessmentWindowMode, setAssessmentWindowMode] = useState<AssessmentWindowMode>('auto');
   const [examResults, setExamResults] = useState<AttemptSummary[]>([]);
   const [resultsPage, setResultsPage] = useState(1);
+  const [resultsPerPage, setResultsPerPage] = useState(10);
+  const [selectedResultIds, setSelectedResultIds] = useState<number[]>([]);
+  const [resultActionsMenu, setResultActionsMenu] = useState<{ top: number; left: number } | null>(null);
   const [reportCardStudentId, setReportCardStudentId] = useState<string>('');
   const [teacherRemark, setTeacherRemark] = useState<string>('');
   const [principalRemark, setPrincipalRemark] = useState<string>('');
   const [remarksLoading, setRemarksLoading] = useState(false);
   const [remarksSaving, setRemarksSaving] = useState(false);
-  const resultsPerPage = 10;
-
   const activeRouteTab = useMemo<'results' | 'compiled'>(() => {
     const path = location.pathname.toLowerCase();
     if (path.endsWith('/compiled')) return 'compiled';
@@ -142,7 +144,12 @@ const ResultsAnalytics: React.FC = () => {
   useEffect(() => {
     setActiveTab(activeRouteTab);
     setResultsPage(1);
+    setSelectedResultIds([]);
   }, [activeRouteTab]);
+
+  useEffect(() => {
+    setSelectedResultIds([]);
+  }, [examId, sittingId, studentName]);
 
   const tabRoutePath = (tab: 'results' | 'compiled'): string => {
     if (tab === 'compiled') return '/admin/results/compiled';
@@ -767,7 +774,113 @@ const ResultsAnalytics: React.FC = () => {
   const currentResultRows = useMemo(() => {
     const start = (resultsPage - 1) * resultsPerPage;
     return selectedAttemptRows.slice(start, start + resultsPerPage);
-  }, [selectedAttemptRows, resultsPage]);
+  }, [selectedAttemptRows, resultsPage, resultsPerPage]);
+
+  const toggleAllResultRows = (checked: boolean) => {
+    if (checked) {
+      setSelectedResultIds(selectedAttemptRows.map((row) => row.id));
+      return;
+    }
+    setSelectedResultIds([]);
+  };
+
+  const toggleResultRow = (id: number, checked: boolean) => {
+    if (checked) {
+      setSelectedResultIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      return;
+    }
+    setSelectedResultIds((prev) => prev.filter((x) => x !== id));
+  };
+
+  const exportSelectedResultRows = () => {
+    if (selectedResultIds.length === 0) {
+      showError('Select at least one result row to export.');
+      return;
+    }
+
+    const selectedRows = selectedAttemptRows.filter((row) => selectedResultIds.includes(row.id));
+    const escapeCsv = (value: unknown) => {
+      const text = String(value ?? '');
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const headers = [
+      'Student',
+      'Registration Number',
+      'Class',
+      'Score',
+      'Total Marks',
+      'Percentage',
+      'Grade',
+      'Status',
+      'Completed At',
+    ];
+
+    const lines = selectedRows.map((row) => [
+      row.student_name,
+      row.registration_number || '-',
+      row.class_level || '-',
+      Number(row.score ?? 0).toFixed(2),
+      Number(row.total_marks ?? 0).toFixed(2),
+      `${Number(row.percentage ?? 0).toFixed(2)}%`,
+      row.grade || '-',
+      normalizeResultStatus(row),
+      row.completed_at ? new Date(row.completed_at).toLocaleString() : '-',
+    ]);
+
+    const csv = [headers, ...lines]
+      .map((row) => row.map((cell) => escapeCsv(cell)).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `results_export_${examId || 'all'}_${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showSuccess(`${selectedRows.length} result row(s) exported.`);
+  };
+
+  const closeResultActionsMenu = () => {
+    setResultActionsMenu(null);
+  };
+
+  const openResultActionsMenu = (ev: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 256;
+    const menuHeight = 120;
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+
+    let top = rect.bottom + 8;
+    if (top + menuHeight > viewportH - 8) {
+      top = Math.max(8, rect.top - menuHeight - 8);
+    }
+
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > viewportW - 8) {
+      left = viewportW - menuWidth - 8;
+    }
+
+    setResultActionsMenu({ top, left });
+  };
+
+  useEffect(() => {
+    if (!resultActionsMenu) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeResultActionsMenu();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [resultActionsMenu]);
 
   const normalizeResultStatus = (row: AttemptSummary): 'Submitted' | 'Marked' | 'Finalized' | 'Released' => {
     const released = sittingId ? !!selectedSitting?.results_released : !!selectedExam?.results_released;
@@ -965,67 +1078,160 @@ const ResultsAnalytics: React.FC = () => {
           </div>
         </Card>
 
-        {activeTab === 'results' && <Card className="panel-compact">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">
-                {selectedExam
-                  ? `${sittingId ? `${toSittingModeLabel(selectedSitting?.assessment_mode_snapshot)} Results` : 'Result Summary'} - ${selectedExam.title}`
-                  : 'Result Summary'}
-              </h2>
-              <p className="text-xs text-slate-500">
-                {sittingId
-                  ? 'Sitting-scoped attempt list. Exports and print actions apply to the selected sitting.'
-                  : 'Exam-scoped attempt list. Choose a sitting above when you need sitting-specific output.'}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {!!examId && (
-                <span className="text-xs text-slate-500">
-                  {selectedAttemptRows.length} row(s) • Page {Math.min(resultsPage, totalResultPages)} of {totalResultPages}
-                </span>
-              )}
-              {!!examId && (
-                <>
+        {activeTab === 'results' && <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          {/* Header Row - Title, Count, More Actions */}
+          <div className="px-4 py-3 border-b border-gray-200">
+            <div className="flex items-center justify-between gap-4">
+              {/* Left: Title and Description */}
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">
+                  {selectedExam
+                    ? `${sittingId ? `${toSittingModeLabel(selectedSitting?.assessment_mode_snapshot)} Results` : 'Result Summary'} - ${selectedExam.title}`
+                    : 'Result Summary'}
+                </h2>
+                <p className="text-xs text-gray-600 mt-1">
+                  {sittingId
+                    ? 'Sitting-scoped attempt list. Exports and print actions apply to the selected sitting.'
+                    : 'Exam-scoped attempt list. Choose a sitting above when you need sitting-specific output.'}
+                </p>
+              </div>
+              
+              {/* Right: Count and More Actions */}
+              <div className="flex items-center gap-2">
+                {!!examId && (
+                  <span className="text-xs text-gray-600 whitespace-nowrap">
+                    {selectedAttemptRows.length} row(s) • Page {Math.min(resultsPage, totalResultPages)} of {totalResultPages}
+                  </span>
+                )}
+                {!!examId && (
                   <button
-                    className="btn-compact bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                    onClick={() => downloadReport(
-                      buildExamReportPath('pdf'),
-                      `${sittingId ? `sitting_${sittingId}` : 'exam'}_report_${examId}.pdf`
-                    )}
-                    disabled={exportLoading}
-                    title="Download printable result sheet (PDF) for the selected context"
+                    onClick={(ev) => {
+                      if (resultActionsMenu) {
+                        closeResultActionsMenu();
+                        return;
+                      }
+                      openResultActionsMenu(ev);
+                    }}
+                    className="h-8 w-8 inline-flex items-center justify-center rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+                    title="More actions"
+                    aria-label="More actions"
                   >
-                    Print Result Sheet (PDF)
+                    <i className='bx bx-dots-vertical-rounded text-sm'></i>
                   </button>
-                  <button
-                    className="btn-compact bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                    onClick={() => downloadReport(
-                      buildExamReportPath('excel'),
-                      `${sittingId ? `sitting_${sittingId}` : 'exam'}_report_${examId}.xlsx`
-                    )}
-                    disabled={exportLoading}
-                    title="Export result sheet (Excel) for the selected context"
-                  >
-                    Export Result Excel
-                  </button>
-                </>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
+          {resultActionsMenu && createPortal(
+            <div className="fixed inset-0 z-[9999]" onClick={closeResultActionsMenu}>
+              <div
+                className="absolute w-64 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+                style={{ top: resultActionsMenu.top, left: resultActionsMenu.left }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  className="w-full text-left px-4 py-3 text-sm text-slate-800 hover:bg-slate-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                  onClick={() => {
+                    downloadReport(
+                      buildExamReportPath('pdf'),
+                      `${sittingId ? `sitting_${sittingId}` : 'exam'}_report_${examId}.pdf`,
+                    );
+                    closeResultActionsMenu();
+                  }}
+                  disabled={exportLoading}
+                >
+                  <i className='bx bx-printer text-slate-500'></i>
+                  <span className="font-medium">Print Result Sheet (PDF)</span>
+                </button>
+                <button
+                  className="w-full text-left px-4 py-3 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
+                  onClick={() => {
+                    downloadReport(
+                      buildExamReportPath('excel'),
+                      `${sittingId ? `sitting_${sittingId}` : 'exam'}_report_${examId}.xlsx`,
+                    );
+                    closeResultActionsMenu();
+                  }}
+                  disabled={exportLoading}
+                >
+                  <i className='bx bx-download text-emerald-500'></i>
+                  <span className="font-medium">Export Result Excel</span>
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )}
+
           {!examId ? (
-            <p className="text-sm text-slate-500">Select an exam to view results.</p>
+            <p className="px-4 py-3 text-sm text-slate-500">Select an exam to view results.</p>
           ) : loading ? (
-            <SkeletonList items={4} />
+            <div className="px-4 py-3"><SkeletonList items={4} /></div>
           ) : selectedAttemptRows.length === 0 ? (
-            <p className="text-sm text-slate-500">No result rows found for this filter.</p>
+            <p className="px-4 py-3 text-sm text-slate-500">No result rows found for this filter.</p>
           ) : (
             <>
+              {/* Select All Row with Bulk Actions */}
+              <div className="bg-blue-50 border-b border-gray-200">
+                <div className="px-4 py-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedAttemptRows.length > 0 && selectedResultIds.length === selectedAttemptRows.length}
+                      onChange={(e) => toggleAllResultRows(e.target.checked)}
+                      className="w-5 h-5 cursor-pointer"
+                      title="Select all result rows"
+                    />
+                    <span className="text-sm font-semibold text-blue-800">
+                      {selectedResultIds.length > 0 ? `${selectedResultIds.length} of ${selectedAttemptRows.length} selected` : 'Select All'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    <select
+                      value={resultsPerPage}
+                      onChange={(e) => {
+                        setResultsPerPage(Number(e.target.value));
+                        setResultsPage(1);
+                      }}
+                      className="px-3 py-1.5 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={25}>25 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                    {selectedResultIds.length > 0 && (
+                      <button
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5"
+                        onClick={exportSelectedResultRows}
+                      >
+                        <i className='bx bx-download text-sm'></i>
+                        Export Selected
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Table Header with Label */}
+              <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-800">Results</h4>
+                  </div>
+                </div>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1180px] text-xs border-collapse bg-white">
                   <thead>
-                    <tr className="bg-gray-50 text-gray-700 border-b">
+                    <tr className="bg-white text-gray-700 border-b">
+                      <th className="px-3 py-2 text-left font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={selectedAttemptRows.length > 0 && selectedResultIds.length === selectedAttemptRows.length}
+                          onChange={(e) => toggleAllResultRows(e.target.checked)}
+                        />
+                      </th>
                       <th className="px-3 py-2 text-left font-semibold">Student</th>
                       <th className="px-3 py-2 text-left font-semibold">Class</th>
                       <th className="px-3 py-2 text-left font-semibold">Score (%)</th>
@@ -1042,6 +1248,13 @@ const ResultsAnalytics: React.FC = () => {
                       const normalizedStatus = normalizeResultStatus(row);
                       return (
                         <tr key={row.id} className="border-b border-gray-200 hover:bg-blue-50/40">
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedResultIds.includes(row.id)}
+                              onChange={(e) => toggleResultRow(row.id, e.target.checked)}
+                            />
+                          </td>
                           <td className="px-3 py-2 text-sm text-slate-700">
                             <div className="font-medium">{row.student_name}</div>
                             <div className="text-[11px] text-slate-500">{row.registration_number || '-'}</div>
@@ -1084,25 +1297,33 @@ const ResultsAnalytics: React.FC = () => {
                 </table>
               </div>
 
-              <div className="mt-3 flex items-center justify-end gap-2">
-                <button
-                  className="btn-compact bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
-                  disabled={resultsPage <= 1}
-                  onClick={() => setResultsPage((prev) => Math.max(1, prev - 1))}
-                >
-                  Previous
-                </button>
-                <button
-                  className="btn-compact bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
-                  disabled={resultsPage >= totalResultPages}
-                  onClick={() => setResultsPage((prev) => Math.min(totalResultPages, prev + 1))}
-                >
-                  Next
-                </button>
+              {/* Pagination */}
+              <div className="bg-gray-50/60 border-t border-gray-200 p-4">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                  <div className="text-gray-600">
+                    Showing page {resultsPage} of {totalResultPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                      disabled={resultsPage <= 1}
+                      onClick={() => setResultsPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="px-3 py-1.5 border border-gray-300 rounded-md bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                      disabled={resultsPage >= totalResultPages}
+                      onClick={() => setResultsPage((prev) => Math.min(totalResultPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             </>
           )}
-        </Card>}
+        </div>}
 
         {activeTab === 'compiled' && <Card className="panel-compact">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">

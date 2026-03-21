@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SkeletonTable } from '../../components';
 import { api } from '../../services/api';
@@ -74,6 +75,7 @@ const ExamManagement: React.FC = () => {
   const [perPage, setPerPage] = useState<number>(10);
   const [page, setPage] = useState<number>(1);
   const [selectedExams, setSelectedExams] = useState<number[]>([]);
+  const [openExamRowMenu, setOpenExamRowMenu] = useState<{ exam: ExamRow; top: number; left: number } | null>(null);
   const [assessmentMode, setAssessmentMode] = useState<AssessmentDisplayMode>(defaultAssessmentDisplayConfig.mode);
   const [classLevelFilter, setClassLevelFilter] = useState<string>('');
   
@@ -235,6 +237,31 @@ const ExamManagement: React.FC = () => {
     link.remove();
     window.URL.revokeObjectURL(url);
     showSuccess(`${selectedRows.length} exam(s) exported`);
+  };
+
+  const closeExamRowMenu = () => {
+    setOpenExamRowMenu(null);
+  };
+
+  const openExamRowActionsMenu = (exam: ExamRow, ev: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 240;
+    const menuHeight = 170;
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+
+    let top = rect.bottom + 8;
+    if (top + menuHeight > viewportH - 8) {
+      top = Math.max(8, rect.top - menuHeight - 8);
+    }
+
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > viewportW - 8) {
+      left = viewportW - menuWidth - 8;
+    }
+
+    setOpenExamRowMenu({ exam, top, left });
   };
 
 
@@ -837,13 +864,17 @@ const ExamManagement: React.FC = () => {
         </div>
 
         {/* List Section */}
-        <div className="border border-gray-200 rounded-lg">
-          <div className="bg-white p-4">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          {/* Header Row - Title, Count, Search, Sort, Per-page */}
+          <div className="px-4 py-3 border-b border-gray-200">
+            <div className="flex items-center justify-between gap-4">
+              {/* Left: Title and Count */}
               <div>
-                <h3 className="text-lg font-bold text-gray-800">Your Exams</h3>
+                <h3 className="text-base font-semibold text-gray-900">Your Exams</h3>
                 <p className="text-xs text-gray-600">{sorted.length} matching exams</p>
               </div>
+              
+              {/* Right: Search, Sort, Per-page */}
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <i className='bx bx-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400'></i>
@@ -852,13 +883,13 @@ const ExamManagement: React.FC = () => {
                     value={searchTerm}
                     onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                     placeholder="Search exams..."
-                    className="pl-7 pr-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 w-48"
+                    className="pl-7 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 w-48"
                   />
                 </div>
                 <select
                   value={sortBy}
                   onChange={(e) => { setSortBy(e.target.value as any); setPage(1); }}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 bg-white"
                   title="Sort"
                 >
                   <option value="title-asc">Name A→Z</option>
@@ -869,7 +900,7 @@ const ExamManagement: React.FC = () => {
                 <select
                   value={perPage}
                   onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value={10}>10 per page</option>
                   <option value={15}>15 per page</option>
@@ -877,10 +908,11 @@ const ExamManagement: React.FC = () => {
                 </select>
               </div>
             </div>
+          </div>
 
             {/* Selection Bar */}
             {sorted.length > 0 && (
-              <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md">
+              <div className="bg-blue-50 border-b border-gray-200 p-3">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                   <div className="flex items-center gap-3">
                     <input
@@ -891,7 +923,7 @@ const ExamManagement: React.FC = () => {
                       title="Select current page exams"
                     />
                     <span className="text-sm font-semibold text-blue-800">
-                      {selectedExams.length > 0 ? `${selectedExams.length} selected` : 'Select Page'}
+                      {selectedExams.length > 0 ? `${selectedExams.length} of ${paged.length} selected` : 'Select All'}
                     </span>
                   </div>
                   {selectedExams.length > 0 && (
@@ -915,15 +947,15 @@ const ExamManagement: React.FC = () => {
             )}
 
             {/* Filters */}
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3">
-              <div className="text-sm text-gray-700 font-medium">Exams</div>
+            <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between">
+              <div className="text-sm font-semibold text-gray-800">Exams</div>
               <div className="flex flex-wrap items-center gap-3 text-xs text-gray-700">
                 <div className="flex items-center gap-1">
                   <span className="text-[11px] text-gray-600">Class Level:</span>
                   <select
                     value={classLevelFilter}
                     onChange={(e) => { setClassLevelFilter(e.target.value); setPage(1); }}
-                    className="px-2 py-1 border border-gray-300 rounded-md text-xs"
+                    className="px-2 py-1 border border-gray-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">All</option>
                     {Array.from(new Set(classes.map(c => c.name))).map((level) => (
@@ -939,13 +971,12 @@ const ExamManagement: React.FC = () => {
                     setSortBy('title-asc');
                     setPage(1);
                   }}
-                  className="px-3 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50"
+                  className="px-3 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Reset filters
                 </button>
               </div>
             </div>
-          </div>
 
           {/* Table Container */}
           <div className="overflow-x-auto">
@@ -1003,32 +1034,18 @@ const ExamManagement: React.FC = () => {
                         <td className="px-3 py-2 text-xs text-gray-800">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
-                              onClick={() => handleView(exam.id)}
-                              className="p-2 text-cyan-700 bg-cyan-50 hover:bg-cyan-100 rounded-lg transition-all duration-200"
-                              title="View template details"
-                            >
-                              <i className='bx bx-show text-base'></i>
-                            </button>
-                            <button
-                              onClick={() => openManageForExam(exam)}
-                              className="p-2 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
-                              title="Add questions"
-                            >
-                              <i className='bx bx-plus text-base'></i>
-                            </button>
-                            <button
-                              onClick={() => navigate(`/admin/exams/sittings?examId=${exam.id}`)}
-                              className="p-2 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200"
-                              title="Manage sittings"
-                            >
-                              <i className='bx bx-calendar-check text-base'></i>
-                            </button>
-                            <button
                               onClick={() => handleEdit(exam)}
                               className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
                               title="Edit template"
                             >
                               <i className='bx bx-edit text-base'></i>
+                            </button>
+                            <button
+                              onClick={(ev) => openExamRowActionsMenu(exam, ev)}
+                              className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all duration-200"
+                              title="More actions"
+                            >
+                              <i className='bx bx-dots-vertical-rounded text-base'></i>
                             </button>
                             <button
                               onClick={() => handleDeleteExam(exam)}
@@ -1046,6 +1063,48 @@ const ExamManagement: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {openExamRowMenu && createPortal(
+            <div className="fixed inset-0 z-[9999]" onClick={closeExamRowMenu}>
+              <div
+                className="absolute w-60 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+                style={{ top: openExamRowMenu.top, left: openExamRowMenu.left }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => {
+                    handleView(openExamRowMenu.exam.id);
+                    closeExamRowMenu();
+                  }}
+                  className="w-full text-left px-4 py-3 text-sm text-cyan-700 hover:bg-cyan-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                >
+                  <i className='bx bx-show text-cyan-500'></i>
+                  <span className="font-medium">View Template Details</span>
+                </button>
+                <button
+                  onClick={() => {
+                    openManageForExam(openExamRowMenu.exam);
+                    closeExamRowMenu();
+                  }}
+                  className="w-full text-left px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                >
+                  <i className='bx bx-plus text-blue-500'></i>
+                  <span className="font-medium">Add Questions</span>
+                </button>
+                <button
+                  onClick={() => {
+                    navigate(`/admin/exams/sittings?examId=${openExamRowMenu.exam.id}`);
+                    closeExamRowMenu();
+                  }}
+                  className="w-full text-left px-4 py-3 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-3 transition-colors"
+                >
+                  <i className='bx bx-calendar-check text-indigo-500'></i>
+                  <span className="font-medium">Manage Sittings</span>
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )}
 
           {/* Pagination */}
           <div className="bg-gray-50/60 border-t border-gray-200 p-4">

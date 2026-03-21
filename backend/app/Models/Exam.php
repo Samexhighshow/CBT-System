@@ -378,7 +378,30 @@ class Exam extends Model
                 'attempt_mode' => $attemptMode,
             ]
         ];
-    }
+        // 3.5. Check daily exam window (if configured)
+        $dailyStart = \App\Models\SystemSetting::get('exam_window_start', null);
+        $dailyEnd = \App\Models\SystemSetting::get('exam_window_end', null);
+        
+        if ($dailyStart || $dailyEnd) {
+            $currentTime = $now->format('H:i');
+            $windowStart = $dailyStart ?? '00:00';
+            $windowEnd = $dailyEnd ?? '23:59';
+            
+            if ($currentTime < $windowStart || $currentTime > $windowEnd) {
+                return [
+                    'eligible' => false,
+                    'reason' => 'outside_exam_window',
+                    'message' => "Exams can only be accessed between {$windowStart} and {$windowEnd}.",
+                    'details' => [
+                        'window_start' => $windowStart,
+                        'window_end' => $windowEnd,
+                        'current_time' => $currentTime
+                    ]
+                ];
+            }
+        }
+
+        // 4. Verify student belongs to exam's class level
 
     private function resolveAttemptModeForEligibility(): string
     {
