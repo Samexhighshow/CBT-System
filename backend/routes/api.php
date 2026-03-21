@@ -367,6 +367,7 @@ Route::middleware(['auth:sanctum', 'role:Student|Admin|Main Admin|Teacher'])->pr
 
 // Public theme update endpoint for testing (place before wildcard route)
 Route::put('/settings/theme', [\App\Http\Controllers\Api\SystemSettingController::class, 'updateTheme']);
+Route::get('/settings/registration-status', [\App\Http\Controllers\Api\SystemSettingController::class, 'registrationStatus']);
 
 // Restricted Main Admin operations
 Route::middleware(['auth:sanctum', 'main.admin'])->group(function () {

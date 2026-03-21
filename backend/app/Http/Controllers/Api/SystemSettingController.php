@@ -8,6 +8,27 @@ use App\Models\SystemSetting;
 
 class SystemSettingController extends Controller
 {
+    public function registrationStatus()
+    {
+        $raw = SystemSetting::where('key', 'student_registration_open')->value('value');
+
+        $isOpen = true;
+        if ($raw !== null) {
+            if (is_bool($raw)) {
+                $isOpen = $raw;
+            } elseif (is_numeric($raw)) {
+                $isOpen = ((int) $raw) === 1;
+            } else {
+                $normalized = strtolower(trim((string) $raw));
+                $isOpen = in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+            }
+        }
+
+        return response()->json([
+            'student_registration_open' => $isOpen,
+        ]);
+    }
+
     public function index()
     {
         return response()->json(SystemSetting::orderBy('key')->get());

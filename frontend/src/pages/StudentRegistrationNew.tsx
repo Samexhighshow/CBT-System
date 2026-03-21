@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+import { api } from '../services/api';
 
 interface ClassOption {
   id: number;
@@ -153,15 +151,22 @@ const StudentRegistrationForm: React.FC = () => {
 
   const checkRegistrationStatus = async (): Promise<boolean> => {
     try {
-      const response = await axios.get(`${API_URL}/settings`);
-      const settings = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-      const regOpenSetting = settings.find((s: any) => s.key === 'student_registration_open');
-      const isOpen = regOpenSetting ? asBoolean(regOpenSetting.value, true) : true;
+      const response = await api.get('/settings/registration-status');
+      const isOpen = asBoolean(response.data?.student_registration_open, true);
       setRegistrationClosed(!isOpen);
       return isOpen;
     } catch {
-      // Keep registration open if settings endpoint cannot be read from public page.
-      return true;
+      // Fallback for older backend deployments where the public endpoint is not yet available.
+      try {
+        const response = await api.get('/settings');
+        const settings = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+        const regOpenSetting = settings.find((s: any) => s.key === 'student_registration_open');
+        const isOpen = regOpenSetting ? asBoolean(regOpenSetting.value, true) : true;
+        setRegistrationClosed(!isOpen);
+        return isOpen;
+      } catch {
+        return true;
+      }
     } finally {
       setCheckingRegistration(false);
     }
@@ -175,7 +180,7 @@ const StudentRegistrationForm: React.FC = () => {
     const fetchClasses = async () => {
       try {
         setLoadingClasses(true);
-        const response = await axios.get(`${API_URL}/public/classes?is_active=1`);
+        const response = await api.get('/public/classes?is_active=1');
         const payload = response.data?.data || response.data || [];
         setClasses(Array.isArray(payload) ? payload : []);
       } catch (err: any) {
@@ -198,7 +203,7 @@ const StudentRegistrationForm: React.FC = () => {
 
       try {
         setLoadingDepartments(true);
-        const response = await axios.get(`${API_URL}/departments`);
+        const response = await api.get('/departments');
         const payload = response.data?.data || response.data || [];
         setDepartments(Array.isArray(payload) ? payload : []);
       } catch {
@@ -344,7 +349,7 @@ const StudentRegistrationForm: React.FC = () => {
         password_confirmation: step3Data.password_confirmation,
       };
 
-      const response = await axios.post(`${API_URL}/students`, payload);
+      const response = await api.post('/students', payload);
       const generatedRegNo =
         response.data?.registration_number ||
         response.data?.student?.registration_number ||

@@ -2,9 +2,7 @@ import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button, Input, Card, Alert } from '../components';
 import { showSuccess, showError } from '../utils/alerts';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { api } from '../services/api';
 
 type ClassLevel = 'JSS1' | 'JSS2' | 'JSS3' | 'SSS1' | 'SSS2' | 'SSS3';
 
@@ -51,7 +49,7 @@ const StudentRegistration: React.FC = () => {
 
   const fetchDepartments = async () => {
     try {
-      const response = await axios.get(`${API_URL}/departments`);
+      const response = await api.get('/departments');
       setDepartments(response.data.data || response.data);
     } catch (error) {
       console.error('Failed to fetch departments');
@@ -60,10 +58,8 @@ const StudentRegistration: React.FC = () => {
 
   const checkRegistrationStatus = async () => {
     try {
-      const response = await axios.get(`${API_URL}/settings`);
-      const settings = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-      const regOpen = settings.find((s: any) => s.key === 'student_registration_open');
-      const rawValue = regOpen?.value;
+      const response = await api.get('/settings/registration-status');
+      const rawValue = response.data?.student_registration_open;
       const isOpen = typeof rawValue === 'boolean'
         ? rawValue
         : typeof rawValue === 'number'
@@ -123,7 +119,7 @@ const StudentRegistration: React.FC = () => {
         gender: 'male' // Default, should be added to form
       };
 
-      const response = await axios.post(`${API_URL}/students`, payload);
+      const response = await api.post('/students', payload);
       
       // Store student data for subject selection
       localStorage.setItem('studentData', JSON.stringify({
