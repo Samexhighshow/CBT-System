@@ -61,9 +61,18 @@ const StudentRegistration: React.FC = () => {
   const checkRegistrationStatus = async () => {
     try {
       const response = await axios.get(`${API_URL}/settings`);
-      const settings = response.data;
+      const settings = Array.isArray(response.data) ? response.data : (response.data?.data || []);
       const regOpen = settings.find((s: any) => s.key === 'student_registration_open');
-      if (regOpen && !regOpen.value) {
+      const rawValue = regOpen?.value;
+      const isOpen = typeof rawValue === 'boolean'
+        ? rawValue
+        : typeof rawValue === 'number'
+          ? rawValue === 1
+          : typeof rawValue === 'string'
+            ? ['1', 'true', 'yes', 'on'].includes(rawValue.trim().toLowerCase())
+            : true;
+
+      if (!isOpen) {
         setRegistrationClosed(true);
         showError('Student registration is currently closed by the administrator');
       }

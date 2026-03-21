@@ -99,6 +99,8 @@ const StudentRegistrationForm: React.FC = () => {
   const [error, setError] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [registrationNumber, setRegistrationNumber] = useState('');
+  const [registrationClosed, setRegistrationClosed] = useState(false);
+  const [checkingRegistration, setCheckingRegistration] = useState(true);
 
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
@@ -137,6 +139,37 @@ const StudentRegistrationForm: React.FC = () => {
     const name = (selectedClass?.name || '').toUpperCase();
     return name.includes('SSS') || name.includes('SS');
   }, [selectedClass?.name]);
+
+  const asBoolean = (value: any, fallback = true): boolean => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+      if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    }
+    return fallback;
+  };
+
+  const checkRegistrationStatus = async (): Promise<boolean> => {
+    try {
+      const response = await axios.get(`${API_URL}/settings`);
+      const settings = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+      const regOpenSetting = settings.find((s: any) => s.key === 'student_registration_open');
+      const isOpen = regOpenSetting ? asBoolean(regOpenSetting.value, true) : true;
+      setRegistrationClosed(!isOpen);
+      return isOpen;
+    } catch {
+      // Keep registration open if settings endpoint cannot be read from public page.
+      return true;
+    } finally {
+      setCheckingRegistration(false);
+    }
+  };
+
+  useEffect(() => {
+    checkRegistrationStatus();
+  }, []);
 
   useEffect(() => {
     const fetchClasses = async () => {
@@ -283,6 +316,12 @@ const StudentRegistrationForm: React.FC = () => {
     if (!validateStep3()) return;
 
     try {
+      const isOpen = await checkRegistrationStatus();
+      if (!isOpen) {
+        setError('Student registration is currently closed by the administrator.');
+        return;
+      }
+
       setLoading(true);
       setError('');
 
@@ -344,6 +383,36 @@ const StudentRegistrationForm: React.FC = () => {
           >
             Continue to Login
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (checkingRegistration) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-emerald-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 shadow-xl text-center">
+          <p className="text-sm text-slate-600">Checking registration status...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (registrationClosed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-emerald-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-lg rounded-3xl border border-red-200 bg-white p-8 shadow-xl text-center">
+          <div className="mx-auto h-16 w-16 rounded-full bg-red-100 flex items-center justify-center text-red-700">
+            <i className="bx bx-lock text-4xl" />
+          </div>
+          <h1 className="mt-4 text-2xl font-bold text-slate-900">Registration Closed</h1>
+          <p className="mt-2 text-sm text-slate-600">Student registration is currently disabled by the administrator.</p>
+          <Link
+            to="/student-login"
+            className="mt-6 inline-block w-full rounded-xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-700"
+          >
+            Go to Student Login
+          </Link>
         </div>
       </div>
     );
